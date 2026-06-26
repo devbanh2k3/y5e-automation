@@ -161,6 +161,57 @@ class RealImageAgent(BaseAgent):
         return bool(name_tokens) and all(token in normalized_metadata for token in name_tokens)
 
     @staticmethod
+    def normalize_identity_text(value: str) -> str:
+        return re.sub(r"[^a-z0-9]+", " ", value.lower()).strip()
+
+    @classmethod
+    def evaluate_identity_match(cls, person_name: str, metadata_text: str) -> dict[str, Any]:
+        normalized_name = cls.normalize_identity_text(person_name)
+        normalized_metadata = cls.normalize_identity_text(metadata_text)
+        compact_name = normalized_name.replace(" ", "")
+        compact_metadata = normalized_metadata.replace(" ", "")
+        if normalized_name and normalized_name in normalized_metadata:
+            return {"identity_check_status": "passed", "identity_confidence": 0.95}
+        if compact_name and compact_name in compact_metadata:
+            return {"identity_check_status": "passed", "identity_confidence": 0.9}
+        return {"identity_check_status": "failed", "identity_confidence": 0.0}
+
+    @classmethod
+    def evaluate_content_match(cls, metadata_text: str, source_url: str) -> dict[str, Any]:
+        combined = f"{metadata_text} {source_url}".lower()
+        blocked_terms = (
+            "pdf",
+            "book",
+            "archive",
+            "painting",
+            "diagram",
+            "logo",
+            "fan art",
+            "meme",
+        )
+        if any(term in combined for term in blocked_terms):
+            return {
+                "content_match_status": "failed",
+                "content_match_reason": "metadata indicates non-photo or unrelated media",
+                "is_group_photo": False,
+                "needs_human_review": True,
+            }
+        is_group_photo = any(term in combined for term in ("group", "with other", "honorees"))
+        if is_group_photo:
+            return {
+                "content_match_status": "uncertain",
+                "content_match_reason": "metadata indicates group photo",
+                "is_group_photo": True,
+                "needs_human_review": True,
+            }
+        return {
+            "content_match_status": "passed",
+            "content_match_reason": "metadata matches acceptable celebrity photo context",
+            "is_group_photo": False,
+            "needs_human_review": False,
+        }
+
+    @staticmethod
     def build_missing_item(
         *,
         scene_index: int,

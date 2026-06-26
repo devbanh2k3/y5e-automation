@@ -43,6 +43,44 @@ def test_wikimedia_user_agent_includes_contact_and_project_url():
     assert "@" in RealImageAgent.WIKIMEDIA_USER_AGENT
 
 
+def test_identity_check_requires_full_name_not_loose_tokens():
+    passed = RealImageAgent.evaluate_identity_match(
+        "Celine Dion",
+        "File:Celine Dion 2012.jpg Celine Dion performing live",
+    )
+    failed = RealImageAgent.evaluate_identity_match(
+        "Jay-Z",
+        "File:John Jay portrait.jpg Judge John Jay historical portrait",
+    )
+
+    assert passed["identity_check_status"] == "passed"
+    assert passed["identity_confidence"] == 0.95
+    assert failed["identity_check_status"] == "failed"
+    assert failed["identity_confidence"] == 0.0
+
+
+def test_content_match_rejects_non_photo_and_reviewable_group_photos():
+    pdf_result = RealImageAgent.evaluate_content_match(
+        metadata_text="File:John Jay book.pdf scanned book archive",
+        source_url="https://commons.wikimedia.org/wiki/File:John_Jay_book.pdf",
+    )
+    group_result = RealImageAgent.evaluate_content_match(
+        metadata_text="Celine Dion with other artists group photo",
+        source_url="https://commons.wikimedia.org/wiki/File:Celine_group.jpg",
+    )
+    portrait_result = RealImageAgent.evaluate_content_match(
+        metadata_text="Celine Dion portrait performing live concert",
+        source_url="https://commons.wikimedia.org/wiki/File:Celine_Dion.jpg",
+    )
+
+    assert pdf_result["content_match_status"] == "failed"
+    assert pdf_result["needs_human_review"] is True
+    assert group_result["content_match_status"] == "uncertain"
+    assert group_result["is_group_photo"] is True
+    assert portrait_result["content_match_status"] == "passed"
+    assert portrait_result["needs_human_review"] is False
+
+
 @pytest.mark.asyncio
 async def test_run_for_content_contract_returns_verified_wikimedia_contract(monkeypatch, tmp_path):
     agent = RealImageAgent()
