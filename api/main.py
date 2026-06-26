@@ -14,7 +14,7 @@ from pydantic import BaseModel, Field
 from core.config import get_settings
 from core.database import init_db, close_db, fetch, fetchrow, execute
 from core.health import check_readiness
-from core.job_models import JobAction
+from core.job_models import JobAction, PipelineMode
 from core.queue import (
     init_queue,
     enqueue,
@@ -38,6 +38,10 @@ class PipelineStartRequest(BaseModel):
     category: str = Field(..., min_length=1, description="Content category to generate for")
     language: str = Field(default="vi", description="Target language")
     count: int = Field(default=1, ge=1, le=10, description="Number of topics to generate")
+    mode: PipelineMode = Field(
+        default=PipelineMode.PRODUCTION,
+        description="Execution mode: production, dry_run, or smoke",
+    )
 
 
 class PipelineStartResponse(BaseModel):
@@ -60,6 +64,7 @@ class JobMetadataResponse(BaseModel):
     failed_at: str = ""
     error: str = ""
     envelope_json: str = ""
+    result_summary: str = ""
 
 
 class JobListResponse(BaseModel):
@@ -191,12 +196,16 @@ async def start_pipeline(body: PipelineStartRequest) -> PipelineStartResponse:
         "category": body.category,
         "language": body.language,
         "count": body.count,
+        "mode": body.mode.value,
     }
     job_id = await enqueue("pipeline", job_data, action=JobAction.RUN_PIPELINE)
 
     return PipelineStartResponse(
         job_id=job_id,
-        message=f"Pipeline queued for category '{body.category}' ({body.count} topics).",
+        message=(
+            f"Pipeline queued for category '{body.category}' "
+            f"({body.count} topics, mode {body.mode.value})."
+        ),
     )
 
 

@@ -2,7 +2,7 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 
 from api.main import app
-from core.job_models import JobAction, JobStatus
+from core.job_models import JobAction, JobStatus, PipelineMode
 
 
 @pytest.mark.asyncio
@@ -31,7 +31,7 @@ async def test_start_pipeline_enqueues_run_pipeline(monkeypatch: pytest.MonkeyPa
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.post(
             "/api/pipeline/start",
-            json={"category": "science", "language": "vi", "count": 1},
+            json={"category": "science", "language": "vi", "count": 1, "mode": "smoke"},
         )
 
     assert response.status_code == 200
@@ -42,7 +42,53 @@ async def test_start_pipeline_enqueues_run_pipeline(monkeypatch: pytest.MonkeyPa
         "category": "science",
         "language": "vi",
         "count": 1,
+        "mode": PipelineMode.SMOKE.value,
     }
+    assert "mode smoke" in response.json()["message"]
+
+
+@pytest.mark.asyncio
+async def test_start_pipeline_defaults_mode_to_production(monkeypatch: pytest.MonkeyPatch):
+    captured: dict[str, object] = {}
+
+    async def fake_enqueue(
+        queue_name,
+        job_data,
+        *,
+        action,
+        max_attempts=3,
+        attempt=0,
+        job_id=None,
+    ):
+        captured["job_data"] = job_data
+        return "job-123"
+
+    monkeypatch.setattr("api.main.enqueue", fake_enqueue)
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post(
+            "/api/pipeline/start",
+            json={"category": "science", "language": "vi", "count": 1},
+        )
+
+    assert response.status_code == 200
+    assert captured["job_data"]["mode"] == PipelineMode.PRODUCTION.value
+
+
+@pytest.mark.asyncio
+async def test_start_pipeline_rejects_invalid_mode():
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post(
+            "/api/pipeline/start",
+            json={
+                "category": "science",
+                "language": "vi",
+                "count": 1,
+                "mode": "expensive_unknown_mode",
+            },
+        )
+
+    assert response.status_code == 422
 
 
 @pytest.mark.asyncio
@@ -56,6 +102,7 @@ async def test_get_job_status_returns_metadata(monkeypatch: pytest.MonkeyPatch):
             "attempt": "0",
             "max_attempts": "3",
             "created_at": "2026-06-26T00:00:00+00:00",
+            "result_summary": '{"mode":"smoke"}',
         }
 
     monkeypatch.setattr("api.main.get_job_metadata", fake_get_job_metadata)
@@ -72,6 +119,7 @@ async def test_get_job_status_returns_metadata(monkeypatch: pytest.MonkeyPatch):
     assert response.json()["completed_at"] == ""
     assert response.json()["failed_at"] == ""
     assert response.json()["error"] == ""
+    assert response.json()["result_summary"] == '{"mode":"smoke"}'
 
 
 @pytest.mark.asyncio
