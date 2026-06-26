@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import signal
 from collections.abc import Callable
 from datetime import datetime, timezone
 from typing import Any
 
-from core.job_models import JobAction, JobStatus
+from core.job_models import JobAction, JobStatus, PipelineMode
 from core.queue import close_queue, dequeue, init_queue, requeue, set_job_metadata
 
 logger = logging.getLogger(__name__)
@@ -41,6 +42,7 @@ class PipelineWorker:
             failed_at=utc_now(),
             error=error[:500],
             completed_at="",
+            result_summary="",
         )
 
     @staticmethod
@@ -74,6 +76,7 @@ class PipelineWorker:
             error="",
             completed_at="",
             failed_at="",
+            result_summary="",
         )
 
         if action != JobAction.RUN_PIPELINE.value:
@@ -82,6 +85,7 @@ class PipelineWorker:
                 status=JobStatus.FAILED.value,
                 failed_at=utc_now(),
                 error=f"unsupported action: {action}",
+                result_summary="",
             )
             return
 
@@ -91,13 +95,33 @@ class PipelineWorker:
             await self._fail_job(job_id, str(exc))
             return
 
+        mode = str(data.get("mode", PipelineMode.PRODUCTION.value))
+        valid_modes = {pipeline_mode.value for pipeline_mode in PipelineMode}
+        if mode not in valid_modes:
+            await self._fail_job(job_id, f"unsupported mode: {mode}")
+            return
+
         pipeline = self.pipeline_factory()
 
         try:
-            await pipeline.run_full(
-                category=data["category"],
-                language=data.get("language", "vi"),
-            )
+            language = data.get("language", "vi")
+            if mode == PipelineMode.PRODUCTION.value:
+                pipeline_result = await pipeline.run_full(
+                    category=data["category"],
+                    language=language,
+                )
+                result_summary = {
+                    "mode": mode,
+                    "category": data["category"],
+                    "language": language,
+                    "result": pipeline_result,
+                }
+            else:
+                result_summary = await pipeline.run_smoke(
+                    category=data["category"],
+                    language=language,
+                    mode=mode,
+                )
         except Exception as exc:
             if attempt + 1 < max_attempts:
                 next_attempt = attempt + 1
@@ -108,6 +132,7 @@ class PipelineWorker:
                     error=str(exc)[:500],
                     completed_at="",
                     failed_at="",
+                    result_summary="",
                 )
                 await requeue(envelope, attempt=next_attempt)
                 return
@@ -118,6 +143,7 @@ class PipelineWorker:
                 failed_at=utc_now(),
                 error=str(exc),
                 completed_at="",
+                result_summary="",
             )
             return
 
@@ -127,6 +153,7 @@ class PipelineWorker:
             completed_at=utc_now(),
             error="",
             failed_at="",
+            result_summary=json.dumps(result_summary, ensure_ascii=False),
         )
 
     async def run_forever(self, queue_name: str = "pipeline") -> None:
