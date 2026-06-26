@@ -95,7 +95,7 @@ async def test_run_local_render_uses_content_agent_for_celebrity(monkeypatch):
             }
 
     class FakeContentAgent:
-        async def run(self, *, niche, language, subject, card_layout="split_data"):
+        async def run(self, *, niche, language, subject, card_layout="flag_hero"):
             captured["content_agent_card_layout"] = card_layout
             return build_content_contract_v2(
                 niche="celebrity",
@@ -160,7 +160,7 @@ async def test_run_local_render_uses_content_agent_for_celebrity(monkeypatch):
     result = await pipeline.run_local_render(
         category="Celebrity",
         language="vi",
-        card_layout="split_data",
+        card_layout="flag_hero",
     )
 
     video_data = captured["video_data"]
@@ -174,8 +174,8 @@ async def test_run_local_render_uses_content_agent_for_celebrity(monkeypatch):
     assert result["review_id"] == "review-123"
     assert result["review_status"] == "pending_review"
     assert result["content_contract"]["niche"] == "celebrity"
-    assert result["content_contract"]["cardLayout"] == "split_data"
-    assert captured["content_agent_card_layout"] == "split_data"
+    assert result["content_contract"]["cardLayout"] == "flag_hero"
+    assert captured["content_agent_card_layout"] == "flag_hero"
     assert result["youtube_title"] == content_contract["youtube_title"]
     assert "người nổi tiếng" in result["youtube_title"].lower()
     assert captured["image_agent_topic_id"] == result["topic_id"]

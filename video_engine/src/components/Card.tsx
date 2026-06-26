@@ -145,11 +145,17 @@ const FlagHeroCard: React.FC<CardProps & { kbScale: number }> = (props) => {
             style={{
               position: "absolute",
               bottom: 18,
-              right: 24,
+              left: 16,
+              right: 16,
               color: "#ffffff",
-              fontSize: 24,
+              fontSize: 28,
               fontWeight: 900,
               textTransform: "uppercase",
+              textAlign: "center",
+              whiteSpace: "nowrap",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              textShadow: "0 4px 10px rgba(0,0,0,0.85)",
             }}
           >
             {props.countryLabel}

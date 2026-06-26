@@ -23,7 +23,7 @@ async def test_content_agent_builds_seeded_celebrity_mvp_contract(monkeypatch):
 
     assert contract["niche"] == "celebrity"
     assert contract["language"] == "vi"
-    assert contract["cardLayout"] == "split_data"
+    assert contract["cardLayout"] == "flag_hero"
     assert "top 10" in contract["title"].lower()
     assert "giàu nhất" in contract["title"].lower()
     assert "estimated net worth" in contract["hook"].lower()

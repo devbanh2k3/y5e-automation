@@ -64,7 +64,7 @@ def build_next_commands(review_id: str) -> dict[str, str]:
 async def produce(
     *,
     language: str,
-    card_layout: str = "split_data",
+    card_layout: str = "flag_hero",
     write_files: bool = True,
 ) -> dict[str, Any]:
     result = await Pipeline().run_local_render(
@@ -100,7 +100,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--card-layout",
         choices=["split_data", "flag_hero", "classic"],
-        default="split_data",
+        default="flag_hero",
         help="Card layout inside the existing timeline template.",
     )
     parser.add_argument(

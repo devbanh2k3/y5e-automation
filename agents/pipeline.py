@@ -258,7 +258,7 @@ class Pipeline:
         *,
         category: str,
         language: str = "vi",
-        card_layout: str = "split_data",
+        card_layout: str = "flag_hero",
     ) -> dict[str, Any]:
         """Create a local render artifact using explicit fallback content."""
         resolved_category = category.strip() or "Local"

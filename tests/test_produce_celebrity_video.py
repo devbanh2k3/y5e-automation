@@ -15,7 +15,7 @@ def test_produce_celebrity_video_script_exists_and_targets_local_render_flow():
     assert "run_local_render" in source
     assert "pending_review" in source
     assert "review_video.py show" in source
-    assert 'card_layout: str = "split_data"' in source
+    assert 'card_layout: str = "flag_hero"' in source
     assert "card_layout=card_layout" in source
 
 

@@ -26,7 +26,7 @@ class ContentAgent(BaseAgent):
         niche: str,
         language: str = "vi",
         subject: str = "người nổi tiếng",
-        card_layout: str = "split_data",
+        card_layout: str = "flag_hero",
     ) -> dict[str, Any]:
         """Return a complete content contract for the requested niche."""
         normalized_niche = niche.strip().lower() or "celebrity"
@@ -336,7 +336,7 @@ Return JSON only with this shape:
         *,
         language: str,
         subject: str,
-        card_layout: str = "split_data",
+        card_layout: str = "flag_hero",
     ) -> dict[str, Any]:
         safe_subject = subject.strip() or "người nổi tiếng"
         title = "Top 10 ca sĩ giàu nhất thế giới năm 2026"
