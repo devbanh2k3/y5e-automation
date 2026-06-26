@@ -1,10 +1,22 @@
 from __future__ import annotations
 
+import re
 from typing import Any
+
+import pycountry
 
 
 class VideoContractError(ValueError):
     """Raised when Remotion video data is missing required fields."""
+
+
+COUNTRY_LABEL_ALIASES = {
+    "BB": "BARBADOS",
+    "CA": "CANADA",
+    "IE": "IRELAND",
+    "GB": "UNITED KINGDOM",
+    "US": "UNITED STATES",
+}
 
 
 def build_content_contract_v2(
@@ -20,6 +32,7 @@ def build_content_contract_v2(
     youtube_description: str,
     youtube_tags: list[str],
     duration_target: int,
+    cardLayout: str = "classic",
 ) -> dict[str, Any]:
     """Build the normalized content contract used before video rendering."""
     return {
@@ -35,6 +48,7 @@ def build_content_contract_v2(
         "youtube_description": youtube_description,
         "youtube_tags": youtube_tags,
         "duration_target": duration_target,
+        "cardLayout": cardLayout,
     }
 
 
@@ -68,6 +82,8 @@ def validate_content_contract_v2(payload: dict[str, Any]) -> None:
         for field_name in ("title", "voiceover", "caption", "image_prompt", "statusText"):
             if not str(scene.get(field_name, "")).strip():
                 raise VideoContractError(f"scenes[{index}].{field_name} is required")
+        if scene.get("countryCode") or scene.get("countryLabel"):
+            validate_country_metadata(scene, index=index)
 
     tags = payload.get("youtube_tags")
     if not isinstance(tags, list) or not any(str(tag).strip() for tag in tags):
@@ -167,16 +183,21 @@ def build_video_data_from_content_contract(payload: dict[str, Any]) -> dict[str,
     for index, scene in enumerate(payload["scenes"]):
         cards.append(
             {
-                "header": f"SCENE {index + 1}",
+                "header": build_ranking_header(scene=scene, fallback_rank=index + 1),
                 "title": str(scene["title"]),
                 "description": str(scene["voiceover"]),
                 "imagePath": "images/local-placeholder.svg",
+                "countryCode": normalize_country_code(str(scene.get("countryCode", ""))),
+                "countryLabel": str(scene.get("countryLabel", "")),
+                "metricLabel": str(scene.get("metricLabel", "")),
+                "metricValue": str(scene.get("metricValue", scene["statusText"])),
                 "statusText": str(scene["statusText"]),
             }
         )
 
     return {
         "template": "timeline",
+        "cardLayout": str(payload.get("cardLayout", "classic") or "classic"),
         "title": payload["title"],
         "subtitle": payload["hook"],
         "category": payload["niche"],
@@ -194,6 +215,44 @@ def build_video_data_from_content_contract(payload: dict[str, Any]) -> dict[str,
         "transitionDurationFrames": 15,
         "content_contract": payload,
     }
+
+
+def build_ranking_header(*, scene: dict[str, Any], fallback_rank: int) -> str:
+    """Return a public-facing ranking label for a rendered card."""
+    combined_text = f"{scene.get('title', '')} {scene.get('statusText', '')}"
+    rank_match = re.search(r"#\s*(\d+)", combined_text)
+    rank = rank_match.group(1) if rank_match else str(fallback_rank)
+    return f"TOP {rank}"
+
+
+def normalize_country_code(value: str) -> str:
+    return value.strip().upper()
+
+
+def validate_country_metadata(scene: dict[str, Any], *, index: int) -> None:
+    country_code = normalize_country_code(str(scene.get("countryCode", "")))
+    if not country_code:
+        raise VideoContractError(f"scenes[{index}].countryCode is required")
+    country = pycountry.countries.get(alpha_2=country_code)
+    if country is None:
+        raise VideoContractError(f"scenes[{index}].countryCode is not supported")
+    valid_labels = {
+        normalize_country_label(country.name),
+        normalize_country_label(getattr(country, "official_name", "")),
+        normalize_country_label(getattr(country, "common_name", "")),
+        normalize_country_label(COUNTRY_LABEL_ALIASES.get(country_code, "")),
+    }
+    valid_labels.discard("")
+    country_label = str(scene.get("countryLabel", "")).strip().upper()
+    if normalize_country_label(country_label) not in valid_labels:
+        expected_label = COUNTRY_LABEL_ALIASES.get(country_code, country.name).upper()
+        raise VideoContractError(
+            f"scenes[{index}].countryLabel must be {expected_label} for {country_code}"
+        )
+
+
+def normalize_country_label(value: str) -> str:
+    return re.sub(r"[^A-Z0-9]+", " ", value.upper()).strip()
 
 
 def apply_verified_images_to_video_data(

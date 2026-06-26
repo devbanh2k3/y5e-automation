@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import shutil
 import traceback
 from datetime import datetime, timezone
 from pathlib import Path
@@ -355,6 +356,11 @@ class Pipeline:
 
         public_data_path = public_dir / "video_data.json"
         public_data_path.write_text(json.dumps(video_data, ensure_ascii=False, indent=2))
+        self._copy_render_images_to_public(
+            topic_dir=topic_dir,
+            public_dir=public_dir,
+            video_data=video_data,
+        )
 
         placeholder_path = images_dir / "local-placeholder.svg"
         if not placeholder_path.exists():
@@ -387,12 +393,13 @@ class Pipeline:
 
         output_path = topic_dir / "final_video.mp4"
         props_json = json.dumps(video_data, ensure_ascii=False)
+        composition_id = self._composition_id_for_template(str(video_data.get("template", "")))
         cmd = [
             "npx",
             "remotion",
             "render",
             "src/index.tsx",
-            "TimelineVideo",
+            composition_id,
             str(output_path),
             f"--props={props_json}",
             "--codec=h264",
@@ -430,6 +437,41 @@ class Pipeline:
             "duration_sec": 0,
             "status": "rendered",
         }
+
+    @staticmethod
+    def _copy_render_images_to_public(
+        *,
+        topic_dir: Path,
+        public_dir: Path,
+        video_data: dict[str, Any],
+    ) -> None:
+        """Copy verified topic images into Remotion public assets before render."""
+        cards = video_data.get("cards")
+        if not isinstance(cards, list):
+            return
+
+        for card in cards:
+            if not isinstance(card, dict):
+                continue
+            for field_name in ("imagePath", "secondaryImagePath"):
+                image_path = str(card.get(field_name, "")).strip()
+                if not image_path.startswith("images/"):
+                    continue
+                source_path = topic_dir / image_path
+                if not source_path.is_file():
+                    continue
+                target_path = public_dir / image_path
+                target_path.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(source_path, target_path)
+
+    @staticmethod
+    def _composition_id_for_template(template: str) -> str:
+        compositions = {
+            "timeline": "TimelineVideo",
+            "ranking": "RankingVideo",
+            "comparison": "ComparisonVideo",
+        }
+        return compositions.get(template.strip(), "TimelineVideo")
 
     # ── Analytics shortcut ───────────────────────────────────
 

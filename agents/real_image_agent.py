@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import html
+import os
 import re
 from io import BytesIO
 from typing import Any
@@ -29,14 +30,17 @@ _ALLOWED_LICENSE_PARTS = (
 _HTTP_TIMEOUT = httpx.Timeout(connect=10.0, read=30.0, write=10.0, pool=10.0)
 _MIN_IMAGE_WIDTH = 200
 _MIN_IMAGE_HEIGHT = 200
+_QUERY_HINTS_BY_PERSON = {
+    "jay-z": ("Jay-Z rapper", "Jay Z rapper", "Shawn Carter Jay-Z"),
+}
 
 
 class RealImageAgent(BaseAgent):
     """Find and verify real sourced images for celebrity render cards."""
 
     WIKIMEDIA_USER_AGENT = (
-        "Y5E-Automation/1.0 "
-        "(https://github.com/devbanh2k3/y5e-automation; devbanh@example.com)"
+        "Y5E-AutomationBot/1.0 "
+        "(https://github.com/devbanh2k3/y5e-automation; contact: configure WIKIMEDIA_USER_AGENT)"
     )
 
     def __init__(self) -> None:
@@ -45,6 +49,37 @@ class RealImageAgent(BaseAgent):
     async def run(self, *args: Any, **kwargs: Any) -> dict[str, Any]:  # type: ignore[override]
         """Run the real image agent with explicit keyword arguments."""
         return await self.run_for_content_contract(*args, **kwargs)
+
+    def wikimedia_headers(self, *, accept: str | None = None) -> dict[str, str]:
+        """Build Wikimedia policy-aware headers for API and CDN requests."""
+        user_agent = os.getenv("WIKIMEDIA_USER_AGENT", self.WIKIMEDIA_USER_AGENT).strip()
+        contact_email = os.getenv("WIKIMEDIA_CONTACT_EMAIL", "").strip()
+        if "example.com" in user_agent.lower():
+            raise ValueError(
+                "WIKIMEDIA_USER_AGENT must not use placeholder contact; "
+                "set a real project URL or contact address"
+            )
+
+        headers = {
+            "User-Agent": user_agent,
+            "Api-User-Agent": user_agent,
+            "Accept-Encoding": "gzip",
+        }
+        if contact_email:
+            headers["From"] = contact_email
+        if accept:
+            headers["Accept"] = accept
+        return headers
+
+    @staticmethod
+    def wikimedia_search_queries(person_name: str) -> list[str]:
+        """Return strict Commons search queries from broad to disambiguated."""
+        cleaned_name = person_name.strip()
+        queries = [f"{cleaned_name} portrait"]
+        queries.extend(_QUERY_HINTS_BY_PERSON.get(cleaned_name.lower(), ()))
+        if cleaned_name.lower() not in _QUERY_HINTS_BY_PERSON:
+            queries.append(f"{cleaned_name} singer")
+        return list(dict.fromkeys(query for query in queries if query.strip()))
 
     async def run_for_content_contract(
         self,
@@ -106,39 +141,46 @@ class RealImageAgent(BaseAgent):
         person_name: str,
         expected_title: str,
     ) -> dict[str, Any] | None:
-        query = quote_plus(f"{person_name} portrait")
-        url = (
-            "https://commons.wikimedia.org/w/api.php"
-            f"?action=query&generator=search"
-            f"&gsrsearch={query}"
-            f"&gsrnamespace=6"
-            f"&gsrlimit=10"
-            f"&prop=imageinfo"
-            f"&iiprop=url|extmetadata"
-            f"&iiurlwidth=1200"
-            f"&format=json"
-        )
         async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT, follow_redirects=True) as client:
-            response = await client.get(url, headers={"User-Agent": self.WIKIMEDIA_USER_AGENT})
-            response.raise_for_status()
-            data = response.json()
-
-        pages = data.get("query", {}).get("pages", {})
-        for page in pages.values():
-            candidate = self.extract_wikimedia_candidate(person_name, page)
-            if candidate is None:
-                continue
-            try:
-                return await self._process_verified_candidate(
-                    topic_id=topic_id,
-                    scene_index=scene_index,
-                    person_name=person_name,
-                    expected_title=expected_title,
-                    candidate=candidate,
+            for search_query in self.wikimedia_search_queries(person_name):
+                query = quote_plus(search_query)
+                url = (
+                    "https://commons.wikimedia.org/w/api.php"
+                    f"?action=query&generator=search"
+                    f"&gsrsearch={query}"
+                    f"&gsrnamespace=6"
+                    f"&gsrlimit=10"
+                    f"&prop=imageinfo"
+                    f"&iiprop=url|extmetadata|mime|thumbmime"
+                    f"&iiurlwidth=1200"
+                    f"&format=json"
                 )
-            except Exception:
-                self.logger.exception("Failed to process verified image candidate for %s", person_name)
-                continue
+                response = await client.get(
+                    url,
+                    headers=self.wikimedia_headers(accept="application/json"),
+                )
+                response.raise_for_status()
+                data = response.json()
+
+                pages = data.get("query", {}).get("pages", {})
+                for page in pages.values():
+                    candidate = self.extract_wikimedia_candidate(person_name, page)
+                    if candidate is None:
+                        continue
+                    try:
+                        return await self._process_verified_candidate(
+                            topic_id=topic_id,
+                            scene_index=scene_index,
+                            person_name=person_name,
+                            expected_title=expected_title,
+                            candidate=candidate,
+                        )
+                    except Exception:
+                        self.logger.exception(
+                            "Failed to process verified image candidate for %s",
+                            person_name,
+                        )
+                        continue
         return None
 
     @staticmethod
@@ -263,6 +305,12 @@ class RealImageAgent(BaseAgent):
 
         if not image_url or not source_url:
             return None
+        mime = str(info.get("mime", "")).strip()
+        thumbmime = str(info.get("thumbmime", "")).strip()
+        if mime and not mime.lower().startswith("image/"):
+            return None
+        if thumbmime and not thumbmime.lower().startswith("image/"):
+            return None
         if not cls.is_allowed_license(license_text):
             return None
         identity = cls.evaluate_identity_match(person_name, metadata_text)
@@ -278,6 +326,8 @@ class RealImageAgent(BaseAgent):
             "license": license_text,
             "attribution": attribution or "Wikimedia Commons contributor",
             "metadata_text": metadata_text,
+            "mime": mime,
+            "thumbmime": thumbmime,
             "source_adapter": "commons_search_thumbnail",
             **identity,
             **content,
@@ -287,7 +337,9 @@ class RealImageAgent(BaseAgent):
         async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT, follow_redirects=True) as client:
             response = await client.get(
                 image_url,
-                headers={"User-Agent": self.WIKIMEDIA_USER_AGENT},
+                headers=self.wikimedia_headers(
+                    accept="image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8"
+                ),
             )
             response.raise_for_status()
             return response.content, response.headers.get("content-type", "")

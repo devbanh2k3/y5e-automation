@@ -4,6 +4,7 @@ from core.video_contract import (
     VideoContractError,
     build_content_contract_v2,
     build_video_data_from_content_contract,
+    validate_country_metadata,
     validate_content_contract_v2,
     validate_video_data,
 )
@@ -68,14 +69,18 @@ def test_build_video_data_from_content_contract_maps_scenes_to_cards():
         target_audience="Người xem Việt Nam",
         language="vi",
         scenes=[
-            {
-                "title": "Dấu ấn đầu tiên",
-                "voiceover": "Một hình ảnh rõ ràng giúp khán giả nhớ tới họ.",
-                "caption": "Dấu ấn",
-                "image_prompt": "spotlight portrait",
-                "statusText": "MỞ ĐẦU",
-            }
-        ],
+                {
+                    "title": "Dấu ấn đầu tiên",
+                    "voiceover": "Một hình ảnh rõ ràng giúp khán giả nhớ tới họ.",
+                    "caption": "Dấu ấn",
+                    "image_prompt": "spotlight portrait",
+                    "statusText": "MỞ ĐẦU",
+                    "countryCode": "US",
+                    "countryLabel": "UNITED STATES",
+                    "metricLabel": "NET WORTH",
+                    "metricValue": "550M USD",
+                }
+            ],
         thumbnail_prompt="celebrity thumbnail",
         youtube_title="Câu chuyện phía sau sự nổi tiếng",
         youtube_description="Phân tích nhanh.",
@@ -87,11 +92,28 @@ def test_build_video_data_from_content_contract_maps_scenes_to_cards():
     validate_video_data(video_data)
 
     assert video_data["title"] == "Câu chuyện phía sau sự nổi tiếng"
+    assert video_data["template"] == "timeline"
+    assert video_data["cardLayout"] == "classic"
     assert video_data["subtitle"] == "Sự nổi tiếng không chỉ đến từ may mắn."
-    assert video_data["cards"][0]["header"] == "SCENE 1"
+    assert video_data["cards"][0]["header"] == "TOP 1"
     assert video_data["cards"][0]["title"] == "Dấu ấn đầu tiên"
     assert video_data["cards"][0]["description"] == "Một hình ảnh rõ ràng giúp khán giả nhớ tới họ."
     assert video_data["cards"][0]["statusText"] == "MỞ ĐẦU"
+    assert video_data["cards"][0]["countryCode"] == "US"
+    assert video_data["cards"][0]["countryLabel"] == "UNITED STATES"
+    assert video_data["cards"][0]["metricLabel"] == "NET WORTH"
+    assert video_data["cards"][0]["metricValue"] == "550M USD"
+
+
+def test_validate_country_metadata_rejects_wrong_flag_label_pairing():
+    validate_country_metadata({"countryCode": "CA", "countryLabel": "CANADA"}, index=0)
+    validate_country_metadata({"countryCode": "JP", "countryLabel": "JAPAN"}, index=1)
+
+    with pytest.raises(VideoContractError, match="countryLabel must be CANADA"):
+        validate_country_metadata({"countryCode": "CA", "countryLabel": "UNITED STATES"}, index=0)
+
+    with pytest.raises(VideoContractError, match="countryCode is not supported"):
+        validate_country_metadata({"countryCode": "XX", "countryLabel": "UNKNOWN"}, index=0)
 
 
 def test_validate_content_contract_v2_rejects_empty_scenes():
