@@ -204,6 +204,40 @@ class Pipeline:
             )
             raise PipelineError(f"Pipeline failed: {exc}") from exc
 
+    async def run_smoke(
+        self,
+        *,
+        category: str,
+        language: str = "vi",
+        mode: str = "smoke",
+    ) -> dict[str, Any]:
+        """Return a no-side-effect pipeline summary for deployment validation."""
+        reason = f"{mode} mode"
+        steps = [
+            "topic",
+            "research",
+            "fact_check",
+            "script",
+            "assets",
+            "render",
+            "thumbnail",
+            "upload",
+        ]
+        return {
+            "mode": mode,
+            "category": category,
+            "language": language,
+            "steps": [
+                {"name": step, "status": "skipped", "reason": reason}
+                for step in steps
+            ],
+            "side_effects": {
+                "ai_calls": False,
+                "render": False,
+                "upload": False,
+            },
+        }
+
     # ── Analytics shortcut ───────────────────────────────────
 
     async def run_analytics(self) -> dict[str, Any]:
