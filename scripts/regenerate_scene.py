@@ -12,15 +12,26 @@ ROOT_DIR = Path(__file__).resolve().parents[1]
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
+from agents.pipeline import Pipeline
 from agents.real_image_agent import RealImageAgent
 from core.reviews import append_review_event, get_review, save_review, utc_now
+from core.video_contract import (
+    apply_verified_images_to_video_data,
+    build_video_data_from_content_contract,
+    validate_video_data,
+)
 
 
 def print_json(payload: Any) -> None:
     print(json.dumps(payload, ensure_ascii=False, indent=2))
 
 
-async def regenerate_wrong_image_scene(review_id: str, *, scene_index: int) -> dict[str, Any]:
+async def regenerate_wrong_image_scene(
+    review_id: str,
+    *,
+    scene_index: int,
+    rerender: bool = True,
+) -> dict[str, Any]:
     review = await get_review(review_id)
     content_contract = review.get("content_contract") or {}
     scenes = content_contract.get("scenes")
@@ -69,6 +80,36 @@ async def regenerate_wrong_image_scene(review_id: str, *, scene_index: int) -> d
         scenes=[scene_index],
         notes="regenerated wrong-image scene",
     )
+
+    if rerender:
+        video_data = build_video_data_from_content_contract(content_contract)
+        video_data = apply_verified_images_to_video_data(video_data, image_contract)
+        validate_video_data(video_data)
+        rerender_count = sum(
+            1 for event in review.get("review_events", []) if event.get("event") == "video_rerendered"
+        )
+        render_result = await Pipeline()._render_local_video(
+            topic_id=topic_id,
+            video_data=video_data,
+            output_filename=f"final_video_r{rerender_count + 2}.mp4",
+        )
+        review["status"] = "pending_review"
+        review["video"] = {
+            **(review.get("video") or {}),
+            "topic_id": topic_id,
+            "video_id": render_result["video_id"],
+            "file_path": render_result["file_path"],
+            "duration_sec": render_result.get("duration_sec", 0),
+            "status": render_result["status"],
+        }
+        append_review_event(
+            review,
+            event="video_rerendered",
+            reason="wrong_image",
+            scenes=[scene_index],
+            notes=f"rerendered video after regenerating scene {scene_index}",
+        )
+
     review["updated_at"] = utc_now()
     await save_review(review)
     return review
@@ -77,7 +118,13 @@ async def regenerate_wrong_image_scene(review_id: str, *, scene_index: int) -> d
 async def run(args: argparse.Namespace) -> int:
     if args.reason != "wrong_image":
         raise ValueError("only wrong_image regeneration is supported in this MVP")
-    print_json(await regenerate_wrong_image_scene(args.review_id, scene_index=args.scene))
+    print_json(
+        await regenerate_wrong_image_scene(
+            args.review_id,
+            scene_index=args.scene,
+            rerender=not args.no_rerender,
+        )
+    )
     return 0
 
 
@@ -86,6 +133,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("review_id")
     parser.add_argument("--scene", type=int, required=True)
     parser.add_argument("--reason", required=True)
+    parser.add_argument(
+        "--no-rerender",
+        action="store_true",
+        help="Regenerate image metadata only and skip MP4 rerender.",
+    )
     return parser
 
 

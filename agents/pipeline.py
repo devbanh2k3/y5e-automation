@@ -345,6 +345,7 @@ class Pipeline:
         *,
         topic_id: int,
         video_data: dict[str, Any],
+        output_filename: str = "final_video.mp4",
     ) -> dict[str, Any]:
         """Render a local MP4 with Remotion using deterministic fallback data."""
         settings = get_settings()
@@ -397,7 +398,7 @@ class Pipeline:
                 )
             )
 
-        output_path = topic_dir / "final_video.mp4"
+        output_path = topic_dir / output_filename
         props_json = json.dumps(video_data, ensure_ascii=False)
         composition_id = self._composition_id_for_template(str(video_data.get("template", "")))
         cmd = [
