@@ -278,6 +278,24 @@ Then inspect the result summary:
 curl http://localhost:8000/api/jobs/<job_id>
 ```
 
+### Local Render Mode
+
+Use local render mode to validate the Python-to-video contract and produce a local render artifact without publishing to YouTube.
+
+```bash
+curl -X POST http://localhost:8000/api/pipeline/start \
+  -H "Content-Type: application/json" \
+  -d '{"category": "Science", "language": "vi", "count": 1, "mode": "local_render"}'
+```
+
+Inspect the job result:
+
+```bash
+curl http://localhost:8000/api/jobs/<job_id>
+```
+
+The `result_summary` includes `file_path`, `duration_sec`, `topic_id`, `video_id`, and `fallback_used`.
+
 For production, set:
 
 ```env
