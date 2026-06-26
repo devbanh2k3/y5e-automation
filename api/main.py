@@ -25,6 +25,12 @@ from core.queue import (
     list_jobs,
     retry_failed_job,
 )
+from core.reviews import (
+    approve_review,
+    get_review,
+    list_reviews,
+    reject_review,
+)
 from core.cost_tracker import get_usage_summary
 from core.storage import get_storage_usage
 
@@ -83,6 +89,16 @@ class QueueStatsResponse(BaseModel):
     """Queue length and recent job status counts."""
     queues: dict[str, dict[str, int]]
     statuses: dict[str, int]
+
+
+class ReviewTransitionRequest(BaseModel):
+    """Optional notes for approve/reject review transitions."""
+    notes: str = ""
+
+
+class ReviewListResponse(BaseModel):
+    """Response for review listing."""
+    reviews: list[dict[str, Any]]
 
 
 class ChannelAnalyzeRequest(BaseModel):
@@ -251,6 +267,53 @@ async def queue_stats() -> QueueStatsResponse:
     """Return pending queue lengths and recent job status counts."""
     stats = await get_queue_stats(["pipeline", "channel_analysis"])
     return QueueStatsResponse(**stats)
+
+
+@app.get("/api/reviews", response_model=ReviewListResponse, tags=["Reviews"])
+async def list_review_items(
+    status: str | None = "pending_review",
+    limit: int = 50,
+) -> ReviewListResponse:
+    """Return render reviews, pending first by default."""
+    reviews = await list_reviews(status=status, limit=min(max(limit, 1), 100))
+    return ReviewListResponse(reviews=reviews)
+
+
+@app.get("/api/reviews/{review_id}", tags=["Reviews"])
+async def get_review_item(review_id: str) -> dict[str, Any]:
+    """Return a single review artifact."""
+    try:
+        return await get_review(review_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail=f"Review {review_id} not found.") from None
+
+
+@app.post("/api/reviews/{review_id}/approve", tags=["Reviews"])
+async def approve_review_item(
+    review_id: str,
+    body: ReviewTransitionRequest,
+) -> dict[str, Any]:
+    """Approve a pending review."""
+    try:
+        return await approve_review(review_id, notes=body.notes)
+    except KeyError:
+        raise HTTPException(status_code=404, detail=f"Review {review_id} not found.") from None
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from None
+
+
+@app.post("/api/reviews/{review_id}/reject", tags=["Reviews"])
+async def reject_review_item(
+    review_id: str,
+    body: ReviewTransitionRequest,
+) -> dict[str, Any]:
+    """Reject a pending review."""
+    try:
+        return await reject_review(review_id, reason=body.notes)
+    except KeyError:
+        raise HTTPException(status_code=404, detail=f"Review {review_id} not found.") from None
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from None
 
 
 @app.get("/api/pipeline/status/{topic_id}", tags=["Pipeline"])

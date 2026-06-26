@@ -71,20 +71,34 @@ async def test_run_local_render_uses_content_agent_for_celebrity(monkeypatch):
             "status": "rendered",
         }
 
+    async def fake_create_review(**kwargs):
+        captured["review_kwargs"] = kwargs
+        return {
+            "review_id": "review-123",
+            "status": "pending_review",
+        }
+
     monkeypatch.setattr(Pipeline, "_render_local_video", fake_render)
+    monkeypatch.setattr("agents.pipeline.create_review", fake_create_review)
 
     pipeline = Pipeline()
     result = await pipeline.run_local_render(category="Celebrity", language="vi")
 
     video_data = captured["video_data"]
     content_contract = video_data["content_contract"]
+    review_kwargs = captured["review_kwargs"]
 
     assert result["mode"] == "local_render"
     assert result["category"] == "Celebrity"
     assert result["fallback_used"] is False
+    assert result["review_id"] == "review-123"
+    assert result["review_status"] == "pending_review"
     assert result["content_contract"]["niche"] == "celebrity"
     assert result["youtube_title"] == content_contract["youtube_title"]
     assert "người nổi tiếng" in result["youtube_title"].lower()
+    assert review_kwargs["job_id"] == ""
+    assert review_kwargs["file_path"] == "/tmp/final_video.mp4"
+    assert review_kwargs["content_contract"] == content_contract
     assert video_data["cards"][0]["header"] == "SCENE 1"
 
 

@@ -19,6 +19,7 @@ from typing import Any
 from core import database as db
 from core.config import get_settings
 from core.notifier import notify, notify_error
+from core.reviews import create_review
 from core.video_contract import (
     build_local_render_video_data,
     build_video_data_from_content_contract,
@@ -283,6 +284,19 @@ class Pipeline:
             topic_id=topic_id,
             video_data=video_data,
         )
+        review: dict[str, Any] | None = None
+        if content_contract:
+            review = await create_review(
+                job_id="",
+                topic_id=topic_id,
+                video_id=render_result["video_id"],
+                file_path=render_result["file_path"],
+                content_contract=content_contract,
+                youtube_title=content_contract["youtube_title"],
+                youtube_description=content_contract["youtube_description"],
+                youtube_tags=content_contract["youtube_tags"],
+                thumbnail_prompt=content_contract["thumbnail_prompt"],
+            )
 
         return {
             "mode": "local_render",
@@ -294,6 +308,8 @@ class Pipeline:
             "duration_sec": render_result["duration_sec"],
             "status": render_result["status"],
             "fallback_used": fallback_used,
+            "review_id": review["review_id"] if review else "",
+            "review_status": review["status"] if review else "",
             "content_contract": content_contract,
             "youtube_title": content_contract["youtube_title"] if content_contract else "",
             "youtube_description": (

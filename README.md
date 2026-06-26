@@ -306,6 +306,29 @@ curl -X POST http://localhost:8000/api/pipeline/start \
 
 This path uses `ContentAgent` and `content_contract_v2` to produce scenes, voiceover text, thumbnail prompt, YouTube title, description, and tags before rendering.
 
+### Review Gate
+
+Celebrity local renders create a pending review artifact before any upload step is allowed.
+
+```bash
+curl http://localhost:8000/api/reviews
+curl http://localhost:8000/api/reviews/<review_id>
+```
+
+Approve or reject a pending review:
+
+```bash
+curl -X POST http://localhost:8000/api/reviews/<review_id>/approve \
+  -H "Content-Type: application/json" \
+  -d '{"notes": "ready to upload"}'
+
+curl -X POST http://localhost:8000/api/reviews/<review_id>/reject \
+  -H "Content-Type: application/json" \
+  -d '{"notes": "rewrite hook and thumbnail"}'
+```
+
+Review artifacts are stored under `output/reviews/` by default.
+
 For production, set:
 
 ```env
