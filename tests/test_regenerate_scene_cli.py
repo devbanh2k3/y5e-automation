@@ -1,4 +1,5 @@
 import pytest
+from pathlib import Path
 
 from core.config import get_settings
 from core.reviews import create_review, get_review
@@ -107,9 +108,12 @@ async def test_regenerate_wrong_image_scene_replaces_only_selected_item(
 
     class FakeRealImageAgent:
         async def run_for_content_contract(self, *, topic_id, content_contract, strict=True):
-            assert topic_id == 99
+            assert topic_id != 99
             assert strict is True
             assert content_contract["scenes"][0]["title"] == "#1 Old Two"
+            temp_path = regenerate_storage / "topics" / str(topic_id) / "images" / "real_0.webp"
+            temp_path.parent.mkdir(parents=True, exist_ok=True)
+            temp_path.write_bytes(b"new image")
             return {
                 "schema_version": "image_verification_contract_v1",
                 "topic_id": topic_id,
@@ -124,7 +128,7 @@ async def test_regenerate_wrong_image_scene_replaces_only_selected_item(
                         "expected_title": "#1 Old Two",
                         "status": "verified",
                         "confidence": 0.9,
-                        "local_path": "/tmp/new1.webp",
+                        "local_path": str(temp_path),
                         "render_image_path": "images/real_0.webp",
                         "source_url": "https://commons.wikimedia.org/wiki/File:New1.jpg",
                         "image_url": "https://upload.wikimedia.org/new1.jpg",
@@ -146,7 +150,12 @@ async def test_regenerate_wrong_image_scene_replaces_only_selected_item(
     items = updated["image_verification_contract"]["items"]
     assert items[0]["source_url"] == "https://commons.wikimedia.org/wiki/File:Old0.jpg"
     assert items[1]["scene_index"] == 1
+    assert items[1]["local_path"] == str(
+        regenerate_storage / "topics" / "99" / "images" / "real_1.webp"
+    )
+    assert items[1]["render_image_path"] == "images/real_1.webp"
     assert items[1]["source_url"] == "https://commons.wikimedia.org/wiki/File:New1.jpg"
+    assert Path(items[1]["local_path"]).read_bytes() == b"new image"
     assert updated["review_events"][-1]["event"] == "scene_regenerated"
     assert updated["review_events"][-1]["reason"] == "wrong_image"
     assert updated["review_events"][-1]["scenes"] == [1]
@@ -165,9 +174,12 @@ async def test_regenerate_wrong_image_scene_rerenders_updated_video(
 
     class FakeRealImageAgent:
         async def run_for_content_contract(self, *, topic_id, content_contract, strict=True):
-            assert topic_id == 99
+            assert topic_id != 99
             assert strict is True
             assert content_contract["scenes"][0]["title"] == "#1 Old Two"
+            temp_path = regenerate_storage / "topics" / str(topic_id) / "images" / "real_0.webp"
+            temp_path.parent.mkdir(parents=True, exist_ok=True)
+            temp_path.write_bytes(b"new image")
             return {
                 "schema_version": "image_verification_contract_v1",
                 "topic_id": topic_id,
@@ -182,8 +194,8 @@ async def test_regenerate_wrong_image_scene_rerenders_updated_video(
                         "expected_title": "#1 Old Two",
                         "status": "verified",
                         "confidence": 0.9,
-                        "local_path": "/tmp/new1.webp",
-                        "render_image_path": "images/real_1_new.webp",
+                        "local_path": str(temp_path),
+                        "render_image_path": "images/real_0.webp",
                         "source_url": "https://commons.wikimedia.org/wiki/File:New1.jpg",
                         "image_url": "https://upload.wikimedia.org/new1.jpg",
                         "license": "CC BY 2.0",
@@ -216,7 +228,7 @@ async def test_regenerate_wrong_image_scene_rerenders_updated_video(
     assert captured["topic_id"] == 99
     assert captured["output_filename"] == "final_video_r2.mp4"
     assert captured["video_data"]["cards"][0]["imagePath"] == "images/real_0.webp"
-    assert captured["video_data"]["cards"][1]["imagePath"] == "images/real_1_new.webp"
+    assert captured["video_data"]["cards"][1]["imagePath"] == "images/real_1.webp"
     assert updated["status"] == "pending_review"
     assert updated["video"]["video_id"] == 100
     assert updated["video"]["file_path"] == "/tmp/final_video_r2.mp4"
@@ -235,6 +247,9 @@ async def test_regenerate_wrong_image_scene_can_skip_rerender(
 
     class FakeRealImageAgent:
         async def run_for_content_contract(self, *, topic_id, content_contract, strict=True):
+            temp_path = regenerate_storage / "topics" / str(topic_id) / "images" / "real_0.webp"
+            temp_path.parent.mkdir(parents=True, exist_ok=True)
+            temp_path.write_bytes(b"new image")
             return {
                 "schema_version": "image_verification_contract_v1",
                 "topic_id": topic_id,
@@ -249,8 +264,8 @@ async def test_regenerate_wrong_image_scene_can_skip_rerender(
                         "expected_title": "#1 Old Two",
                         "status": "verified",
                         "confidence": 0.9,
-                        "local_path": "/tmp/new1.webp",
-                        "render_image_path": "images/real_1_new.webp",
+                        "local_path": str(temp_path),
+                        "render_image_path": "images/real_0.webp",
                         "source_url": "https://commons.wikimedia.org/wiki/File:New1.jpg",
                         "image_url": "https://upload.wikimedia.org/new1.jpg",
                         "license": "CC BY 2.0",

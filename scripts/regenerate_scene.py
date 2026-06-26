@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import shutil
 import sys
 from pathlib import Path
 from typing import Any
@@ -14,6 +15,7 @@ if str(ROOT_DIR) not in sys.path:
 
 from agents.pipeline import Pipeline
 from agents.real_image_agent import RealImageAgent
+from core.config import get_settings
 from core.reviews import append_review_event, get_review, save_review, utc_now
 from core.video_contract import (
     apply_verified_images_to_video_data,
@@ -24,6 +26,29 @@ from core.video_contract import (
 
 def print_json(payload: Any) -> None:
     print(json.dumps(payload, ensure_ascii=False, indent=2))
+
+
+def normalize_regenerated_image_item(
+    item: dict[str, Any],
+    *,
+    topic_id: int,
+    scene_index: int,
+) -> dict[str, Any]:
+    """Move a single-scene regenerated image into its original scene slot."""
+    source_path = Path(str(item.get("local_path", "")))
+    if not source_path.exists():
+        raise ValueError(f"regenerated image file does not exist: {source_path}")
+
+    target_path = get_settings().storage_dir / "topics" / str(topic_id) / "images" / f"real_{scene_index}.webp"
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+    if source_path.resolve() != target_path.resolve():
+        shutil.copy2(source_path, target_path)
+
+    normalized = dict(item)
+    normalized["scene_index"] = scene_index
+    normalized["local_path"] = str(target_path)
+    normalized["render_image_path"] = f"images/real_{scene_index}.webp"
+    return normalized
 
 
 async def regenerate_wrong_image_scene(
@@ -51,13 +76,17 @@ async def regenerate_wrong_image_scene(
 
     one_scene_contract = dict(content_contract)
     one_scene_contract["scenes"] = [scenes[scene_index]]
+    repair_topic_id = Pipeline._new_local_render_topic_id()
     regenerated = await RealImageAgent().run_for_content_contract(
-        topic_id=topic_id,
+        topic_id=repair_topic_id,
         content_contract=one_scene_contract,
         strict=True,
     )
-    regenerated_item = dict(regenerated["items"][0])
-    regenerated_item["scene_index"] = scene_index
+    regenerated_item = normalize_regenerated_image_item(
+        dict(regenerated["items"][0]),
+        topic_id=topic_id,
+        scene_index=scene_index,
+    )
 
     updated_items = [dict(item) for item in items]
     updated_items[scene_index] = regenerated_item
