@@ -34,13 +34,33 @@ class PipelineWorker:
     def request_stop(self) -> None:
         self._stop_requested = True
 
+    async def _fail_job(self, job_id: str, error: str) -> None:
+        await set_job_metadata(
+            job_id,
+            status=JobStatus.FAILED.value,
+            failed_at=utc_now(),
+            error=error[:500],
+            completed_at="",
+        )
+
+    @staticmethod
+    def _validate_data(data: Any) -> dict[str, Any]:
+        if not isinstance(data, dict):
+            raise ValueError("data must be an object")
+        if not str(data.get("category", "")).strip():
+            raise ValueError("category is required")
+        return data
+
     async def process(self, envelope: dict[str, Any] | None) -> None:
         if envelope is None:
             return
 
-        job_id = str(envelope["job_id"])
+        job_id = str(envelope.get("job_id", ""))
+        if not job_id:
+            logger.error("Dropping malformed envelope without job_id: %s", envelope)
+            return
+
         action = str(envelope.get("action", ""))
-        data = dict(envelope.get("data", {}))
         attempt = int(envelope.get("attempt", 0))
         max_attempts = int(envelope.get("max_attempts", 1))
         queue_name = str(envelope.get("queue", "pipeline"))
@@ -63,6 +83,12 @@ class PipelineWorker:
                 failed_at=utc_now(),
                 error=f"unsupported action: {action}",
             )
+            return
+
+        try:
+            data = self._validate_data(envelope.get("data"))
+        except ValueError as exc:
+            await self._fail_job(job_id, str(exc))
             return
 
         pipeline = self.pipeline_factory()

@@ -1,6 +1,7 @@
 import pytest
 
 from core import queue
+from core.job_models import JobAction, JobStatus
 from workers.pipeline_worker import PipelineWorker
 
 
@@ -79,3 +80,33 @@ async def test_worker_requeues_retry_with_preserved_identity(fake_redis):
     assert retry_envelope["job_id"] == job_id
     assert retry_envelope["attempt"] == 1
     assert retry_envelope["created_at"] == original_metadata["created_at"]
+
+
+@pytest.mark.asyncio
+async def test_worker_fails_job_with_missing_category(fake_redis):
+    job_id = await queue.enqueue(
+        "pipeline",
+        {"language": "vi"},
+        action=JobAction.RUN_PIPELINE,
+    )
+    envelope = await queue.dequeue("pipeline", timeout=0)
+    worker = PipelineWorker(pipeline_factory=lambda: object())
+
+    await worker.process(envelope)
+
+    metadata = await queue.get_job_metadata(job_id)
+    assert metadata["status"] == JobStatus.FAILED.value
+    assert "category is required" in metadata["error"]
+
+
+@pytest.mark.asyncio
+async def test_worker_does_not_crash_on_malformed_envelope(fake_redis):
+    worker = PipelineWorker(pipeline_factory=lambda: object())
+
+    await worker.process(
+        {"job_id": "manual-bad-job", "queue": "pipeline", "action": "run_pipeline"}
+    )
+
+    metadata = await queue.get_job_metadata("manual-bad-job")
+    assert metadata["status"] == JobStatus.FAILED.value
+    assert "data must be an object" in metadata["error"]
