@@ -62,6 +62,37 @@ async def test_run_local_render_validates_video_data_before_render(monkeypatch):
 async def test_run_local_render_uses_content_agent_for_celebrity(monkeypatch):
     captured: dict[str, object] = {}
 
+    class FakeRealImageAgent:
+        async def run_for_content_contract(self, *, topic_id, content_contract, strict=True):
+            captured["image_agent_topic_id"] = topic_id
+            captured["image_agent_content_contract"] = content_contract
+            captured["image_agent_strict"] = strict
+            return {
+                "schema_version": "image_verification_contract_v1",
+                "topic_id": topic_id,
+                "source_policy": "wikimedia_commons_strict",
+                "required_count": len(content_contract["scenes"]),
+                "verified_count": len(content_contract["scenes"]),
+                "status": "verified",
+                "items": [
+                    {
+                        "scene_index": index,
+                        "person_name": scene["title"].split(" ", 1)[1],
+                        "expected_title": scene["title"],
+                        "status": "verified",
+                        "confidence": 0.9,
+                        "local_path": f"/tmp/real_{index}.webp",
+                        "render_image_path": f"images/real_{index}.webp",
+                        "source_url": "https://commons.wikimedia.org/wiki/File:Example.jpg",
+                        "image_url": "https://upload.wikimedia.org/wikipedia/commons/example.jpg",
+                        "license": "CC BY-SA 4.0",
+                        "attribution": "Example photographer",
+                        "reject_reason": "",
+                    }
+                    for index, scene in enumerate(content_contract["scenes"])
+                ],
+            }
+
     async def fake_render(self, *, topic_id, video_data):
         captured["video_data"] = video_data
         return {
@@ -80,6 +111,7 @@ async def test_run_local_render_uses_content_agent_for_celebrity(monkeypatch):
 
     monkeypatch.setattr(Pipeline, "_render_local_video", fake_render)
     monkeypatch.setattr("agents.pipeline.create_review", fake_create_review)
+    monkeypatch.setattr("agents.pipeline.RealImageAgent", FakeRealImageAgent)
 
     pipeline = Pipeline()
     result = await pipeline.run_local_render(category="Celebrity", language="vi")
@@ -87,6 +119,7 @@ async def test_run_local_render_uses_content_agent_for_celebrity(monkeypatch):
     video_data = captured["video_data"]
     content_contract = video_data["content_contract"]
     review_kwargs = captured["review_kwargs"]
+    image_contract = video_data["image_verification_contract"]
 
     assert result["mode"] == "local_render"
     assert result["category"] == "Celebrity"
@@ -96,11 +129,18 @@ async def test_run_local_render_uses_content_agent_for_celebrity(monkeypatch):
     assert result["content_contract"]["niche"] == "celebrity"
     assert result["youtube_title"] == content_contract["youtube_title"]
     assert "người nổi tiếng" in result["youtube_title"].lower()
+    assert captured["image_agent_topic_id"] == 1
+    assert captured["image_agent_content_contract"] == content_contract
+    assert captured["image_agent_strict"] is True
+    assert image_contract["status"] == "verified"
     assert review_kwargs["job_id"] == ""
     assert review_kwargs["file_path"] == "/tmp/final_video.mp4"
     assert review_kwargs["content_contract"] == content_contract
+    assert review_kwargs["image_verification_contract"] == image_contract
+    assert result["image_verification_contract"] == image_contract
     assert video_data["template"] == "timeline"
     assert video_data["cards"][0]["header"] == "SCENE 1"
+    assert video_data["cards"][0]["imagePath"] == "images/real_0.webp"
     assert video_data["cards"][0]["statusText"].startswith("#10")
 
 

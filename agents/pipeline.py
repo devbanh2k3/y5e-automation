@@ -16,11 +16,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from agents.real_image_agent import RealImageAgent
 from core import database as db
 from core.config import get_settings
 from core.notifier import notify, notify_error
 from core.reviews import create_review
 from core.video_contract import (
+    apply_verified_images_to_video_data,
     build_local_render_video_data,
     build_video_data_from_content_contract,
     validate_video_data,
@@ -258,6 +260,7 @@ class Pipeline:
         """Create a local render artifact using explicit fallback content."""
         resolved_category = category.strip() or "Local"
         content_contract: dict[str, Any] | None = None
+        image_verification_contract: dict[str, Any] | None = None
         fallback_used = True
 
         if resolved_category.lower() in {"celebrity", "nguoi_noi_tieng", "người nổi tiếng"}:
@@ -269,6 +272,15 @@ class Pipeline:
                 subject="người nổi tiếng",
             )
             video_data = build_video_data_from_content_contract(content_contract)
+            image_verification_contract = await RealImageAgent().run_for_content_contract(
+                topic_id=1,
+                content_contract=content_contract,
+                strict=True,
+            )
+            video_data = apply_verified_images_to_video_data(
+                video_data,
+                image_verification_contract,
+            )
             fallback_used = False
         else:
             title = f"{resolved_category} Local Render Validation"
@@ -292,6 +304,7 @@ class Pipeline:
                 video_id=render_result["video_id"],
                 file_path=render_result["file_path"],
                 content_contract=content_contract,
+                image_verification_contract=image_verification_contract,
                 youtube_title=content_contract["youtube_title"],
                 youtube_description=content_contract["youtube_description"],
                 youtube_tags=content_contract["youtube_tags"],
@@ -317,6 +330,7 @@ class Pipeline:
             ),
             "youtube_tags": content_contract["youtube_tags"] if content_contract else [],
             "thumbnail_prompt": content_contract["thumbnail_prompt"] if content_contract else "",
+            "image_verification_contract": image_verification_contract,
         }
 
     async def _render_local_video(
