@@ -100,3 +100,48 @@ async def test_reject_review_blocks_later_approval(review_storage):
 
     with pytest.raises(ValueError, match="review is not pending"):
         await approve_review(review["review_id"])
+
+
+@pytest.mark.asyncio
+async def test_create_review_persists_image_verification_contract(review_storage):
+    image_contract = {
+        "schema_version": "image_verification_contract_v1",
+        "topic_id": 1,
+        "source_policy": "wikimedia_commons_strict",
+        "required_count": 1,
+        "verified_count": 1,
+        "status": "verified",
+        "items": [
+            {
+                "scene_index": 0,
+                "person_name": "Celine Dion",
+                "expected_title": "#10 Celine Dion",
+                "status": "verified",
+                "confidence": 0.9,
+                "local_path": "/tmp/real_0.webp",
+                "render_image_path": "images/real_0.webp",
+                "source_url": "https://commons.wikimedia.org/wiki/File:Celine_Dion.jpg",
+                "image_url": "https://upload.wikimedia.org/wikipedia/commons/celine.jpg",
+                "license": "CC BY-SA 4.0",
+                "attribution": "Example photographer",
+                "reject_reason": "",
+            }
+        ],
+    }
+
+    review = await create_review(
+        job_id="job-123",
+        topic_id=1,
+        video_id=2,
+        file_path="/tmp/final_video.mp4",
+        content_contract={"schema_version": "content_contract_v2", "title": "Video"},
+        image_verification_contract=image_contract,
+        youtube_title="YouTube title",
+        youtube_description="Description",
+        youtube_tags=["celebrity"],
+        thumbnail_prompt="thumbnail prompt",
+    )
+
+    loaded = await get_review(review["review_id"])
+
+    assert loaded["image_verification_contract"] == image_contract

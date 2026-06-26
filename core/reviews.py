@@ -44,6 +44,7 @@ async def create_review(
     video_id: int,
     file_path: str,
     content_contract: dict[str, Any] | None,
+    image_verification_contract: dict[str, Any] | None = None,
     youtube_title: str,
     youtube_description: str,
     youtube_tags: list[str],
@@ -62,6 +63,7 @@ async def create_review(
             "file_path": file_path,
         },
         "content_contract": content_contract or {},
+        "image_verification_contract": image_verification_contract or {},
         "youtube": {
             "title": youtube_title,
             "description": youtube_description,
