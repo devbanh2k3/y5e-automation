@@ -26,6 +26,7 @@ class ContentAgent(BaseAgent):
         niche: str,
         language: str = "vi",
         subject: str = "người nổi tiếng",
+        card_layout: str = "split_data",
     ) -> dict[str, Any]:
         """Return a complete content contract for the requested niche."""
         normalized_niche = niche.strip().lower() or "celebrity"
@@ -45,6 +46,7 @@ class ContentAgent(BaseAgent):
         contract = await self._build_ai_celebrity_contract(
             language=language,
             subject=subject,
+            card_layout=card_layout,
         )
         validate_content_contract_v2(contract)
         return contract
@@ -54,6 +56,7 @@ class ContentAgent(BaseAgent):
         *,
         language: str,
         subject: str,
+        card_layout: str,
     ) -> dict[str, Any]:
         try:
             topic = await self._generate_celebrity_topic(language=language, subject=subject)
@@ -61,12 +64,17 @@ class ContentAgent(BaseAgent):
                 language=language,
                 subject=subject,
                 topic=topic,
+                card_layout=card_layout,
             )
             validate_content_contract_v2(contract)
             return contract
         except Exception as exc:
             self.logger.warning("Falling back to seeded celebrity contract: %s", exc)
-            return self._build_celebrity_contract(language=language, subject=subject)
+            return self._build_celebrity_contract(
+                language=language,
+                subject=subject,
+                card_layout=card_layout,
+            )
 
     async def _generate_celebrity_topic(
         self,
@@ -120,6 +128,7 @@ Return JSON only:
         language: str,
         subject: str,
         topic: dict[str, Any],
+        card_layout: str,
     ) -> dict[str, Any]:
         prompt = f"""Create a complete content_contract_v2 payload for a Celebrity data-comparison video.
 
@@ -176,6 +185,7 @@ Return JSON only with this shape:
             raw_contract=raw_contract,
             language=language,
             topic=topic,
+            card_layout=card_layout,
         )
 
     @staticmethod
@@ -184,6 +194,7 @@ Return JSON only with this shape:
         raw_contract: dict[str, Any],
         language: str,
         topic: dict[str, Any],
+        card_layout: str,
     ) -> dict[str, Any]:
         scenes = raw_contract.get("scenes")
         if not isinstance(scenes, list) or not scenes:
@@ -241,6 +252,7 @@ Return JSON only with this shape:
             youtube_description=str(raw_contract.get("youtube_description", "")).strip(),
             youtube_tags=youtube_tags,
             duration_target=60,
+            cardLayout=card_layout,
         )
 
     @staticmethod
@@ -320,7 +332,12 @@ Return JSON only with this shape:
         )
 
     @staticmethod
-    def _build_celebrity_contract(*, language: str, subject: str) -> dict[str, Any]:
+    def _build_celebrity_contract(
+        *,
+        language: str,
+        subject: str,
+        card_layout: str = "split_data",
+    ) -> dict[str, Any]:
         safe_subject = subject.strip() or "người nổi tiếng"
         title = "Top 10 ca sĩ giàu nhất thế giới năm 2026"
         hook = "Data comparison theo estimated net worth, dùng số liệu ước tính công khai."
@@ -457,4 +474,5 @@ Return JSON only with this shape:
                 "thong ke so sanh",
             ],
             duration_target=60,
+            cardLayout=card_layout,
         )

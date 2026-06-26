@@ -61,8 +61,17 @@ def build_next_commands(review_id: str) -> dict[str, str]:
     }
 
 
-async def produce(*, language: str, write_files: bool = True) -> dict[str, Any]:
-    result = await Pipeline().run_local_render(category="Celebrity", language=language)
+async def produce(
+    *,
+    language: str,
+    card_layout: str = "split_data",
+    write_files: bool = True,
+) -> dict[str, Any]:
+    result = await Pipeline().run_local_render(
+        category="Celebrity",
+        language=language,
+        card_layout=card_layout,
+    )
     if result.get("review_status") != "pending_review":
         raise RuntimeError(f"expected pending_review, got {result.get('review_status')}")
 
@@ -78,6 +87,7 @@ async def produce(*, language: str, write_files: bool = True) -> dict[str, Any]:
         "review_id": review_id,
         "topic_id": result["topic_id"],
         "video_path": str(Path(str(result["file_path"])).resolve()),
+        "card_layout": card_layout,
         "youtube_title": result.get("youtube_title", ""),
         "artifacts": artifacts,
         "next_commands": build_next_commands(review_id),
@@ -87,6 +97,12 @@ async def produce(*, language: str, write_files: bool = True) -> dict[str, Any]:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--language", default="vi")
+    parser.add_argument(
+        "--card-layout",
+        choices=["split_data", "flag_hero", "classic"],
+        default="split_data",
+        help="Card layout inside the existing timeline template.",
+    )
     parser.add_argument(
         "--no-write-artifacts",
         action="store_true",
@@ -100,6 +116,7 @@ def main() -> int:
     result = asyncio.run(
         produce(
             language=args.language,
+            card_layout=args.card_layout,
             write_files=not args.no_write_artifacts,
         )
     )

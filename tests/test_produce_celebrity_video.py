@@ -15,6 +15,8 @@ def test_produce_celebrity_video_script_exists_and_targets_local_render_flow():
     assert "run_local_render" in source
     assert "pending_review" in source
     assert "review_video.py show" in source
+    assert 'card_layout: str = "split_data"' in source
+    assert "card_layout=card_layout" in source
 
 
 def test_write_artifacts_persists_review_contracts_next_to_video(tmp_path):
@@ -51,4 +53,5 @@ def test_cli_help_describes_review_output_command():
     )
 
     assert "--language" in result.stdout
+    assert "--card-layout" in result.stdout
     assert "--no-write-artifacts" in result.stdout

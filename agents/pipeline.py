@@ -258,6 +258,7 @@ class Pipeline:
         *,
         category: str,
         language: str = "vi",
+        card_layout: str = "split_data",
     ) -> dict[str, Any]:
         """Create a local render artifact using explicit fallback content."""
         resolved_category = category.strip() or "Local"
@@ -273,6 +274,7 @@ class Pipeline:
                 niche="celebrity",
                 language=language,
                 subject="người nổi tiếng",
+                card_layout=card_layout,
             )
             video_data = build_video_data_from_content_contract(content_contract)
             image_verification_contract = await RealImageAgent().run_for_content_contract(
