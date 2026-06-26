@@ -23,6 +23,7 @@ async def test_content_agent_builds_seeded_celebrity_mvp_contract(monkeypatch):
 
     assert contract["niche"] == "celebrity"
     assert contract["language"] == "vi"
+    assert contract["cardLayout"] == "split_data"
     assert "top 10" in contract["title"].lower()
     assert "giàu nhất" in contract["title"].lower()
     assert "estimated net worth" in contract["hook"].lower()
@@ -34,6 +35,7 @@ async def test_content_agent_builds_seeded_celebrity_mvp_contract(monkeypatch):
     assert "nguoi noi tieng" in contract["youtube_tags"]
     assert all(scene["image_prompt"] for scene in contract["scenes"])
     assert all(scene["voiceover"] for scene in contract["scenes"])
+    assert "Madonna" not in {scene["title"].split(" ", 1)[1] for scene in contract["scenes"]}
     assert contract["scenes"][0]["statusText"].startswith("#10")
     assert contract["scenes"][-1]["statusText"].startswith("#1")
     assert contract["scenes"][0]["countryCode"] == "CA"

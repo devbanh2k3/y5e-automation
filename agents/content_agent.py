@@ -380,9 +380,9 @@ Return JSON only with this shape:
             ),
             (
                 6,
-                "Madonna",
-                850,
-                "tour diễn, catalog pop và thương hiệu biểu diễn nhiều thập kỷ",
+                "Lady Gaga",
+                900,
+                "âm nhạc, diễn xuất, touring và thương hiệu giải trí toàn cầu",
                 "US",
                 "UNITED STATES",
             ),
