@@ -12,6 +12,7 @@ class FakeRedis:
     def __init__(self) -> None:
         self.lists: dict[str, deque[str]] = defaultdict(deque)
         self.hashes: dict[str, dict[str, str]] = defaultdict(dict)
+        self.sorted_sets: dict[str, dict[str, float]] = defaultdict(dict)
         self.closed = False
 
     async def ping(self) -> bool:
@@ -65,6 +66,27 @@ class FakeRedis:
 
     async def llen(self, key: str) -> int:
         return len(self.lists[key])
+
+    async def zadd(self, key: str, mapping: dict[str, float]) -> int:
+        target = self.sorted_sets[key]
+        updated = 0
+        for member, score in mapping.items():
+            if member not in target:
+                updated += 1
+            target[member] = score
+        return updated
+
+    async def zrevrange(self, key: str, start: int, end: int) -> list[str]:
+        items = sorted(
+            self.sorted_sets[key].items(),
+            key=lambda item: item[1],
+            reverse=True,
+        )
+        if end == -1:
+            sliced = items[start:]
+        else:
+            sliced = items[start : end + 1]
+        return [member for member, _score in sliced]
 
     async def aclose(self) -> None:
         self.closed = True

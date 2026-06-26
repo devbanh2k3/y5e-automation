@@ -28,6 +28,7 @@ def test_build_job_metadata_has_required_fields():
         "completed_at",
         "failed_at",
         "error",
+        "envelope_json",
     }
     assert metadata["job_id"] == "job-1"
     assert metadata["queue"] == "pipeline"
@@ -40,6 +41,7 @@ def test_build_job_metadata_has_required_fields():
     assert metadata["completed_at"] == ""
     assert metadata["failed_at"] == ""
     assert metadata["error"] == ""
+    assert metadata["envelope_json"] == ""
 
 
 @pytest.mark.asyncio
@@ -66,6 +68,7 @@ async def test_enqueue_stores_structured_job_envelope_and_metadata(fake_redis):
 
     assert fake_redis.hashes[f"job:{job_id}"]["status"] == "queued"
     assert fake_redis.hashes[f"job:{job_id}"]["action"] == "run_pipeline"
+    assert fake_redis.hashes[f"job:{job_id}"]["envelope_json"] == raw_envelope
 
 
 @pytest.mark.asyncio
@@ -143,3 +146,89 @@ async def test_requeue_preserves_original_envelope_fields_without_rewriting_meta
     assert retry_envelope["attempt"] == 1
     assert retry_envelope["created_at"] == envelope["created_at"]
     assert updated_metadata == original_metadata | {"status": "processing"}
+
+
+@pytest.mark.asyncio
+async def test_enqueue_indexes_job_for_recent_listing(fake_redis):
+    job_id = await queue.enqueue(
+        "pipeline",
+        {"category": "science", "language": "vi"},
+        action=JobAction.RUN_PIPELINE,
+    )
+
+    jobs = await queue.list_jobs(limit=10)
+
+    assert [job["job_id"] for job in jobs] == [job_id]
+    assert jobs[0]["queue"] == "pipeline"
+    assert jobs[0]["status"] == JobStatus.QUEUED.value
+
+
+@pytest.mark.asyncio
+async def test_list_jobs_filters_by_status_and_queue(fake_redis):
+    failed_id = await queue.enqueue(
+        "pipeline",
+        {"category": "science"},
+        action=JobAction.RUN_PIPELINE,
+    )
+    completed_id = await queue.enqueue(
+        "channel_analysis",
+        {"channel_url": "https://youtube.com/@x"},
+        action=JobAction.CHANNEL_ANALYSIS,
+    )
+    await queue.set_job_metadata(failed_id, status=JobStatus.FAILED.value)
+    await queue.set_job_metadata(completed_id, status=JobStatus.COMPLETED.value)
+
+    jobs = await queue.list_jobs(
+        status=JobStatus.FAILED.value,
+        queue="pipeline",
+        limit=10,
+    )
+
+    assert len(jobs) == 1
+    assert jobs[0]["job_id"] == failed_id
+
+
+@pytest.mark.asyncio
+async def test_retry_failed_job_requeues_original_envelope(fake_redis):
+    job_id = await queue.enqueue(
+        "pipeline",
+        {"category": "science", "language": "vi"},
+        action=JobAction.RUN_PIPELINE,
+        max_attempts=3,
+    )
+    await queue.dequeue("pipeline")
+    await queue.set_job_metadata(job_id, status=JobStatus.FAILED.value, error="boom")
+
+    retry_job_id = await queue.retry_failed_job(job_id)
+
+    metadata = await queue.get_job_metadata(retry_job_id)
+    assert retry_job_id == job_id
+    assert metadata["status"] == JobStatus.QUEUED.value
+    assert metadata["attempt"] == "1"
+    assert metadata["error"] == ""
+    queued_raw = await fake_redis.rpop("queue:pipeline")
+    envelope = json.loads(queued_raw)
+    assert envelope["job_id"] == job_id
+    assert envelope["attempt"] == 1
+    assert envelope["data"]["category"] == "science"
+
+
+@pytest.mark.asyncio
+async def test_get_queue_stats_counts_lengths_and_statuses(fake_redis):
+    failed_id = await queue.enqueue(
+        "pipeline",
+        {"category": "science"},
+        action=JobAction.RUN_PIPELINE,
+    )
+    await queue.enqueue(
+        "pipeline",
+        {"category": "history"},
+        action=JobAction.RUN_PIPELINE,
+    )
+    await queue.set_job_metadata(failed_id, status=JobStatus.FAILED.value)
+
+    stats = await queue.get_queue_stats(["pipeline"])
+
+    assert stats["queues"]["pipeline"]["pending"] == 2
+    assert stats["statuses"][JobStatus.FAILED.value] == 1
+    assert stats["statuses"][JobStatus.QUEUED.value] == 1

@@ -16,6 +16,8 @@ from core.job_models import JobAction, build_job_metadata
 logger = logging.getLogger(__name__)
 
 _redis: aioredis.Redis | None = None
+RECENT_JOBS_KEY = "jobs:recent"
+DEFAULT_JOB_LIST_LIMIT = 50
 
 
 async def init_queue() -> aioredis.Redis:
@@ -83,7 +85,13 @@ async def enqueue(
         "created_at": created_at,
     }
 
-    await r.lpush(f"queue:{queue_name}", json.dumps(envelope))
+    serialized_envelope = json.dumps(envelope)
+
+    await r.lpush(f"queue:{queue_name}", serialized_envelope)
+    await r.zadd(
+        RECENT_JOBS_KEY,
+        {resolved_job_id: datetime.fromisoformat(created_at).timestamp()},
+    )
     await r.hset(
         f"job:{resolved_job_id}",
         mapping=build_job_metadata(
@@ -93,6 +101,7 @@ async def enqueue(
             attempt=attempt,
             max_attempts=max_attempts,
             created_at=created_at,
+            envelope_json=serialized_envelope,
         ),
     )
 
@@ -197,6 +206,79 @@ async def get_queue_length(queue_name: str) -> int:
     """Return the number of pending jobs in a queue."""
     r = await get_redis()
     return await r.llen(f"queue:{queue_name}")
+
+
+async def list_jobs(
+    *,
+    status: str | None = None,
+    queue: str | None = None,
+    limit: int = DEFAULT_JOB_LIST_LIMIT,
+) -> list[dict[str, str]]:
+    """Return recent jobs from the Redis job index."""
+    r = await get_redis()
+    bounded_limit = max(1, limit)
+    job_ids = await r.zrevrange(RECENT_JOBS_KEY, 0, max(bounded_limit * 5, bounded_limit) - 1)
+    jobs: list[dict[str, str]] = []
+
+    for job_id in job_ids:
+        metadata = await get_job_metadata(str(job_id))
+        if not metadata:
+            continue
+        if status and metadata.get("status") != status:
+            continue
+        if queue and metadata.get("queue") != queue:
+            continue
+        jobs.append(metadata)
+        if len(jobs) >= bounded_limit:
+            break
+
+    return jobs
+
+
+async def retry_failed_job(job_id: str) -> str:
+    """Requeue a failed job using its stored original envelope."""
+    metadata = await get_job_metadata(job_id)
+    if not metadata:
+        raise KeyError(job_id)
+    if metadata.get("status") != "failed":
+        raise ValueError("job is not failed")
+
+    envelope_json = metadata.get("envelope_json", "")
+    if not envelope_json:
+        raise ValueError("job has no retry envelope")
+
+    envelope = json.loads(envelope_json)
+    next_attempt = int(metadata.get("attempt", "0")) + 1
+    envelope["attempt"] = next_attempt
+    queue_name = str(envelope["queue"])
+    serialized_envelope = json.dumps(envelope)
+
+    r = await get_redis()
+    await r.lpush(f"queue:{queue_name}", serialized_envelope)
+    await set_job_metadata(
+        job_id,
+        status="queued",
+        attempt=str(next_attempt),
+        error="",
+        failed_at="",
+        completed_at="",
+        envelope_json=serialized_envelope,
+    )
+    return job_id
+
+
+async def get_queue_stats(queue_names: list[str]) -> dict[str, Any]:
+    """Return queue lengths and recent job status counts."""
+    statuses: dict[str, int] = {}
+    for job in await list_jobs(limit=500):
+        job_status = job.get("status", "unknown")
+        statuses[job_status] = statuses.get(job_status, 0) + 1
+
+    queues: dict[str, dict[str, int]] = {}
+    for queue_name in queue_names:
+        queues[queue_name] = {"pending": await get_queue_length(queue_name)}
+
+    return {"queues": queues, "statuses": statuses}
 
 
 async def close_queue() -> None:

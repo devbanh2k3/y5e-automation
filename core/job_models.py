@@ -11,6 +11,7 @@ class JobAction(StrEnum):
 class JobStatus(StrEnum):
     QUEUED = "queued"
     PROCESSING = "processing"
+    RETRYING = "retrying"
     COMPLETED = "completed"
     FAILED = "failed"
 
@@ -27,6 +28,7 @@ def build_job_metadata(
     completed_at: str = "",
     failed_at: str = "",
     error: str = "",
+    envelope_json: str = "",
 ) -> dict[str, str]:
     return {
         "job_id": job_id,
@@ -40,4 +42,5 @@ def build_job_metadata(
         "completed_at": completed_at,
         "failed_at": failed_at,
         "error": error,
+        "envelope_json": envelope_json,
     }
