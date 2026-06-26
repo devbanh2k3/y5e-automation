@@ -18,10 +18,17 @@ def test_build_local_render_video_data_returns_valid_payload():
 
     assert payload["template"] == "timeline"
     assert payload["title"] == "Amazing Science Facts"
+    assert payload["subtitle"] == "Science"
     assert payload["language"] == "vi"
     assert payload["musicPath"] == ""
+    assert payload["sfxPaths"] == {"transition": "", "alert": "", "reveal": ""}
+    assert payload["logoPath"] == "images/local-logo.svg"
+    assert payload["holdDurationFrames"] == 120
+    assert payload["transitionDurationFrames"] == 15
     assert len(payload["cards"]) >= 3
-    assert payload["cards"][0]["title"]
+    assert payload["cards"][0]["header"] == "LOCAL 1"
+    assert payload["cards"][0]["title"] == "Amazing Science Facts"
+    assert payload["cards"][0]["statusText"] == "FALLBACK"
 
 
 def test_validate_video_data_rejects_missing_required_fields():

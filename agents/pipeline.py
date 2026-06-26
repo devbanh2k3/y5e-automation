@@ -13,6 +13,7 @@ import json
 import logging
 import traceback
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 from core import database as db
@@ -21,6 +22,8 @@ from core.notifier import notify, notify_error
 from core.video_contract import build_local_render_video_data, validate_video_data
 
 logger = logging.getLogger(__name__)
+
+_LOCAL_RENDER_TIMEOUT_SEC = 600
 
 
 class PipelineError(Exception):
@@ -281,7 +284,7 @@ class Pipeline:
         topic_id: int,
         video_data: dict[str, Any],
     ) -> dict[str, Any]:
-        """Write a deterministic local render placeholder artifact."""
+        """Render a local MP4 with Remotion using deterministic fallback data."""
         settings = get_settings()
         topic_dir = settings.storage_dir / "topics" / str(topic_id)
         topic_dir.mkdir(parents=True, exist_ok=True)
@@ -289,8 +292,82 @@ class Pipeline:
         data_path = topic_dir / "video_data.json"
         data_path.write_text(json.dumps(video_data, ensure_ascii=False, indent=2))
 
+        project_root = Path(__file__).resolve().parent.parent
+        video_engine_dir = project_root / "video_engine"
+        public_dir = video_engine_dir / "public"
+        images_dir = public_dir / "images"
+        images_dir.mkdir(parents=True, exist_ok=True)
+
+        public_data_path = public_dir / "video_data.json"
+        public_data_path.write_text(json.dumps(video_data, ensure_ascii=False, indent=2))
+
+        placeholder_path = images_dir / "local-placeholder.svg"
+        if not placeholder_path.exists():
+            placeholder_path.write_text(
+                "\n".join(
+                    [
+                        '<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="800" viewBox="0 0 1200 800">',
+                        '<rect width="1200" height="800" fill="#111111"/>',
+                        '<rect x="48" y="48" width="1104" height="704" fill="#20242c" stroke="#e52d27" stroke-width="16"/>',
+                        '<text x="600" y="370" text-anchor="middle" fill="#ffffff" font-family="Arial, sans-serif" font-size="72" font-weight="700">LOCAL RENDER</text>',
+                        '<text x="600" y="460" text-anchor="middle" fill="#e52d27" font-family="Arial, sans-serif" font-size="40" font-weight="700">Y5E AUTOMATION</text>',
+                        "</svg>",
+                    ]
+                )
+            )
+
+        logo_path = images_dir / "local-logo.svg"
+        if not logo_path.exists():
+            logo_path.write_text(
+                "\n".join(
+                    [
+                        '<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">',
+                        '<rect width="512" height="512" rx="96" fill="#e52d27"/>',
+                        '<path d="M192 150v212l168-106z" fill="#ffffff"/>',
+                        '<text x="256" y="438" text-anchor="middle" fill="#ffffff" font-family="Arial, sans-serif" font-size="52" font-weight="900">Y5E</text>',
+                        "</svg>",
+                    ]
+                )
+            )
+
         output_path = topic_dir / "final_video.mp4"
-        output_path.write_bytes(b"local render placeholder\n")
+        props_json = json.dumps(video_data, ensure_ascii=False)
+        cmd = [
+            "npx",
+            "remotion",
+            "render",
+            "src/index.tsx",
+            "TimelineVideo",
+            str(output_path),
+            f"--props={props_json}",
+            "--codec=h264",
+            "--crf=20",
+        ]
+
+        process = await asyncio.create_subprocess_exec(
+            *cmd,
+            cwd=str(video_engine_dir),
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+
+        try:
+            _stdout, stderr = await asyncio.wait_for(
+                process.communicate(),
+                timeout=_LOCAL_RENDER_TIMEOUT_SEC,
+            )
+        except asyncio.TimeoutError:
+            process.kill()
+            await process.wait()
+            raise RuntimeError(
+                f"Local Remotion render timed out after {_LOCAL_RENDER_TIMEOUT_SEC}s"
+            )
+
+        if process.returncode != 0:
+            stderr_text = stderr.decode(errors="replace")[:2000]
+            raise RuntimeError(
+                f"Local Remotion render failed (exit {process.returncode}): {stderr_text}"
+            )
 
         return {
             "video_id": topic_id,

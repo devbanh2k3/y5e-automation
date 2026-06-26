@@ -9,6 +9,9 @@ import { ComparisonVideo } from "./compositions/ComparisonVideo";
 const FPS = 30;
 const WIDTH = 1920;
 const HEIGHT = 1080;
+const TimelineVideoComponent = TimelineVideo as unknown as React.FC<Record<string, unknown>>;
+const RankingVideoComponent = RankingVideo as unknown as React.FC<Record<string, unknown>>;
+const ComparisonVideoComponent = ComparisonVideo as unknown as React.FC<Record<string, unknown>>;
 
 /**
  * Default props for studio preview.
@@ -77,15 +80,16 @@ export const RemotionRoot: React.FC = () => {
     <>
       <Composition
         id="TimelineVideo"
-        component={TimelineVideo}
+        component={TimelineVideoComponent}
         durationInFrames={calculateTotalDuration(defaultProps)}
         fps={FPS}
         width={WIDTH}
         height={HEIGHT}
         defaultProps={defaultProps}
         calculateMetadata={async ({ props }) => {
+          const videoProps = props as unknown as VideoData;
           return {
-            durationInFrames: calculateTotalDuration(props),
+            durationInFrames: calculateTotalDuration(videoProps),
             fps: FPS,
             width: WIDTH,
             height: HEIGHT,
@@ -95,15 +99,16 @@ export const RemotionRoot: React.FC = () => {
 
       <Composition
         id="RankingVideo"
-        component={RankingVideo}
+        component={RankingVideoComponent}
         durationInFrames={calculateTotalDuration(defaultProps)}
         fps={FPS}
         width={WIDTH}
         height={HEIGHT}
         defaultProps={{ ...defaultProps, template: "ranking" as const }}
         calculateMetadata={async ({ props }) => {
+          const videoProps = props as unknown as VideoData;
           return {
-            durationInFrames: calculateTotalDuration(props),
+            durationInFrames: calculateTotalDuration(videoProps),
             fps: FPS,
             width: WIDTH,
             height: HEIGHT,
@@ -113,15 +118,16 @@ export const RemotionRoot: React.FC = () => {
 
       <Composition
         id="ComparisonVideo"
-        component={ComparisonVideo}
+        component={ComparisonVideoComponent}
         durationInFrames={calculateTotalDuration(defaultProps)}
         fps={FPS}
         width={WIDTH}
         height={HEIGHT}
         defaultProps={{ ...defaultProps, template: "comparison" as const }}
         calculateMetadata={async ({ props }) => {
+          const videoProps = props as unknown as VideoData;
           return {
-            durationInFrames: calculateTotalDuration(props),
+            durationInFrames: calculateTotalDuration(videoProps),
             fps: FPS,
             width: WIDTH,
             height: HEIGHT,

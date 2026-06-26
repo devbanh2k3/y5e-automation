@@ -280,7 +280,7 @@ curl http://localhost:8000/api/jobs/<job_id>
 
 ### Local Render Mode
 
-Use local render mode to validate the Python-to-video contract and produce a local render artifact without publishing to YouTube.
+Use local render mode to validate the Python-to-video contract and produce a real Remotion MP4 without publishing to YouTube. Run `npm install` in `video_engine/` before using this mode on a fresh machine.
 
 ```bash
 curl -X POST http://localhost:8000/api/pipeline/start \
@@ -294,7 +294,7 @@ Inspect the job result:
 curl http://localhost:8000/api/jobs/<job_id>
 ```
 
-The `result_summary` includes `file_path`, `duration_sec`, `topic_id`, `video_id`, and `fallback_used`.
+The `result_summary` includes `file_path`, `duration_sec`, `topic_id`, `video_id`, and `fallback_used`. The rendered MP4 is written under `output/topics/<topic_id>/final_video.mp4` by default.
 
 For production, set:
 
