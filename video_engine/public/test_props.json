@@ -1,0 +1,314 @@
+{
+  "template": "timeline",
+  "title": "Coffee's Shocking Evolution: From Bean to Global Craze",
+  "subtitle": "The Secret History of Your Daily Brew",
+  "language": "en",
+  "cards": [
+    {
+      "header": "YEAR 850 AD",
+      "title": "Goat Discovery",
+      "description": "Ethiopian Kaldi observed goats energized by red berries. He tried them. A new stimulant was found.",
+      "imagePath": "images/section_0.jpg",
+      "statusText": "ENERGY LEVEL: UNKNOWN"
+    },
+    {
+      "header": "YEAR 1000 AD",
+      "title": "Yemeni Secret",
+      "description": "Coffee beans reached Yemen. Sufi mystics used it to stay awake for prayers. It was a local secret.",
+      "imagePath": "images/section_1.jpg",
+      "statusText": "CONSUMPTION: MONKS ONLY"
+    },
+    {
+      "header": "YEAR 1400S",
+      "title": "Brewing Begins",
+      "description": "Yemenis started roasting and brewing. Coffee became 'Qahwa'. It spread quickly across the Arab world.",
+      "imagePath": "images/section_2.jpg",
+      "statusText": "METHOD: BOILED BEANS"
+    },
+    {
+      "header": "YEAR 1500S",
+      "title": "Coffee Houses Emerge",
+      "description": "First public coffee houses appeared in Mecca and Cairo. They were hubs for conversation and news. A social revolution.",
+      "imagePath": "images/section_3.jpg",
+      "statusText": "SOCIAL HUBS: 100+"
+    },
+    {
+      "header": "YEAR 1511",
+      "title": "Banned! 'Satan's Drink'",
+      "description": "Meccan imams banned coffee, fearing its stimulating effects. It was seen as subversive. The ban failed.",
+      "imagePath": "images/section_4.jpg",
+      "statusText": "BANNED: MECCA"
+    },
+    {
+      "header": "YEAR 1600",
+      "title": "Pope's Blessing",
+      "description": "Coffee reached Europe. Pope Clement VIII tasted it. He declared it 'so delicious, it would be a sin to let only infidels drink it'.",
+      "imagePath": "images/section_5.jpg",
+      "statusText": "PAPAL APPROVAL: YES"
+    },
+    {
+      "header": "YEAR 1645",
+      "title": "Italian Invasion",
+      "description": "First European coffee house opened in Venice. It quickly became a symbol of sophistication. Europe was hooked.",
+      "imagePath": "images/section_6.jpg",
+      "statusText": "VENETIAN CAFES: 1"
+    },
+    {
+      "header": "YEAR 1668",
+      "title": "America's First Sip",
+      "description": "Coffee arrived in North America via New York. It competed with tea. A new continent was brewing.",
+      "imagePath": "images/section_7.jpg",
+      "statusText": "AMERICAN ARRIVAL: NYC"
+    },
+    {
+      "header": "YEAR 1690",
+      "title": "Dutch Expansion",
+      "description": "The Dutch smuggled coffee plants from Yemen. They established plantations in Ceylon and Java. Global production began.",
+      "imagePath": "images/section_8.jpg",
+      "statusText": "PLANTATIONS: JAVA, CEYLON"
+    },
+    {
+      "header": "YEAR 1727",
+      "title": "Brazilian Boom",
+      "description": "Colonel de Mello Palheta smuggled seeds into Brazil. Climate was perfect. Brazil became the world's coffee giant.",
+      "imagePath": "images/section_9.jpg",
+      "statusText": "BRAZILIAN PRODUCTION: START"
+    },
+    {
+      "header": "YEAR 1773",
+      "title": "Boston Tea Party Effect",
+      "description": "Americans rejected tea after the Boston Tea Party. Coffee became the patriotic drink. Consumption surged by 50%.",
+      "imagePath": "images/section_10.jpg",
+      "statusText": "TEA REPLACED: COFFEE"
+    },
+    {
+      "header": "YEAR 1800S",
+      "title": "Industrial Revolution",
+      "description": "Coffee processing mechanized. Roasting and grinding became faster. More affordable for the masses.",
+      "imagePath": "images/section_11.jpg",
+      "statusText": "PRODUCTION: MASS SCALE"
+    },
+    {
+      "header": "YEAR 1886",
+      "title": "Maxwell House",
+      "description": "Joel Cheek created 'Maxwell House Coffee'. It advertised 'Good to the last drop'. A marketing legend was born.",
+      "imagePath": "images/section_12.jpg",
+      "statusText": "SLOGAN: ICONIC"
+    },
+    {
+      "header": "YEAR 1901",
+      "title": "Instant Coffee Arrives",
+      "description": "Japanese-American chemist Satori Kato invented instant coffee. Convenient, but taste was subpar. A game-changer.",
+      "imagePath": "images/section_13.jpg",
+      "statusText": "INVENTION: INSTANT"
+    },
+    {
+      "header": "YEAR 1908",
+      "title": "Melitta Filter",
+      "description": "Melitta Bentz invented the paper coffee filter. It removed grounds, creating a cleaner cup. A simple, vital innovation.",
+      "imagePath": "images/section_14.jpg",
+      "statusText": "CLEANER COFFEE: YES"
+    },
+    {
+      "header": "YEAR 1938",
+      "title": "Nescafé Boom",
+      "description": "Nestlé launched Nescafé, a soluble coffee. It became a wartime staple. Millions got their daily coffee fix.",
+      "imagePath": "images/section_15.jpg",
+      "statusText": "GLOBAL REACH: HUGE"
+    },
+    {
+      "header": "YEAR 1940S",
+      "title": "WWII Fuel",
+      "description": "Coffee was crucial for soldiers. It fueled the war effort. US troops received 10 pounds monthly.",
+      "imagePath": "images/section_16.jpg",
+      "statusText": "US RATION: 10 LBS/MONTH"
+    },
+    {
+      "header": "YEAR 1950S",
+      "title": "Espresso Revolution",
+      "description": "Italian espresso machines became widespread. Rich, concentrated coffee took over. The cafe culture shifted.",
+      "imagePath": "images/section_17.jpg",
+      "statusText": "ESPRESSO BARS: 1000S"
+    },
+    {
+      "header": "YEAR 1960S",
+      "title": "Coffee Houses Reborn",
+      "description": "Coffee houses became centers for counter-culture. Folk music, poetry, and political debate thrived. More than just a drink.",
+      "imagePath": "images/section_18.jpg",
+      "statusText": "CULTURAL HUB: YES"
+    },
+    {
+      "header": "YEAR 1971",
+      "title": "Starbucks Opens",
+      "description": "First Starbucks opened in Seattle. Initially sold beans and equipment. Paved the way for coffee as an experience.",
+      "imagePath": "images/section_19.jpg",
+      "statusText": "FIRST STORE: SEATTLE"
+    },
+    {
+      "header": "YEAR 1980S",
+      "title": "The Rise of Specialty",
+      "description": "Consumers sought higher quality, single-origin beans. The 'Second Wave' focused on gourmet coffee. Taste mattered.",
+      "imagePath": "images/section_20.jpg",
+      "statusText": "QUALITY FOCUS: HIGH"
+    },
+    {
+      "header": "YEAR 1990S",
+      "title": "Starbucks Dominates",
+      "description": "Starbucks expanded globally. Frappuccinos, lattes, and comfort. Coffee became a daily ritual for millions.",
+      "imagePath": "images/section_21.jpg",
+      "statusText": "STORES: 1,000+"
+    },
+    {
+      "header": "YEAR 1998",
+      "title": "Nespresso Launches",
+      "description": "Single-serve coffee pods from Nespresso hit the market. Convenience for home users. A new consumption model.",
+      "imagePath": "images/section_22.jpg",
+      "statusText": "PODS SOLD: MILLIONS"
+    },
+    {
+      "header": "YEAR 2000S",
+      "title": "Third Wave Coffee",
+      "description": "Focus on bean origin, roast profiles, and brewing methods. Baristas became artisans. Coffee as an art form.",
+      "imagePath": "images/section_23.jpg",
+      "statusText": "ARTISANAL FOCUS: MAX"
+    },
+    {
+      "header": "YEAR 2010",
+      "title": "Cold Brew Craze",
+      "description": "Cold brew coffee exploded in popularity. Smoother, less acidic. A refreshing alternative, especially for millennials.",
+      "imagePath": "images/section_24.jpg",
+      "statusText": "SALES GROWTH: 500%+"
+    },
+    {
+      "header": "YEAR 2015",
+      "title": "Sustainability Push",
+      "description": "Ethical sourcing, fair trade, and environmental impact became critical. Consumers demand transparency. Farmers benefit.",
+      "imagePath": "images/section_25.jpg",
+      "statusText": "FAIR TRADE COFFEE: 20%+"
+    },
+    {
+      "header": "YEAR 2018",
+      "title": "AI in Roasting",
+      "description": "Artificial intelligence started optimizing roast profiles. Consistent quality, reduced waste. Precision coffee.",
+      "imagePath": "images/section_26.jpg",
+      "statusText": "AI ROASTS: 1000S/DAY"
+    },
+    {
+      "header": "YEAR 2020",
+      "title": "Home Brewing Boom",
+      "description": "Pandemic lockdowns fueled a home brewing revolution. High-end equipment sales soared. Global market hit $102B.",
+      "imagePath": "images/section_27.jpg",
+      "statusText": "HOME EQUIPMENT: +30%"
+    },
+    {
+      "header": "YEAR 2022",
+      "title": "Climate Crisis Impact",
+      "description": "Coffee-growing regions face extreme weather. Production threatened. Prices rise due to scarcity. A grim reality.",
+      "imagePath": "images/section_28.jpg",
+      "statusText": "CROPS LOST: 10%+"
+    },
+    {
+      "header": "YEAR 2023",
+      "title": "Functional Coffee",
+      "description": "Coffee infused with adaptogens, mushrooms, CBD. Health benefits beyond caffeine. The new wellness trend.",
+      "imagePath": "images/section_29.jpg",
+      "statusText": "WELLNESS COFFEE: SURGE"
+    },
+    {
+      "header": "YEAR 2024",
+      "title": "Global Market $132 Billion",
+      "description": "Coffee is more than a drink; it's a global economic powerhouse. Billions consume it daily. The craze continues.",
+      "imagePath": "images/section_30.jpg",
+      "statusText": "GLOBAL MARKET: $132B"
+    },
+    {
+      "header": "YEAR 2025",
+      "title": "Hyper-Personalization",
+      "description": "AI-driven apps analyze your DNA and preferences. Suggesting perfect bean, roast, and brew. Your ideal cup, every time.",
+      "imagePath": "images/section_31.jpg",
+      "statusText": "PERSONALIZED CUPS: 100M"
+    },
+    {
+      "header": "YEAR 2030",
+      "title": "Lab-Grown Coffee",
+      "description": "Cellular agriculture produces coffee without beans. Sustainable, ethical, and identical taste. No deforestation needed.",
+      "imagePath": "images/section_32.jpg",
+      "statusText": "LAB-GROWN SHARE: 5%"
+    },
+    {
+      "header": "YEAR 2040",
+      "title": "Robotic Baristas",
+      "description": "Fully autonomous robot baristas in every cafe. Perfect precision, zero human error. Your order in seconds.",
+      "imagePath": "images/section_33.jpg",
+      "statusText": "ROBOT BARISTAS: 80% CAFES"
+    },
+    {
+      "header": "YEAR 2050",
+      "title": "Vertical Coffee Farms",
+      "description": "Urban vertical farms grow climate-resilient coffee varieties. Hyper-local, fresh beans. Reduced transport emissions.",
+      "imagePath": "images/section_34.jpg",
+      "statusText": "URBAN FARMS: 1000S"
+    },
+    {
+      "header": "FAR FUTURE (2070+)",
+      "title": "Neuro-Enhanced Coffee",
+      "description": "Genetically engineered beans offer specific cognitive boosts. Focus, creativity, memory. Coffee becomes a smart drug.",
+      "imagePath": "images/section_35.jpg",
+      "statusText": "COGNITIVE BOOST: +50%"
+    },
+    {
+      "header": "FAR FUTURE (2100+)",
+      "title": "Space Coffee Colonies",
+      "description": "Humanity cultivates coffee on Mars and orbital stations. The ultimate exotic brew. Coffee goes interstellar.",
+      "imagePath": "images/section_36.jpg",
+      "statusText": "OFF-WORLD FARMS: 3+"
+    },
+    {
+      "header": "FAR FUTURE (2200+)",
+      "title": "Coffee as Currency",
+      "description": "With resources scarce, coffee becomes a universal commodity. A stable, sought-after energy source. More valuable than gold.",
+      "imagePath": "images/section_37.jpg",
+      "statusText": "GLOBAL CURRENCY: COFFEE"
+    },
+    {
+      "header": "FAR FUTURE (2300+)",
+      "title": "Sentient Coffee Plants",
+      "description": "Bio-engineered coffee plants develop consciousness. They communicate their needs. We brew with their consent. Or do we?",
+      "imagePath": "images/section_38.jpg",
+      "statusText": "CONSCIOUSNESS: EMERGED"
+    },
+    {
+      "header": "FAR FUTURE (2500+)",
+      "title": "Coffee: Universal Fuel",
+      "description": "Advanced extraction methods harness coffee's energy. Powering cities, spaceships, even human bodies. The ultimate resource.",
+      "imagePath": "images/section_39.jpg",
+      "statusText": "ENERGY SOURCE: INFINITE"
+    }
+  ],
+  "introCards": [
+    {
+      "text": "This bean runs the world.",
+      "subtext": "2.25 billion cups daily. You'll never guess its origin.",
+      "imagePath": "images/intro_0.jpg"
+    },
+    {
+      "text": "Once BANNED as 'Satan's Drink'.",
+      "subtext": "Now a $100+ billion industry.",
+      "imagePath": "images/intro_1.jpg"
+    },
+    {
+      "text": "Coffee's shocking evolution.",
+      "subtext": "From goat herders to space farms. Get ready.",
+      "imagePath": "images/intro_2.jpg"
+    }
+  ],
+  "musicPath": "",
+  "sfxPaths": {
+    "transition": "",
+    "alert": "",
+    "reveal": ""
+  },
+  "logoPath": "images/logo.png",
+  "holdDurationFrames": 240,
+  "transitionDurationFrames": 15
+}

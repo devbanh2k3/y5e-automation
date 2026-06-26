@@ -1,0 +1,24 @@
+# ============================================================
+# YouTube AI Automation — Python Dependencies
+# ============================================================
+
+# --- Core ---
+fastapi>=0.115.0,<1.0
+uvicorn[standard]>=0.30.0,<1.0
+asyncpg>=0.30.0,<1.0
+redis[hiredis]>=5.2.0,<6.0
+httpx>=0.28.0,<1.0
+pydantic>=2.10.0,<3.0
+pydantic-settings>=2.7.0,<3.0
+python-dotenv>=1.1.0,<2.0
+
+# --- Media Processing ---
+Pillow>=10.4.0,<12.0
+aiofiles>=24.1.0,<25.0
+
+# --- YouTube ---
+youtube-transcript-api>=0.6.0,<1.0
+
+# --- Testing ---
+pytest>=8.3.0,<9.0
+pytest-asyncio>=0.25.0,<1.0

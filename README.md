@@ -1,0 +1,483 @@
+# YouTube AI Automation
+
+> Fully automated YouTube channel management powered by AI agents. From trending topic discovery to video upload — zero manual intervention.
+
+[![Python 3.12](https://img.shields.io/badge/python-3.12-blue.svg)](https://www.python.org/downloads/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.115-green.svg)](https://fastapi.tiangolo.com/)
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-blue.svg)](https://www.postgresql.org/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
+---
+
+## Overview
+
+YouTube AI Automation is a multi-agent pipeline that autonomously creates, renders, and publishes YouTube videos. Each step — topic generation, research, fact-checking, scriptwriting, image sourcing, music selection, video rendering, thumbnail creation, and upload — is handled by a specialised AI agent.
+
+### Key Features
+
+- **10+ specialised AI agents** working in concert
+- **Fully async** Python 3.12 with `asyncio`, `httpx`, `asyncpg`
+- **Remotion-powered** video rendering (React/TypeScript)
+- **YouTube Data API v3** integration with resumable uploads
+- **Automated analytics** with feedback loops (low CTR → new thumbnail)
+- **Telegram notifications** at every pipeline stage
+- **n8n workflow automation** for scheduling and triggers
+- **RESTful API** for external integrations
+
+---
+
+## Architecture
+
+```mermaid
+graph TB
+    subgraph "API Layer"
+        API["FastAPI Server<br/>:8000"]
+    end
+
+    subgraph "Orchestration"
+        PIPE["Pipeline Orchestrator"]
+        QUEUE["Redis Queue"]
+    end
+
+    subgraph "AI Agents"
+        TA["Topic Agent"]
+        RA["Research Agent"]
+        FCA["Fact-Check Agent"]
+        SA["Script Agent"]
+        IA["Image Agent"]
+        MA["Music Agent"]
+        VA["Video Agent"]
+        SHA["Shorts Agent"]
+        THA["Thumbnail Agent"]
+        UA["Upload Agent"]
+        AA["Analytics Agent"]
+    end
+
+    subgraph "External Services"
+        AI["OpenAI / GPT-4o"]
+        YT["YouTube Data API v3"]
+        TG["Telegram Bot API"]
+    end
+
+    subgraph "Infrastructure"
+        DB["PostgreSQL 16"]
+        RD["Redis 7"]
+        RE["Remotion Engine<br/>(Node.js)"]
+    end
+
+    API --> QUEUE --> PIPE
+    PIPE --> TA --> RA --> FCA --> SA
+    SA --> IA & MA
+    IA & MA --> VA --> SHA --> THA --> UA
+    PIPE --> AA
+
+    TA & RA & FCA & SA & IA & THA --> AI
+    UA & AA --> YT
+    PIPE --> TG
+    TA & RA & SA & UA & AA --> DB
+    QUEUE --> RD
+    VA & SHA --> RE
+```
+
+---
+
+## Pipeline Flow
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant API
+    participant Pipeline
+    participant Agents
+    participant YouTube
+
+    User->>API: POST /api/pipeline/start
+    API->>Pipeline: Enqueue job
+    Pipeline->>Agents: 1. TopicAgent.run()
+    Pipeline->>Agents: 2. ResearchAgent.run()
+    Pipeline->>Agents: 3. FactCheckAgent.run()
+    Note over Pipeline: Abort if >50% facts rejected
+    Pipeline->>Agents: 4. ScriptAgent.run()
+    par Parallel
+        Pipeline->>Agents: 5. ImageAgent.run()
+        Pipeline->>Agents: 6. MusicAgent.run()
+    end
+    Pipeline->>Agents: 7. VideoAgent.run()
+    Pipeline->>Agents: 7b. ShortsAgent.run()
+    Pipeline->>Agents: 8. ThumbnailAgent.run()
+    Pipeline->>Agents: 9. UploadAgent.run()
+    Agents->>YouTube: Resumable Upload
+    YouTube-->>Agents: youtube_id
+    Pipeline-->>User: ✅ Telegram notification
+```
+
+---
+
+## Prerequisites
+
+| Tool | Version | Purpose |
+|------|---------|---------|
+| **Python** | 3.12+ | Backend runtime |
+| **Node.js** | 18+ | Remotion video engine |
+| **Docker** | 24+ | PostgreSQL, Redis, n8n |
+| **Docker Compose** | v2+ | Service orchestration |
+| **FFmpeg** | 6+ | Video processing |
+
+---
+
+## Quick Start
+
+### 1. Clone the Repository
+
+```bash
+git clone https://github.com/your-org/youtube-ai-automation.git
+cd youtube-ai-automation
+```
+
+### 2. Configure Environment
+
+```bash
+cp .env.example .env
+```
+
+Edit `.env` and fill in your API keys:
+
+```env
+# Required
+PRIMARY_API_KEY=sk-your-openai-key
+YOUTUBE_API_KEY=AIzaSy-your-youtube-api-key
+TELEGRAM_BOT_TOKEN=123456789:ABCdefGHI...
+TELEGRAM_CHAT_ID=your-chat-id
+
+# Optional (for AI fallback)
+FALLBACK_API_KEY=sk-your-fallback-key
+```
+
+### 3. Start Infrastructure
+
+```bash
+docker-compose up -d
+```
+
+This starts:
+- **PostgreSQL 16** on port `5432` (auto-runs schema migration)
+- **Redis 7** on port `6379`
+- **n8n** on port `5678`
+- **API server** on port `8000`
+- **Pipeline worker** consuming Redis jobs
+
+### 4. Install Video Engine
+
+```bash
+cd video_engine
+npm install
+cd ..
+```
+
+### 5. Install Python Dependencies
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+### 6. Set Up YouTube OAuth
+
+To upload videos, you need OAuth2 credentials:
+
+1. Go to [Google Cloud Console](https://console.cloud.google.com/)
+2. Create a project and enable the **YouTube Data API v3**
+3. Create OAuth 2.0 credentials (Desktop application)
+4. Download the credentials and run the auth setup
+5. Save the resulting `youtube_token.json` to `./output/youtube_token.json`
+
+The token file should contain:
+```json
+{
+  "access_token": "ya29.xxx",
+  "refresh_token": "1//xxx",
+  "client_id": "xxx.apps.googleusercontent.com",
+  "client_secret": "xxx",
+  "expires_at": 1234567890
+}
+```
+
+### 7. Run the Pipeline
+
+**Via CLI:**
+```bash
+python -m agents.pipeline science vi
+```
+
+**Via API:**
+```bash
+curl -X POST http://localhost:8000/api/pipeline/start \
+  -H "Content-Type: application/json" \
+  -d '{"category": "science", "language": "vi", "count": 1}'
+```
+
+## Production Foundation Services
+
+The API and worker run as separate services.
+
+- `api` accepts requests and enqueues jobs.
+- `worker` consumes Redis jobs and runs the pipeline.
+- `n8n` should be used for scheduling, webhooks, and notifications, not for core pipeline logic.
+
+Start all services:
+
+```bash
+docker compose up -d
+```
+
+Start a pipeline job:
+
+```bash
+curl -X POST http://localhost:8000/api/pipeline/start \
+  -H "Content-Type: application/json" \
+  -d '{"category": "science", "language": "vi", "count": 1}'
+```
+
+Check job status:
+
+```bash
+curl http://localhost:8000/api/jobs/<job_id>
+```
+
+---
+
+## API Endpoints
+
+### System
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/health` | Health check with DB, Redis, and storage status |
+| `GET` | `/api/stats` | System-wide statistics (topics, videos, costs) |
+| `GET` | `/api/jobs/{job_id}` | Get queue job status and retry metadata |
+
+### Pipeline
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/api/pipeline/start` | Queue a new pipeline run |
+| `GET` | `/api/pipeline/status/{topic_id}` | Get pipeline status for a topic |
+
+#### Start Pipeline Request
+
+```json
+{
+  "category": "science",
+  "language": "vi",
+  "count": 1
+}
+```
+
+#### Start Pipeline Response
+
+```json
+{
+  "job_id": "pipeline:abc123",
+  "message": "Pipeline queued for category 'science' (1 topics)."
+}
+```
+
+### Channels
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/api/channels/analyze` | Register and analyze a YouTube channel |
+| `GET` | `/api/channels` | List all reference channels |
+
+---
+
+## Configuration Reference
+
+All configuration is via environment variables (or `.env` file):
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `DATABASE_URL` | `postgresql://ytbot:ytbot@localhost:5432/youtube_automation` | PostgreSQL connection string |
+| `REDIS_URL` | `redis://localhost:6379/0` | Redis connection string |
+| `PRIMARY_API_BASE` | `https://api.openai.com/v1` | Primary AI endpoint URL |
+| `PRIMARY_API_KEY` | — | Primary AI API key |
+| `PRIMARY_MODEL` | `gpt-4o` | Primary AI model name |
+| `FALLBACK_API_BASE` | `https://api.openai.com/v1` | Fallback AI endpoint URL |
+| `FALLBACK_API_KEY` | — | Fallback AI API key |
+| `FALLBACK_MODEL` | `gpt-4o-mini` | Fallback AI model name |
+| `TELEGRAM_BOT_TOKEN` | — | Telegram bot token |
+| `TELEGRAM_CHAT_ID` | — | Telegram chat/group ID |
+| `YOUTUBE_API_KEY` | — | YouTube Data API v3 key |
+| `STORAGE_PATH` | `./output` | Local storage directory |
+| `LOG_LEVEL` | `INFO` | Logging level |
+
+---
+
+## Project Structure
+
+```
+youtube_ai_automation/
+├── agents/                     # AI agent implementations
+│   ├── __init__.py
+│   ├── base_agent.py           # Abstract base class for all agents
+│   ├── topic_agent.py          # Trending topic discovery & scoring
+│   ├── research_agent.py       # Web research & data collection
+│   ├── fact_check_agent.py     # Cross-source fact verification
+│   ├── script_agent.py         # Narration script generation
+│   ├── image_agent.py          # Image sourcing & generation
+│   ├── music_agent.py          # Background music selection
+│   ├── video_agent.py          # Remotion video rendering
+│   ├── shorts_agent.py         # Short-form clip generation
+│   ├── thumbnail_agent.py      # Custom thumbnail creation
+│   ├── upload_agent.py         # YouTube upload with SEO metadata
+│   ├── analytics_agent.py      # Performance tracking & feedback
+│   └── pipeline.py             # Full pipeline orchestrator
+│
+├── api/                        # FastAPI HTTP server
+│   ├── __init__.py
+│   ├── main.py                 # App setup, lifespan, core routes
+│   └── routes/                 # Additional route modules
+│
+├── core/                       # Shared infrastructure
+│   ├── __init__.py
+│   ├── ai_client.py            # Unified AI client (primary + fallback)
+│   ├── config.py               # Pydantic settings from env vars
+│   ├── cost_tracker.py         # API usage & cost monitoring
+│   ├── database.py             # Async PostgreSQL connection pool
+│   ├── notifier.py             # Telegram notification helpers
+│   ├── queue.py                # Redis job queue
+│   ├── retry.py                # Async retry with exponential backoff
+│   └── storage.py              # File storage manager
+│
+├── db/
+│   └── schema.sql              # Full PostgreSQL schema (12 tables)
+│
+├── video_engine/               # Remotion video renderer
+│   ├── package.json
+│   ├── remotion.config.ts
+│   └── src/                    # React components for video
+│
+├── n8n/                        # n8n workflow definitions
+├── tests/                      # Test suite
+├── assets/                     # Static assets
+│
+├── .env.example                # Environment variable template
+├── docker-compose.yml          # Infrastructure services
+├── Dockerfile                  # Python app container
+├── requirements.txt            # Python dependencies
+└── README.md                   # This file
+```
+
+---
+
+## Database Schema
+
+The PostgreSQL schema consists of 12 tables:
+
+| Table | Purpose |
+|-------|---------|
+| `reference_channels` | YouTube channels analysed for strategy |
+| `reference_videos` | Individual videos from reference channels |
+| `topics` | Generated video topics with scores |
+| `research_data` | Research data items per topic |
+| `facts` | Fact-checked claims with verification status |
+| `scripts` | Generated narration scripts |
+| `assets` | Images, audio, and other media files |
+| `videos` | Rendered video files and YouTube IDs |
+| `shorts` | Short-form clips derived from videos |
+| `analytics` | YouTube performance metrics over time |
+| `api_usage` | AI API token consumption tracking |
+| `pipeline_logs` | Per-step pipeline execution logs |
+
+---
+
+## Agent Details
+
+### Upload Agent (`upload_agent.py`)
+
+Handles the final publishing step:
+- **OAuth2 token management** with automatic refresh
+- **Resumable uploads** via YouTube Data API v3 (chunked, retry-safe)
+- **AI-generated SEO metadata** (title, description, tags, category)
+- **Chapter timestamps** auto-calculated from script sections
+- **Thumbnail upload** for custom click-worthy images
+- **Database updates** and Telegram success notifications
+
+### Analytics Agent (`analytics_agent.py`)
+
+Automated performance monitoring:
+- **Batch stats collection** from YouTube (views, likes, comments)
+- **Feedback rules**: low CTR → flag for thumbnail regeneration
+- **Retention alerts**: low avg. watch time → improve intro hooks
+- **Daily reports** sent via Telegram with best/worst performers
+- Designed for future YouTube Analytics API integration (CTR, retention)
+
+### Pipeline Orchestrator (`pipeline.py`)
+
+Coordinates all 10+ agents:
+- **Sequential execution** with dependency management
+- **Parallel steps** for independent operations (images + music)
+- **Per-step error handling** with detailed logging
+- **Telegram notifications** at start, completion, and failure
+- **CLI interface**: `python -m agents.pipeline <category> <language>`
+
+---
+
+## Scheduling with n8n
+
+The n8n instance at `http://localhost:5678` can be configured to:
+
+1. **Daily pipeline runs** — trigger `POST /api/pipeline/start` on a cron schedule
+2. **Analytics collection** — run analytics agent daily at midnight
+3. **Webhook triggers** — start pipelines from external events
+
+Default n8n credentials: `admin` / `changeme`
+
+---
+
+## Development
+
+### Running Tests
+
+```bash
+pytest tests/ -v
+```
+
+### Running the API Locally
+
+```bash
+uvicorn api.main:app --reload --port 8000
+```
+
+### Running a Single Agent
+
+```python
+import asyncio
+from agents.upload_agent import UploadAgent
+
+async def main():
+    agent = UploadAgent()
+    result = await agent.run(video_id=42)
+    print(result)
+
+asyncio.run(main())
+```
+
+---
+
+## Troubleshooting
+
+| Issue | Solution |
+|-------|----------|
+| `YouTube token file not found` | Run OAuth2 setup and save `youtube_token.json` to `./output/` |
+| `YouTube API quota exceeded` | Wait 24h or request quota increase in Google Cloud Console |
+| `Database connection refused` | Ensure `docker-compose up -d` is running |
+| `Remotion render fails` | Run `cd video_engine && npm install` and ensure FFmpeg is installed |
+| `Telegram notifications not sending` | Verify `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` in `.env` |
+
+---
+
+## License
+
+This project is licensed under the MIT License. See [LICENSE](LICENSE) for details.

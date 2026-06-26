@@ -1,0 +1,53 @@
+# Environment and secrets
+.env
+.env.*
+!.env.example
+youtube_token.json
+output/youtube_token.json
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.venv/
+venv/
+env/
+
+# Node / Remotion
+video_engine/node_modules/
+node_modules/
+video_engine/out/
+video_engine/dist/
+
+# Generated media and runtime output
+output/
+*.mp4
+*.mov
+*.avi
+*.mkv
+*.webm
+*.mp3
+*.wav
+*.aac
+*.jpg
+*.jpeg
+*.png
+*.webp
+
+# Keep source/config assets if deliberately added later
+!video_engine/public/test_props.json
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Logs
+*.log
+logs/
