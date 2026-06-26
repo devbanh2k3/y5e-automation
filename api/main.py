@@ -8,10 +8,12 @@ from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from core.config import get_settings
 from core.database import init_db, close_db, fetch, fetchrow, execute
+from core.health import check_readiness
 from core.job_models import JobAction
 from core.queue import (
     init_queue,
@@ -69,6 +71,13 @@ class HealthResponse(BaseModel):
     database: str
     redis: str
     storage: dict[str, Any]
+
+
+class ReadinessResponse(BaseModel):
+    """Readiness response with dependency check details."""
+    status: str
+    timestamp: str
+    checks: dict[str, Any]
 
 
 # ── Lifespan ──────────────────────────────────────────────────
@@ -137,6 +146,20 @@ async def health_check() -> HealthResponse:
         redis=redis_status,
         storage=storage,
     )
+
+
+@app.get("/api/ready", response_model=ReadinessResponse, tags=["System"])
+async def readiness_check() -> JSONResponse | ReadinessResponse:
+    """Return readiness details for dependencies required to process jobs."""
+    result = await check_readiness()
+    payload = ReadinessResponse(
+        status="ready" if result.ok else "not_ready",
+        timestamp=datetime.now(timezone.utc).isoformat(),
+        checks={name: check.model_dump() for name, check in result.checks.items()},
+    )
+    if result.ok:
+        return payload
+    return JSONResponse(status_code=503, content=payload.model_dump())
 
 
 @app.post("/api/pipeline/start", response_model=PipelineStartResponse, tags=["Pipeline"])
