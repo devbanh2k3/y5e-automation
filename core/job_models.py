@@ -8,6 +8,12 @@ class JobAction(StrEnum):
     CHANNEL_ANALYSIS = "channel_analysis"
 
 
+class PipelineMode(StrEnum):
+    PRODUCTION = "production"
+    DRY_RUN = "dry_run"
+    SMOKE = "smoke"
+
+
 class JobStatus(StrEnum):
     QUEUED = "queued"
     PROCESSING = "processing"
@@ -29,6 +35,7 @@ def build_job_metadata(
     failed_at: str = "",
     error: str = "",
     envelope_json: str = "",
+    result_summary: str = "",
 ) -> dict[str, str]:
     return {
         "job_id": job_id,
@@ -43,4 +50,5 @@ def build_job_metadata(
         "failed_at": failed_at,
         "error": error,
         "envelope_json": envelope_json,
+        "result_summary": result_summary,
     }

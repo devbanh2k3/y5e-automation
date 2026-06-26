@@ -263,6 +263,7 @@ async def retry_failed_job(job_id: str) -> str:
         failed_at="",
         completed_at="",
         envelope_json=serialized_envelope,
+        result_summary="",
     )
     return job_id
 

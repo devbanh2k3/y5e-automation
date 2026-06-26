@@ -3,7 +3,7 @@ import json
 import pytest
 
 from core import queue
-from core.job_models import JobAction, JobStatus, build_job_metadata
+from core.job_models import JobAction, JobStatus, PipelineMode, build_job_metadata
 
 
 def test_build_job_metadata_has_required_fields():
@@ -29,6 +29,7 @@ def test_build_job_metadata_has_required_fields():
         "failed_at",
         "error",
         "envelope_json",
+        "result_summary",
     }
     assert metadata["job_id"] == "job-1"
     assert metadata["queue"] == "pipeline"
@@ -42,6 +43,7 @@ def test_build_job_metadata_has_required_fields():
     assert metadata["failed_at"] == ""
     assert metadata["error"] == ""
     assert metadata["envelope_json"] == ""
+    assert metadata["result_summary"] == ""
 
 
 @pytest.mark.asyncio
@@ -69,6 +71,7 @@ async def test_enqueue_stores_structured_job_envelope_and_metadata(fake_redis):
     assert fake_redis.hashes[f"job:{job_id}"]["status"] == "queued"
     assert fake_redis.hashes[f"job:{job_id}"]["action"] == "run_pipeline"
     assert fake_redis.hashes[f"job:{job_id}"]["envelope_json"] == raw_envelope
+    assert fake_redis.hashes[f"job:{job_id}"]["result_summary"] == ""
 
 
 @pytest.mark.asyncio
@@ -211,6 +214,28 @@ async def test_retry_failed_job_requeues_original_envelope(fake_redis):
     assert envelope["job_id"] == job_id
     assert envelope["attempt"] == 1
     assert envelope["data"]["category"] == "science"
+
+
+@pytest.mark.asyncio
+async def test_retry_failed_job_clears_result_summary(fake_redis):
+    job_id = await queue.enqueue(
+        "pipeline",
+        {"category": "science", "language": "vi", "mode": PipelineMode.SMOKE.value},
+        action=JobAction.RUN_PIPELINE,
+        max_attempts=3,
+    )
+    await queue.dequeue("pipeline")
+    await queue.set_job_metadata(
+        job_id,
+        status=JobStatus.FAILED.value,
+        error="boom",
+        result_summary='{"mode":"smoke"}',
+    )
+
+    await queue.retry_failed_job(job_id)
+
+    metadata = await queue.get_job_metadata(job_id)
+    assert metadata["result_summary"] == ""
 
 
 @pytest.mark.asyncio
