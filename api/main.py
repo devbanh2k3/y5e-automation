@@ -21,6 +21,9 @@ from core.queue import (
     close_queue,
     get_queue_length,
     get_job_metadata,
+    get_queue_stats,
+    list_jobs,
+    retry_failed_job,
 )
 from core.cost_tracker import get_usage_summary
 from core.storage import get_storage_usage
@@ -56,6 +59,25 @@ class JobMetadataResponse(BaseModel):
     completed_at: str = ""
     failed_at: str = ""
     error: str = ""
+    envelope_json: str = ""
+
+
+class JobListResponse(BaseModel):
+    """Response for recent job listing."""
+    jobs: list[JobMetadataResponse]
+
+
+class JobRetryResponse(BaseModel):
+    """Response after retrying a failed job."""
+    job_id: str
+    status: str
+    message: str
+
+
+class QueueStatsResponse(BaseModel):
+    """Queue length and recent job status counts."""
+    queues: dict[str, dict[str, int]]
+    statuses: dict[str, int]
 
 
 class ChannelAnalyzeRequest(BaseModel):
@@ -185,6 +207,41 @@ async def get_job(job_id: str) -> JobMetadataResponse:
     if not metadata:
         raise HTTPException(status_code=404, detail=f"Job {job_id} not found.")
     return JobMetadataResponse(**metadata)
+
+
+@app.get("/api/jobs", response_model=JobListResponse, tags=["Jobs"])
+async def list_recent_jobs(
+    status: str | None = None,
+    queue: str | None = None,
+    limit: int = 50,
+) -> JobListResponse:
+    """Return recent jobs with optional status and queue filters."""
+    jobs = await list_jobs(status=status, queue=queue, limit=min(max(limit, 1), 100))
+    return JobListResponse(jobs=[JobMetadataResponse(**job) for job in jobs])
+
+
+@app.post("/api/jobs/{job_id}/retry", response_model=JobRetryResponse, tags=["Jobs"])
+async def retry_job(job_id: str) -> JobRetryResponse:
+    """Retry a failed job by requeueing its stored envelope."""
+    try:
+        await retry_failed_job(job_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail=f"Job {job_id} not found.") from None
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from None
+
+    return JobRetryResponse(
+        job_id=job_id,
+        status="queued",
+        message="Job requeued.",
+    )
+
+
+@app.get("/api/queues", response_model=QueueStatsResponse, tags=["Jobs"])
+async def queue_stats() -> QueueStatsResponse:
+    """Return pending queue lengths and recent job status counts."""
+    stats = await get_queue_stats(["pipeline", "channel_analysis"])
+    return QueueStatsResponse(**stats)
 
 
 @app.get("/api/pipeline/status/{topic_id}", tags=["Pipeline"])

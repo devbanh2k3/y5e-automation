@@ -2,7 +2,7 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 
 from api.main import app
-from core.job_models import JobAction
+from core.job_models import JobAction, JobStatus
 
 
 @pytest.mark.asyncio
@@ -133,3 +133,90 @@ async def test_analyze_channel_enqueues_channel_analysis_action(monkeypatch: pyt
     assert captured["job_data"]["channel_db_id"] == 7
     assert captured["job_data"]["channel_url"] == "https://youtube.com/@science"
     assert "requested_at" in captured["job_data"]
+
+
+@pytest.mark.asyncio
+async def test_list_jobs_endpoint_returns_recent_jobs(monkeypatch: pytest.MonkeyPatch):
+    async def fake_list_jobs(status=None, queue=None, limit=50):
+        assert status is None
+        assert queue is None
+        assert limit == 50
+        return [
+            {
+                "job_id": "job-123",
+                "queue": "pipeline",
+                "action": "run_pipeline",
+                "status": "queued",
+                "attempt": "0",
+                "max_attempts": "3",
+                "created_at": "2026-06-26T00:00:00+00:00",
+            }
+        ]
+
+    monkeypatch.setattr("api.main.list_jobs", fake_list_jobs)
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get("/api/jobs")
+
+    assert response.status_code == 200
+    assert response.json()["jobs"][0]["job_id"] == "job-123"
+
+
+@pytest.mark.asyncio
+async def test_retry_job_endpoint_returns_409_for_non_failed_job(monkeypatch: pytest.MonkeyPatch):
+    async def fake_retry_failed_job(job_id: str):
+        raise ValueError("job is not failed")
+
+    monkeypatch.setattr("api.main.retry_failed_job", fake_retry_failed_job)
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post("/api/jobs/job-123/retry")
+
+    assert response.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_retry_job_endpoint_requeues_failed_job(monkeypatch: pytest.MonkeyPatch):
+    async def fake_retry_failed_job(job_id: str):
+        assert job_id == "job-123"
+        return job_id
+
+    monkeypatch.setattr("api.main.retry_failed_job", fake_retry_failed_job)
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post("/api/jobs/job-123/retry")
+
+    assert response.status_code == 200
+    assert response.json()["job_id"] == "job-123"
+    assert response.json()["status"] == JobStatus.QUEUED.value
+
+
+@pytest.mark.asyncio
+async def test_retry_job_endpoint_returns_404_for_unknown_job(monkeypatch: pytest.MonkeyPatch):
+    async def fake_retry_failed_job(job_id: str):
+        raise KeyError(job_id)
+
+    monkeypatch.setattr("api.main.retry_failed_job", fake_retry_failed_job)
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post("/api/jobs/missing/retry")
+
+    assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_queue_stats_endpoint(monkeypatch: pytest.MonkeyPatch):
+    async def fake_get_queue_stats(queue_names: list[str]):
+        assert queue_names == ["pipeline", "channel_analysis"]
+        return {
+            "queues": {"pipeline": {"pending": 1}, "channel_analysis": {"pending": 0}},
+            "statuses": {"queued": 1},
+        }
+
+    monkeypatch.setattr("api.main.get_queue_stats", fake_get_queue_stats)
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get("/api/queues")
+
+    assert response.status_code == 200
+    assert response.json()["queues"]["pipeline"]["pending"] == 1
