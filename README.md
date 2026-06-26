@@ -245,6 +245,33 @@ Check job status:
 curl http://localhost:8000/api/jobs/<job_id>
 ```
 
+## Production Control Plane
+
+Use `/api/health` for lightweight liveness and `/api/ready` before schedulers start work.
+
+```bash
+curl http://localhost:8000/api/ready
+```
+
+Job operations:
+
+```bash
+curl http://localhost:8000/api/jobs
+curl http://localhost:8000/api/jobs/<job_id>
+curl -X POST http://localhost:8000/api/jobs/<job_id>/retry
+curl http://localhost:8000/api/queues
+```
+
+For production, set:
+
+```env
+APP_ENV=production
+PRIMARY_API_KEY=...
+YOUTUBE_API_KEY=...
+DATABASE_URL=...
+REDIS_URL=...
+```
+
 ---
 
 ## API Endpoints
@@ -253,9 +280,13 @@ curl http://localhost:8000/api/jobs/<job_id>
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| `GET` | `/api/health` | Health check with DB, Redis, and storage status |
+| `GET` | `/api/health` | Lightweight service health |
+| `GET` | `/api/ready` | Dependency readiness for DB, Redis, storage, and production config |
 | `GET` | `/api/stats` | System-wide statistics (topics, videos, costs) |
+| `GET` | `/api/jobs` | List recent queue jobs |
 | `GET` | `/api/jobs/{job_id}` | Get queue job status and retry metadata |
+| `POST` | `/api/jobs/{job_id}/retry` | Requeue a failed job |
+| `GET` | `/api/queues` | Queue lengths and recent job status counts |
 
 ### Pipeline
 
