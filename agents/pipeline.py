@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import shutil
 import traceback
 from datetime import datetime, timezone
@@ -405,6 +406,9 @@ class Pipeline:
             "--codec=h264",
             "--crf=20",
         ]
+        browser_executable = os.getenv("REMOTION_BROWSER_EXECUTABLE", "").strip()
+        if browser_executable:
+            cmd.append(f"--browser-executable={browser_executable}")
 
         process = await asyncio.create_subprocess_exec(
             *cmd,

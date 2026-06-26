@@ -57,6 +57,7 @@ services:
 
   # ── API server ─────────────────────────────────────────────
   api:
+    image: youtube_ai_automation-app:latest
     build:
       context: .
       dockerfile: Dockerfile
@@ -68,6 +69,7 @@ services:
     environment:
       DATABASE_URL: postgresql://ytbot:ytbot@postgres:5432/youtube_automation
       REDIS_URL: redis://redis:6379/0
+      REMOTION_BROWSER_EXECUTABLE: /usr/bin/chromium
     volumes:
       - ./output:/app/output
     depends_on:
@@ -78,9 +80,7 @@ services:
 
   # ── Pipeline worker ────────────────────────────────────────
   worker:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    image: youtube_ai_automation-app:latest
     restart: unless-stopped
     command: ["python", "-m", "workers.pipeline_worker"]
     env_file:
@@ -88,6 +88,7 @@ services:
     environment:
       DATABASE_URL: postgresql://ytbot:ytbot@postgres:5432/youtube_automation
       REDIS_URL: redis://redis:6379/0
+      REMOTION_BROWSER_EXECUTABLE: /usr/bin/chromium
     volumes:
       - ./output:/app/output
     depends_on:

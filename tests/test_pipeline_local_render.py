@@ -148,6 +148,7 @@ async def test_run_local_render_uses_content_agent_for_celebrity(monkeypatch):
 async def test_render_local_video_invokes_remotion(monkeypatch, tmp_path):
     get_settings.cache_clear()
     monkeypatch.setenv("STORAGE_PATH", str(tmp_path / "output"))
+    monkeypatch.setenv("REMOTION_BROWSER_EXECUTABLE", "/usr/bin/chromium")
 
     captured: dict[str, object] = {}
 
@@ -197,6 +198,7 @@ async def test_render_local_video_invokes_remotion(monkeypatch, tmp_path):
 
         cmd = captured["cmd"]
         assert cmd[:5] == ("npx", "remotion", "render", "src/index.tsx", "TimelineVideo")
+        assert "--browser-executable=/usr/bin/chromium" in cmd
         assert "--codec=h264" in cmd
         assert Path(result["file_path"]).read_bytes() == b"fake remotion mp4"
         assert result["duration_sec"] == 0
