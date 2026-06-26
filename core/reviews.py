@@ -20,6 +20,16 @@ class ReviewStatus(str, Enum):
     REJECTED = "rejected"
 
 
+ALLOWED_REJECT_REASONS = {
+    "wrong_image",
+    "bad_text",
+    "bad_layout",
+    "bad_topic",
+    "bad_metric",
+    "other",
+}
+
+
 def utc_now() -> str:
     """Return current UTC timestamp in ISO 8601 format."""
     return datetime.now(timezone.utc).isoformat()
@@ -71,6 +81,9 @@ async def create_review(
         },
         "thumbnail_prompt": thumbnail_prompt,
         "review_notes": "",
+        "reject_reason": "",
+        "rejected_scenes": [],
+        "review_events": [],
         "created_at": timestamp,
         "updated_at": timestamp,
     }
@@ -109,15 +122,28 @@ async def approve_review(review_id: str, notes: str = "") -> dict[str, Any]:
         review_id,
         status=ReviewStatus.APPROVED,
         notes=notes,
+        event="approved",
     )
 
 
-async def reject_review(review_id: str, reason: str = "") -> dict[str, Any]:
+async def reject_review(
+    review_id: str,
+    reason: str = "",
+    *,
+    scenes: list[int] | None = None,
+    notes: str = "",
+) -> dict[str, Any]:
     """Mark a pending review as rejected."""
+    if reason not in ALLOWED_REJECT_REASONS:
+        allowed = ", ".join(sorted(ALLOWED_REJECT_REASONS))
+        raise ValueError(f"reject reason must be one of: {allowed}")
     return await _transition_review(
         review_id,
         status=ReviewStatus.REJECTED,
-        notes=reason,
+        notes=notes or reason,
+        event="rejected",
+        reason=reason,
+        scenes=scenes or [],
     )
 
 
@@ -126,15 +152,47 @@ async def _transition_review(
     *,
     status: ReviewStatus,
     notes: str,
+    event: str,
+    reason: str = "",
+    scenes: list[int] | None = None,
 ) -> dict[str, Any]:
     review = await get_review(review_id)
     if review.get("status") != ReviewStatus.PENDING.value:
         raise ValueError("review is not pending")
     review["status"] = status.value
     review["review_notes"] = notes
+    if status == ReviewStatus.REJECTED:
+        review["reject_reason"] = reason
+        review["rejected_scenes"] = scenes or []
+    append_review_event(review, event=event, reason=reason, scenes=scenes, notes=notes)
     review["updated_at"] = utc_now()
     await _write_review(review)
     return review
+
+
+def append_review_event(
+    review: dict[str, Any],
+    *,
+    event: str,
+    reason: str = "",
+    scenes: list[int] | None = None,
+    notes: str = "",
+) -> None:
+    """Append a timestamped review event in-place."""
+    review.setdefault("review_events", []).append(
+        {
+            "event": event,
+            "reason": reason,
+            "scenes": scenes or [],
+            "notes": notes,
+            "created_at": utc_now(),
+        }
+    )
+
+
+async def save_review(review: dict[str, Any]) -> None:
+    """Persist an updated review artifact."""
+    await _write_review(review)
 
 
 async def _write_review(review: dict[str, Any]) -> None:

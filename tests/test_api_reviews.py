@@ -103,7 +103,7 @@ async def test_approve_review_endpoint(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_reject_review_endpoint_returns_409_for_non_pending(monkeypatch):
-    async def fake_reject_review(review_id: str, reason: str = ""):
+    async def fake_reject_review(review_id: str, reason: str = "", **kwargs):
         raise ValueError("review is not pending")
 
     monkeypatch.setattr("api.main.reject_review", fake_reject_review)
@@ -112,3 +112,34 @@ async def test_reject_review_endpoint_returns_409_for_non_pending(monkeypatch):
         response = await client.post("/api/reviews/review-1/reject", json={"notes": "bad audio"})
 
     assert response.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_reject_review_endpoint_keeps_legacy_notes_compatible(monkeypatch):
+    async def fake_reject_review(review_id: str, reason: str = "", **kwargs):
+        assert review_id == "review-1"
+        assert reason == "other"
+        assert kwargs["notes"] == "bad audio"
+        assert kwargs["scenes"] == []
+        return {
+            "review_id": "review-1",
+            "status": "rejected",
+            "job_id": "job-1",
+            "video": {"topic_id": 1, "video_id": 2, "file_path": "/tmp/video.mp4"},
+            "content_contract": {},
+            "youtube": {"title": "Title", "description": "", "tags": []},
+            "thumbnail_prompt": "",
+            "review_notes": "bad audio",
+            "reject_reason": "other",
+            "rejected_scenes": [],
+            "created_at": "2026-06-26T00:00:00+00:00",
+            "updated_at": "2026-06-26T00:01:00+00:00",
+        }
+
+    monkeypatch.setattr("api.main.reject_review", fake_reject_review)
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post("/api/reviews/review-1/reject", json={"notes": "bad audio"})
+
+    assert response.status_code == 200
+    assert response.json()["reject_reason"] == "other"

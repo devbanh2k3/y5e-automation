@@ -93,13 +93,89 @@ async def test_reject_review_blocks_later_approval(review_storage):
         thumbnail_prompt="",
     )
 
-    rejected = await reject_review(review["review_id"], reason="needs rewrite")
+    rejected = await reject_review(
+        review["review_id"],
+        reason="bad_text",
+        notes="needs rewrite",
+    )
 
     assert rejected["status"] == ReviewStatus.REJECTED.value
     assert rejected["review_notes"] == "needs rewrite"
+    assert rejected["reject_reason"] == "bad_text"
 
     with pytest.raises(ValueError, match="review is not pending"):
         await approve_review(review["review_id"])
+
+
+@pytest.mark.asyncio
+async def test_approve_review_appends_review_event(review_storage):
+    review = await create_review(
+        job_id="job-1",
+        topic_id=1,
+        video_id=1,
+        file_path="/tmp/one.mp4",
+        content_contract={},
+        youtube_title="One",
+        youtube_description="",
+        youtube_tags=[],
+        thumbnail_prompt="",
+    )
+
+    approved = await approve_review(review["review_id"], notes="ready")
+
+    assert approved["status"] == ReviewStatus.APPROVED.value
+    assert approved["review_notes"] == "ready"
+    assert approved["review_events"][-1]["event"] == "approved"
+    assert approved["review_events"][-1]["notes"] == "ready"
+    assert approved["review_events"][-1]["created_at"]
+
+
+@pytest.mark.asyncio
+async def test_reject_review_stores_structured_reason_and_scenes(review_storage):
+    review = await create_review(
+        job_id="job-1",
+        topic_id=1,
+        video_id=1,
+        file_path="/tmp/one.mp4",
+        content_contract={},
+        youtube_title="One",
+        youtube_description="",
+        youtube_tags=[],
+        thumbnail_prompt="",
+    )
+
+    rejected = await reject_review(
+        review["review_id"],
+        reason="wrong_image",
+        scenes=[5],
+        notes="wrong person image",
+    )
+
+    assert rejected["status"] == ReviewStatus.REJECTED.value
+    assert rejected["reject_reason"] == "wrong_image"
+    assert rejected["rejected_scenes"] == [5]
+    assert rejected["review_notes"] == "wrong person image"
+    assert rejected["review_events"][-1]["event"] == "rejected"
+    assert rejected["review_events"][-1]["reason"] == "wrong_image"
+    assert rejected["review_events"][-1]["scenes"] == [5]
+
+
+@pytest.mark.asyncio
+async def test_reject_review_requires_allowed_reason(review_storage):
+    review = await create_review(
+        job_id="job-1",
+        topic_id=1,
+        video_id=1,
+        file_path="/tmp/one.mp4",
+        content_contract={},
+        youtube_title="One",
+        youtube_description="",
+        youtube_tags=[],
+        thumbnail_prompt="",
+    )
+
+    with pytest.raises(ValueError, match="reject reason must be one of"):
+        await reject_review(review["review_id"], reason="bad_reason")
 
 
 @pytest.mark.asyncio

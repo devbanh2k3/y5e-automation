@@ -94,6 +94,8 @@ class QueueStatsResponse(BaseModel):
 class ReviewTransitionRequest(BaseModel):
     """Optional notes for approve/reject review transitions."""
     notes: str = ""
+    reason: str = ""
+    scenes: list[int] = Field(default_factory=list)
 
 
 class ReviewListResponse(BaseModel):
@@ -309,7 +311,13 @@ async def reject_review_item(
 ) -> dict[str, Any]:
     """Reject a pending review."""
     try:
-        return await reject_review(review_id, reason=body.notes)
+        reason = body.reason or "other"
+        return await reject_review(
+            review_id,
+            reason=reason,
+            scenes=body.scenes,
+            notes=body.notes,
+        )
     except KeyError:
         raise HTTPException(status_code=404, detail=f"Review {review_id} not found.") from None
     except ValueError as exc:
