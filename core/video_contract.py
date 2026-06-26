@@ -7,6 +7,114 @@ class VideoContractError(ValueError):
     """Raised when Remotion video data is missing required fields."""
 
 
+def build_content_contract_v2(
+    *,
+    niche: str,
+    title: str,
+    hook: str,
+    target_audience: str,
+    language: str,
+    scenes: list[dict[str, Any]],
+    thumbnail_prompt: str,
+    youtube_title: str,
+    youtube_description: str,
+    youtube_tags: list[str],
+    duration_target: int,
+) -> dict[str, Any]:
+    """Build the normalized content contract used before video rendering."""
+    return {
+        "schema_version": "content_contract_v2",
+        "niche": niche,
+        "title": title,
+        "hook": hook,
+        "target_audience": target_audience,
+        "language": language,
+        "scenes": scenes,
+        "thumbnail_prompt": thumbnail_prompt,
+        "youtube_title": youtube_title,
+        "youtube_description": youtube_description,
+        "youtube_tags": youtube_tags,
+        "duration_target": duration_target,
+    }
+
+
+def validate_content_contract_v2(payload: dict[str, Any]) -> None:
+    """Validate the fields needed to render and later review a content idea."""
+    required_text_fields = (
+        "schema_version",
+        "niche",
+        "title",
+        "hook",
+        "target_audience",
+        "language",
+        "thumbnail_prompt",
+        "youtube_title",
+        "youtube_description",
+    )
+    for field_name in required_text_fields:
+        if not str(payload.get(field_name, "")).strip():
+            raise VideoContractError(f"{field_name} is required")
+
+    if payload["schema_version"] != "content_contract_v2":
+        raise VideoContractError("schema_version must be content_contract_v2")
+
+    scenes = payload.get("scenes")
+    if not isinstance(scenes, list) or not scenes:
+        raise VideoContractError("scenes must contain at least one scene")
+
+    for index, scene in enumerate(scenes):
+        if not isinstance(scene, dict):
+            raise VideoContractError(f"scenes[{index}] must be an object")
+        for field_name in ("title", "voiceover", "caption", "image_prompt", "statusText"):
+            if not str(scene.get(field_name, "")).strip():
+                raise VideoContractError(f"scenes[{index}].{field_name} is required")
+
+    tags = payload.get("youtube_tags")
+    if not isinstance(tags, list) or not any(str(tag).strip() for tag in tags):
+        raise VideoContractError("youtube_tags must contain at least one tag")
+
+    duration_target = payload.get("duration_target")
+    if not isinstance(duration_target, int) or duration_target <= 0:
+        raise VideoContractError("duration_target must be a positive integer")
+
+
+def build_video_data_from_content_contract(payload: dict[str, Any]) -> dict[str, Any]:
+    """Convert content contract v2 into Remotion-compatible video data."""
+    validate_content_contract_v2(payload)
+
+    cards: list[dict[str, str]] = []
+    for index, scene in enumerate(payload["scenes"]):
+        cards.append(
+            {
+                "header": f"SCENE {index + 1}",
+                "title": str(scene["title"]),
+                "description": str(scene["voiceover"]),
+                "imagePath": "images/local-placeholder.svg",
+                "statusText": str(scene["statusText"]),
+            }
+        )
+
+    return {
+        "template": "timeline",
+        "title": payload["title"],
+        "subtitle": payload["hook"],
+        "category": payload["niche"],
+        "language": payload["language"],
+        "cards": cards,
+        "introCards": [],
+        "musicPath": "",
+        "sfxPaths": {
+            "transition": "",
+            "alert": "",
+            "reveal": "",
+        },
+        "logoPath": "images/local-logo.svg",
+        "holdDurationFrames": 120,
+        "transitionDurationFrames": 15,
+        "content_contract": payload,
+    }
+
+
 def build_local_render_video_data(
     *,
     title: str,

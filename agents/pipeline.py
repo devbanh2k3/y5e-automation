@@ -19,7 +19,11 @@ from typing import Any
 from core import database as db
 from core.config import get_settings
 from core.notifier import notify, notify_error
-from core.video_contract import build_local_render_video_data, validate_video_data
+from core.video_contract import (
+    build_local_render_video_data,
+    build_video_data_from_content_contract,
+    validate_video_data,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -252,12 +256,26 @@ class Pipeline:
     ) -> dict[str, Any]:
         """Create a local render artifact using explicit fallback content."""
         resolved_category = category.strip() or "Local"
-        title = f"{resolved_category} Local Render Validation"
-        video_data = build_local_render_video_data(
-            title=title,
-            category=resolved_category,
-            language=language,
-        )
+        content_contract: dict[str, Any] | None = None
+        fallback_used = True
+
+        if resolved_category.lower() in {"celebrity", "nguoi_noi_tieng", "người nổi tiếng"}:
+            from agents.content_agent import ContentAgent
+
+            content_contract = await ContentAgent().run(
+                niche="celebrity",
+                language=language,
+                subject="người nổi tiếng",
+            )
+            video_data = build_video_data_from_content_contract(content_contract)
+            fallback_used = False
+        else:
+            title = f"{resolved_category} Local Render Validation"
+            video_data = build_local_render_video_data(
+                title=title,
+                category=resolved_category,
+                language=language,
+            )
         validate_video_data(video_data)
 
         topic_id = 1
@@ -275,7 +293,14 @@ class Pipeline:
             "file_path": render_result["file_path"],
             "duration_sec": render_result["duration_sec"],
             "status": render_result["status"],
-            "fallback_used": True,
+            "fallback_used": fallback_used,
+            "content_contract": content_contract,
+            "youtube_title": content_contract["youtube_title"] if content_contract else "",
+            "youtube_description": (
+                content_contract["youtube_description"] if content_contract else ""
+            ),
+            "youtube_tags": content_contract["youtube_tags"] if content_contract else [],
+            "thumbnail_prompt": content_contract["thumbnail_prompt"] if content_contract else "",
         }
 
     async def _render_local_video(

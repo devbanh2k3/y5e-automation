@@ -59,6 +59,36 @@ async def test_run_local_render_validates_video_data_before_render(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_run_local_render_uses_content_agent_for_celebrity(monkeypatch):
+    captured: dict[str, object] = {}
+
+    async def fake_render(self, *, topic_id, video_data):
+        captured["video_data"] = video_data
+        return {
+            "video_id": 456,
+            "file_path": "/tmp/final_video.mp4",
+            "duration_sec": 90,
+            "status": "rendered",
+        }
+
+    monkeypatch.setattr(Pipeline, "_render_local_video", fake_render)
+
+    pipeline = Pipeline()
+    result = await pipeline.run_local_render(category="Celebrity", language="vi")
+
+    video_data = captured["video_data"]
+    content_contract = video_data["content_contract"]
+
+    assert result["mode"] == "local_render"
+    assert result["category"] == "Celebrity"
+    assert result["fallback_used"] is False
+    assert result["content_contract"]["niche"] == "celebrity"
+    assert result["youtube_title"] == content_contract["youtube_title"]
+    assert "người nổi tiếng" in result["youtube_title"].lower()
+    assert video_data["cards"][0]["header"] == "SCENE 1"
+
+
+@pytest.mark.asyncio
 async def test_render_local_video_invokes_remotion(monkeypatch, tmp_path):
     get_settings.cache_clear()
     monkeypatch.setenv("STORAGE_PATH", str(tmp_path / "output"))

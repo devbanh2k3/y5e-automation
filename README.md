@@ -296,6 +296,16 @@ curl http://localhost:8000/api/jobs/<job_id>
 
 The `result_summary` includes `file_path`, `duration_sec`, `topic_id`, `video_id`, and `fallback_used`. The rendered MP4 is written under `output/topics/<topic_id>/final_video.mp4` by default.
 
+For the celebrity MVP content path, use:
+
+```bash
+curl -X POST http://localhost:8000/api/pipeline/start \
+  -H "Content-Type: application/json" \
+  -d '{"category": "Celebrity", "language": "vi", "count": 1, "mode": "local_render"}'
+```
+
+This path uses `ContentAgent` and `content_contract_v2` to produce scenes, voiceover text, thumbnail prompt, YouTube title, description, and tags before rendering.
+
 For production, set:
 
 ```env

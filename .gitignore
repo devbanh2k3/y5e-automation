@@ -23,6 +23,8 @@ video_engine/node_modules/
 node_modules/
 video_engine/out/
 video_engine/dist/
+video_engine/public/video_data.json
+video_engine/public/images/local-*.svg
 
 # Generated media and runtime output
 output/
