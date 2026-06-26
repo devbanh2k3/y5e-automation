@@ -78,6 +78,87 @@ def validate_content_contract_v2(payload: dict[str, Any]) -> None:
         raise VideoContractError("duration_target must be a positive integer")
 
 
+def build_image_verification_contract_v1(
+    *,
+    topic_id: int,
+    items: list[dict[str, Any]],
+    source_policy: str = "wikimedia_commons_strict",
+) -> dict[str, Any]:
+    verified_count = sum(1 for item in items if item.get("status") == "verified")
+    status = "verified" if items and verified_count == len(items) else "pending_review"
+    return {
+        "schema_version": "image_verification_contract_v1",
+        "topic_id": topic_id,
+        "source_policy": source_policy,
+        "required_count": len(items),
+        "verified_count": verified_count,
+        "status": status,
+        "items": items,
+    }
+
+
+def validate_image_verification_contract_v1(payload: dict[str, Any]) -> None:
+    if payload.get("schema_version") != "image_verification_contract_v1":
+        raise VideoContractError("schema_version must be image_verification_contract_v1")
+    if payload.get("source_policy") != "wikimedia_commons_strict":
+        raise VideoContractError("source_policy must be wikimedia_commons_strict")
+    if not isinstance(payload.get("topic_id"), int) or payload["topic_id"] <= 0:
+        raise VideoContractError("topic_id must be a positive integer")
+
+    items = payload.get("items")
+    if not isinstance(items, list) or not items:
+        raise VideoContractError("items must contain at least one image verification item")
+
+    verified_count = 0
+    for index, item in enumerate(items):
+        if not isinstance(item, dict):
+            raise VideoContractError(f"items[{index}] must be an object")
+        for field_name in ("scene_index", "person_name", "expected_title", "status", "confidence"):
+            if field_name == "scene_index":
+                if not isinstance(item.get(field_name), int) or item[field_name] < 0:
+                    raise VideoContractError(
+                        f"items[{index}].scene_index must be a non-negative integer"
+                    )
+            elif field_name == "confidence":
+                confidence = item.get(field_name)
+                if not isinstance(confidence, int | float) or confidence < 0 or confidence > 1:
+                    raise VideoContractError(f"items[{index}].confidence must be between 0 and 1")
+            elif not str(item.get(field_name, "")).strip():
+                raise VideoContractError(f"items[{index}].{field_name} is required")
+
+        status = item["status"]
+        if status not in {"verified", "missing_image", "rejected"}:
+            raise VideoContractError(f"items[{index}].status is invalid")
+
+        if status == "verified":
+            verified_count += 1
+            for field_name in (
+                "local_path",
+                "render_image_path",
+                "source_url",
+                "image_url",
+                "license",
+                "attribution",
+            ):
+                if not str(item.get(field_name, "")).strip():
+                    raise VideoContractError(f"items[{index}].{field_name} is required")
+            if str(item.get("reject_reason", "")):
+                raise VideoContractError(
+                    f"items[{index}].reject_reason must be empty for verified images"
+                )
+        elif not str(item.get("reject_reason", "")).strip():
+            raise VideoContractError(f"items[{index}].reject_reason is required")
+
+    if payload.get("required_count") != len(items):
+        raise VideoContractError("required_count must equal item count")
+    if payload.get("verified_count") != verified_count:
+        raise VideoContractError("verified_count must equal verified item count")
+
+    expected_status = "verified" if verified_count == len(items) else "pending_review"
+    if payload.get("status") != expected_status:
+        raise VideoContractError(f"status must be {expected_status}")
+
+
 def build_video_data_from_content_contract(payload: dict[str, Any]) -> dict[str, Any]:
     """Convert content contract v2 into Remotion-compatible video data."""
     validate_content_contract_v2(payload)
@@ -113,6 +194,28 @@ def build_video_data_from_content_contract(payload: dict[str, Any]) -> dict[str,
         "transitionDurationFrames": 15,
         "content_contract": payload,
     }
+
+
+def apply_verified_images_to_video_data(
+    video_data: dict[str, Any],
+    image_contract: dict[str, Any],
+) -> dict[str, Any]:
+    validate_image_verification_contract_v1(image_contract)
+    if image_contract["status"] != "verified":
+        raise VideoContractError("image verification contract must be verified")
+
+    cards = video_data.get("cards")
+    if not isinstance(cards, list):
+        raise VideoContractError("cards must contain at least one card")
+
+    for item in image_contract["items"]:
+        scene_index = item["scene_index"]
+        if scene_index >= len(cards):
+            raise VideoContractError(f"items[{scene_index}].scene_index is outside card range")
+        cards[scene_index]["imagePath"] = item["render_image_path"]
+
+    video_data["image_verification_contract"] = image_contract
+    return video_data
 
 
 def build_local_render_video_data(
