@@ -12,6 +12,7 @@ class PipelineMode(StrEnum):
     PRODUCTION = "production"
     DRY_RUN = "dry_run"
     SMOKE = "smoke"
+    LOCAL_RENDER = "local_render"
 
 
 class JobStatus(StrEnum):

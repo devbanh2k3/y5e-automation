@@ -92,6 +92,49 @@ async def test_start_pipeline_rejects_invalid_mode():
 
 
 @pytest.mark.asyncio
+async def test_start_pipeline_accepts_local_render_mode(monkeypatch: pytest.MonkeyPatch):
+    captured: dict[str, object] = {}
+
+    async def fake_enqueue(
+        queue_name,
+        job_data,
+        *,
+        action,
+        max_attempts=3,
+        attempt=0,
+        job_id=None,
+    ):
+        captured["queue_name"] = queue_name
+        captured["job_data"] = job_data
+        captured["action"] = action
+        return "job-local-render"
+
+    monkeypatch.setattr("api.main.enqueue", fake_enqueue)
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post(
+            "/api/pipeline/start",
+            json={
+                "category": "Science",
+                "language": "vi",
+                "count": 1,
+                "mode": "local_render",
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.json()["job_id"] == "job-local-render"
+    assert captured["queue_name"] == "pipeline"
+    assert captured["action"] == JobAction.RUN_PIPELINE
+    assert captured["job_data"] == {
+        "category": "Science",
+        "language": "vi",
+        "count": 1,
+        "mode": PipelineMode.LOCAL_RENDER.value,
+    }
+
+
+@pytest.mark.asyncio
 async def test_get_job_status_returns_metadata(monkeypatch: pytest.MonkeyPatch):
     async def fake_get_job_metadata(job_id: str):
         return {
