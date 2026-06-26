@@ -115,6 +115,7 @@ class RealImageAgent(BaseAgent):
             f"&gsrlimit=10"
             f"&prop=imageinfo"
             f"&iiprop=url|extmetadata"
+            f"&iiurlwidth=1200"
             f"&format=json"
         )
         async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT, follow_redirects=True) as client:
@@ -249,6 +250,7 @@ class RealImageAgent(BaseAgent):
             return None
         info = image_info_list[0]
         image_url = str(info.get("url", "")).strip()
+        download_url = str(info.get("thumburl") or image_url).strip()
         source_url = str(info.get("descriptionurl", "")).strip()
         metadata = info.get("extmetadata") or {}
         license_text = cls.clean_metadata(metadata.get("LicenseShortName", {}).get("value", ""))
@@ -263,24 +265,32 @@ class RealImageAgent(BaseAgent):
             return None
         if not cls.is_allowed_license(license_text):
             return None
-        if not cls.metadata_matches_person(person_name, metadata_text):
+        identity = cls.evaluate_identity_match(person_name, metadata_text)
+        content = cls.evaluate_content_match(metadata_text, source_url)
+        if identity["identity_check_status"] != "passed":
+            return None
+        if content["content_match_status"] != "passed":
             return None
         return {
+            "download_url": download_url,
             "image_url": image_url,
             "source_url": source_url,
             "license": license_text,
             "attribution": attribution or "Wikimedia Commons contributor",
             "metadata_text": metadata_text,
+            "source_adapter": "commons_search_thumbnail",
+            **identity,
+            **content,
         }
 
-    async def _download_image_bytes(self, image_url: str) -> bytes:
+    async def _download_image_bytes(self, image_url: str) -> tuple[bytes, str]:
         async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT, follow_redirects=True) as client:
             response = await client.get(
                 image_url,
                 headers={"User-Agent": self.WIKIMEDIA_USER_AGENT},
             )
             response.raise_for_status()
-            return response.content
+            return response.content, response.headers.get("content-type", "")
 
     async def _process_verified_candidate(
         self,
@@ -291,7 +301,10 @@ class RealImageAgent(BaseAgent):
         expected_title: str,
         candidate: dict[str, str],
     ) -> dict[str, Any]:
-        raw_bytes = await self._download_image_bytes(candidate["image_url"])
+        download_url = candidate.get("download_url") or candidate["image_url"]
+        raw_bytes, content_type = await self._download_image_bytes(download_url)
+        if "image/" not in content_type.lower():
+            raise ValueError("downloaded content is not an image")
         with Image.open(BytesIO(raw_bytes)) as image:
             image = image.convert("RGB")
             if image.width < _MIN_IMAGE_WIDTH or image.height < _MIN_IMAGE_HEIGHT:

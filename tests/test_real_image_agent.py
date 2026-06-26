@@ -134,6 +134,7 @@ def test_extract_wikimedia_candidate_reads_license_and_attribution():
         "imageinfo": [
             {
                 "url": "https://upload.wikimedia.org/wikipedia/commons/celine.jpg",
+                "thumburl": "https://upload.wikimedia.org/thumb/celine.jpg",
                 "descriptionurl": "https://commons.wikimedia.org/wiki/File:Celine_Dion_2012.jpg",
                 "extmetadata": {
                     "LicenseShortName": {"value": "CC BY-SA 4.0"},
@@ -147,11 +148,19 @@ def test_extract_wikimedia_candidate_reads_license_and_attribution():
     candidate = RealImageAgent.extract_wikimedia_candidate("Celine Dion", page)
 
     assert candidate == {
+        "download_url": "https://upload.wikimedia.org/thumb/celine.jpg",
         "image_url": "https://upload.wikimedia.org/wikipedia/commons/celine.jpg",
         "source_url": "https://commons.wikimedia.org/wiki/File:Celine_Dion_2012.jpg",
         "license": "CC BY-SA 4.0",
         "attribution": "Example photographer",
         "metadata_text": "File:Celine Dion 2012.jpg CC BY-SA 4.0 Example photographer Celine Dion performing live",
+        "source_adapter": "commons_search_thumbnail",
+        "identity_check_status": "passed",
+        "identity_confidence": 0.95,
+        "content_match_status": "passed",
+        "content_match_reason": "metadata matches acceptable celebrity photo context",
+        "is_group_photo": False,
+        "needs_human_review": False,
     }
 
 
@@ -162,9 +171,9 @@ async def test_process_verified_candidate_downloads_webp(monkeypatch, tmp_path):
     buffer = BytesIO()
     image.save(buffer, format="JPEG")
 
-    async def fake_download_image_bytes(image_url: str) -> bytes:
+    async def fake_download_image_bytes(image_url: str) -> tuple[bytes, str]:
         assert image_url == "https://upload.wikimedia.org/wikipedia/commons/celine.jpg"
-        return buffer.getvalue()
+        return buffer.getvalue(), "image/jpeg"
 
     monkeypatch.setenv("STORAGE_PATH", str(tmp_path))
     monkeypatch.setattr(agent, "_download_image_bytes", fake_download_image_bytes)
@@ -186,3 +195,77 @@ async def test_process_verified_candidate_downloads_webp(monkeypatch, tmp_path):
     assert item["status"] == "verified"
     assert item["render_image_path"] == "images/real_0.webp"
     assert item["source_url"].startswith("https://commons.wikimedia.org/")
+
+
+@pytest.mark.asyncio
+async def test_process_verified_candidate_prefers_download_url(monkeypatch, tmp_path):
+    agent = RealImageAgent()
+    image = Image.new("RGB", (640, 400), color="blue")
+    buffer = BytesIO()
+    image.save(buffer, format="JPEG")
+    seen = {}
+
+    async def fake_download_image_bytes(image_url: str) -> tuple[bytes, str]:
+        seen["url"] = image_url
+        return buffer.getvalue(), "image/jpeg"
+
+    monkeypatch.setenv("STORAGE_PATH", str(tmp_path))
+    monkeypatch.setattr(agent, "_download_image_bytes", fake_download_image_bytes)
+
+    item = await agent._process_verified_candidate(
+        topic_id=1,
+        scene_index=0,
+        person_name="Celine Dion",
+        expected_title="#10 Celine Dion",
+        candidate={
+            "download_url": "https://upload.wikimedia.org/thumb/celine.jpg",
+            "image_url": "https://upload.wikimedia.org/original/celine.jpg",
+            "source_url": "https://commons.wikimedia.org/wiki/File:Celine_Dion.jpg",
+            "license": "CC BY-SA 4.0",
+            "attribution": "Example photographer",
+            "metadata_text": "Celine Dion portrait",
+            "source_adapter": "commons_search_thumbnail",
+            "identity_check_status": "passed",
+            "identity_confidence": 0.95,
+            "content_match_status": "passed",
+            "content_match_reason": "metadata matches acceptable celebrity photo context",
+            "is_group_photo": False,
+            "needs_human_review": False,
+        },
+    )
+
+    assert seen["url"] == "https://upload.wikimedia.org/thumb/celine.jpg"
+    assert item["image_url"] == "https://upload.wikimedia.org/original/celine.jpg"
+
+
+@pytest.mark.asyncio
+async def test_process_verified_candidate_rejects_non_image_content(monkeypatch):
+    agent = RealImageAgent()
+
+    async def fake_download_image_bytes(image_url: str) -> tuple[bytes, str]:
+        return b"%PDF fake", "application/pdf"
+
+    monkeypatch.setattr(agent, "_download_image_bytes", fake_download_image_bytes)
+
+    with pytest.raises(ValueError, match="downloaded content is not an image"):
+        await agent._process_verified_candidate(
+            topic_id=1,
+            scene_index=0,
+            person_name="Celine Dion",
+            expected_title="#10 Celine Dion",
+            candidate={
+                "download_url": "https://upload.wikimedia.org/file.pdf",
+                "image_url": "https://upload.wikimedia.org/file.pdf",
+                "source_url": "https://commons.wikimedia.org/wiki/File:Celine.pdf",
+                "license": "CC BY-SA 4.0",
+                "attribution": "Example",
+                "metadata_text": "Celine Dion book pdf",
+                "source_adapter": "commons_search_thumbnail",
+                "identity_check_status": "passed",
+                "identity_confidence": 0.95,
+                "content_match_status": "passed",
+                "content_match_reason": "test",
+                "is_group_photo": False,
+                "needs_human_review": False,
+            },
+        )
