@@ -306,6 +306,8 @@ curl -X POST http://localhost:8000/api/pipeline/start \
 
 This path uses `ContentAgent` and `content_contract_v2` to produce data-comparison celebrity scenes, voiceover text, thumbnail prompt, YouTube title, description, and tags before rendering. It keeps the existing timeline video template and changes only the content fed into that template.
 
+Celebrity local renders use the strict `RealImageAgent` path before Remotion rendering. The agent accepts only verified real images from Wikimedia/Wikipedia-style sources with source URL, image URL, license, attribution, and person-name metadata checks. The existing timeline video template is not changed; verified images only replace each card's `imagePath`. If required images are missing or unverified, the celebrity render path must not silently render a production-looking MP4 with placeholders.
+
 ### Review Gate
 
 Celebrity local renders create a pending review artifact before any upload step is allowed.

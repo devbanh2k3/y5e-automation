@@ -38,6 +38,11 @@ def test_build_missing_item_contains_reviewable_reason():
     assert item["reject_reason"] == "no verified Wikimedia image found"
 
 
+def test_wikimedia_user_agent_includes_contact_and_project_url():
+    assert "github.com/devbanh2k3/y5e-automation" in RealImageAgent.WIKIMEDIA_USER_AGENT
+    assert "@" in RealImageAgent.WIKIMEDIA_USER_AGENT
+
+
 @pytest.mark.asyncio
 async def test_run_for_content_contract_returns_verified_wikimedia_contract(monkeypatch, tmp_path):
     agent = RealImageAgent()

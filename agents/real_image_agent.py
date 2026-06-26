@@ -34,6 +34,11 @@ _MIN_IMAGE_HEIGHT = 200
 class RealImageAgent(BaseAgent):
     """Find and verify real sourced images for celebrity render cards."""
 
+    WIKIMEDIA_USER_AGENT = (
+        "Y5E-Automation/1.0 "
+        "(https://github.com/devbanh2k3/y5e-automation; devbanh@example.com)"
+    )
+
     def __init__(self) -> None:
         super().__init__(name="real_image_agent")
 
@@ -113,7 +118,7 @@ class RealImageAgent(BaseAgent):
             f"&format=json"
         )
         async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT, follow_redirects=True) as client:
-            response = await client.get(url, headers={"User-Agent": "Y5E-Automation/1.0"})
+            response = await client.get(url, headers={"User-Agent": self.WIKIMEDIA_USER_AGENT})
             response.raise_for_status()
             data = response.json()
 
@@ -219,7 +224,10 @@ class RealImageAgent(BaseAgent):
 
     async def _download_image_bytes(self, image_url: str) -> bytes:
         async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT, follow_redirects=True) as client:
-            response = await client.get(image_url, headers={"User-Agent": "Y5E-Automation/1.0"})
+            response = await client.get(
+                image_url,
+                headers={"User-Agent": self.WIKIMEDIA_USER_AGENT},
+            )
             response.raise_for_status()
             return response.content
 
