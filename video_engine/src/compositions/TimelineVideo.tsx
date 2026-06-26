@@ -11,19 +11,19 @@ import { Branding } from "../components/Branding";
  * TimelineVideo composition.
  *
  * Structure:
- *   [Hook: first 3 cards slide up centered] → [Morph: slide left + scroll continues from card 4] → [Main: scroll] → [Outro]
+ *   [Hook: first 3 cards appear in 4s slots] → [Morph: slide left + scroll continues from card 4] → [Main: scroll] → [Outro]
  *
- * - Hook: First 3 cards slide up from bottom, staggered, centered on screen
+ * - Hook: First 3 cards slide up from bottom one-by-one, each with 2s slide + 2s settled read time
  * - Morph: 3 cards smoothly slide from center to left (scroll position), scroll starts
  * - Main: Continuous scroll — picks up from card 4 onwards (cards 1-3 scroll off left)
  */
 
 const HOOK_CARDS = 3;
-const HOOK_STAGGER = 45;       // 1.5s between each card appearing
-const HOOK_SLIDE_IN = 60;      // 2s slide up animation (slow & smooth)
-const HOOK_HOLD = 180;         // 6s hold after all visible
+const HOOK_CARD_SLOT = 120;    // 4s per hook card at 30fps
+const HOOK_SLIDE_IN = 60;      // 2s slide up animation
+const HOOK_SETTLE = HOOK_CARD_SLOT - HOOK_SLIDE_IN; // 2s settled read time
 const MORPH_FRAMES = 30;       // 1s morph to scroll
-// Total hook: 2×45 + 60 + 180 + 30 = 360 frames = 12s
+// Total hook: 3 cards × 120 frames = 360 frames = 12s
 
 export const TimelineVideo: React.FC<VideoData> = (props) => {
   const frame = useCurrentFrame();
@@ -31,6 +31,7 @@ export const TimelineVideo: React.FC<VideoData> = (props) => {
 
   const {
     cards,
+    cardLayout = "classic",
     language,
     musicPath,
     logoPath,
@@ -42,10 +43,13 @@ export const TimelineVideo: React.FC<VideoData> = (props) => {
 
   // Phase timing
   const hookCardCount = Math.min(HOOK_CARDS, cards.length);
-  const hookAnimEnd = (hookCardCount - 1) * HOOK_STAGGER + HOOK_SLIDE_IN;
-  const hookEnd = hookAnimEnd + HOOK_HOLD;
+  const hookEnd = hookCardCount * HOOK_CARD_SLOT;
   const morphEnd = hookEnd + MORPH_FRAMES;
   const outroStart = durationInFrames - OUTRO_DURATION_FRAMES;
+  const activeHookCardIndex = Math.min(
+    hookCardCount - 1,
+    Math.floor(frame / HOOK_CARD_SLOT)
+  );
 
   // Phase detection
   const isHook = frame < hookEnd;
@@ -126,8 +130,8 @@ export const TimelineVideo: React.FC<VideoData> = (props) => {
       {!isOutro && (
         <div style={{ position: "absolute", inset: 0 }}>
           {cards.map((card, index) => {
-            // During hook: only show first 3 cards with slide-up
-            if (isHook && index >= hookCardCount) return null;
+            // During hook: show exactly one of the first 3 cards per 4s slot.
+            if (isHook && index !== activeHookCardIndex) return null;
 
             const cardX = getCardX(index);
 
@@ -141,7 +145,7 @@ export const TimelineVideo: React.FC<VideoData> = (props) => {
             let cardOpacity = 1;
 
             if (isHook && index < hookCardCount) {
-              const cardStart = index * HOOK_STAGGER;
+              const cardStart = index * HOOK_CARD_SLOT;
               const localFrame = Math.max(0, frame - cardStart);
 
               slideY = interpolate(
@@ -181,6 +185,7 @@ export const TimelineVideo: React.FC<VideoData> = (props) => {
               >
                 <Card
                   {...card}
+                  cardLayout={cardLayout}
                   isActive={false}
                   globalFrame={frame}
                   activeStartFrame={0}

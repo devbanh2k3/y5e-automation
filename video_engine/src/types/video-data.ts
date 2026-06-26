@@ -7,6 +7,14 @@ export interface CardData {
   description: string;
   /** Path to real image file (relative to public/) */
   imagePath: string;
+  /** ISO 3166-1 alpha-2 country code used to render the correct flag */
+  countryCode?: string;
+  /** Country or context label for data templates */
+  countryLabel?: string;
+  /** Metric label, e.g. "NET WORTH" */
+  metricLabel?: string;
+  /** Metric value, e.g. "550M USD" */
+  metricValue?: string;
   /** Status/metric text, e.g. "IQ TRUNG BÌNH: 90" */
   statusText: string;
 }
@@ -29,6 +37,8 @@ export interface SfxPaths {
 export interface VideoData {
   /** Which composition template to use */
   template: "timeline" | "ranking" | "comparison";
+  /** Card layout used inside timeline cards */
+  cardLayout?: "classic" | "flag_hero" | "split_data";
   /** Video title */
   title: string;
   /** Top banner text */
