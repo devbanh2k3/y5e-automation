@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from agents.base_agent import BaseAgent
@@ -36,9 +37,202 @@ class ContentAgent(BaseAgent):
             validate_content_contract_v2(contract)
             return contract
 
-        contract = self._build_celebrity_contract(language=language, subject=subject)
+        contract = await self._build_ai_celebrity_contract(
+            language=language,
+            subject=subject,
+        )
         validate_content_contract_v2(contract)
         return contract
+
+    async def _build_ai_celebrity_contract(
+        self,
+        *,
+        language: str,
+        subject: str,
+    ) -> dict[str, Any]:
+        try:
+            topic = await self._generate_celebrity_topic(language=language, subject=subject)
+            contract = await self._generate_celebrity_contract_from_topic(
+                language=language,
+                subject=subject,
+                topic=topic,
+            )
+            validate_content_contract_v2(contract)
+            return contract
+        except Exception as exc:
+            self.logger.warning("Falling back to seeded celebrity contract: %s", exc)
+            return self._build_celebrity_contract(language=language, subject=subject)
+
+    async def _generate_celebrity_topic(
+        self,
+        *,
+        language: str,
+        subject: str,
+    ) -> dict[str, Any]:
+        prompt = f"""Generate 1 optimized Celebrity topic for a YouTube data-comparison video.
+
+Niche: Celebrity / famous people statistics
+Audience language: {language}
+Subject hint: {subject}
+
+Choose a topic that can be rendered as ranking cards and is likely to perform well:
+- richest singers/actors
+- most followed celebrities
+- youngest/oldest celebrities in a category
+- highest paid actors
+- celebrity transformations with measurable before/after data
+- longest marriages or career milestones
+
+Rules:
+1. Return a specific ranking topic, not a generic category.
+2. Prefer topics with real public data and real image availability.
+3. Avoid defamation, private allegations, medical claims, or unsafe gossip.
+4. Include the metric label that each card should compare.
+
+Return JSON only:
+{{
+  "title": "Top 10 ...",
+  "angle": "short_snake_case_angle",
+  "metric_label": "NET WORTH | FOLLOWERS | AGE | HEIGHT | AWARDS | YEARS",
+  "reason": "why this topic can get views"
+}}"""
+        system = (
+            "You are a YouTube strategist for celebrity data-comparison videos. "
+            "Return valid JSON only. Optimize for viral potential, data availability, "
+            "and image verification."
+        )
+        topic = await self.ai_json(prompt, system=system)
+        if not isinstance(topic, dict) or not str(topic.get("title", "")).strip():
+            raise ValueError("AI celebrity topic is missing title")
+        topic.setdefault("metric_label", "NET WORTH")
+        topic.setdefault("angle", "celebrity_ranking")
+        topic.setdefault("reason", "")
+        return topic
+
+    async def _generate_celebrity_contract_from_topic(
+        self,
+        *,
+        language: str,
+        subject: str,
+        topic: dict[str, Any],
+    ) -> dict[str, Any]:
+        prompt = f"""Create a complete content_contract_v2 payload for a Celebrity data-comparison video.
+
+Topic candidate:
+{json.dumps(topic, ensure_ascii=False, indent=2)}
+
+Language: {language}
+Subject hint: {subject}
+
+Hard rules:
+1. Use 8-12 ranking scenes.
+2. Each scene must be one real public celebrity/person.
+3. Each scene must include short voiceover, caption, image_prompt, statusText.
+4. Each scene must include countryCode and countryLabel matching the person's nationality/origin.
+5. Each scene must include metricLabel and metricValue.
+6. Numbers must be phrased as public estimates when exact live data may change.
+7. Do not invent scandals, private allegations, health claims, or criminal claims.
+8. image_prompt must ask for a real editorial/photo-source image, not AI art.
+9. Put lower ranks first and #1 last so the video builds suspense.
+
+Return JSON only with this shape:
+{{
+  "title": "video title",
+  "hook": "short hook sentence",
+  "target_audience": "who this is for",
+  "youtube_title": "SEO title",
+  "youtube_description": "description including public estimate/source caution",
+  "youtube_tags": ["celebrity", "data comparison"],
+  "thumbnail_prompt": "thumbnail prompt",
+  "scenes": [
+    {{
+      "title": "#10 Celebrity Name",
+      "voiceover": "one concise sentence",
+      "caption": "short metric text",
+      "image_prompt": "real editorial photo of Celebrity Name",
+      "statusText": "#10 | metric",
+      "countryCode": "US",
+      "countryLabel": "UNITED STATES",
+      "metricLabel": "{topic.get("metric_label", "NET WORTH")}",
+      "metricValue": "metric",
+      "sourceRequirement": "what source must later verify this"
+    }}
+  ]
+}}"""
+        system = (
+            "You are a production content planner for YouTube Shorts-style data "
+            "comparison videos. Return strict JSON only. Favor verifiable public data."
+        )
+        raw_contract = await self.ai_json(prompt, system=system)
+        if not isinstance(raw_contract, dict):
+            raise ValueError("AI celebrity contract must be an object")
+
+        return self._normalize_ai_celebrity_contract(
+            raw_contract=raw_contract,
+            language=language,
+            topic=topic,
+        )
+
+    @staticmethod
+    def _normalize_ai_celebrity_contract(
+        *,
+        raw_contract: dict[str, Any],
+        language: str,
+        topic: dict[str, Any],
+    ) -> dict[str, Any]:
+        scenes = raw_contract.get("scenes")
+        if not isinstance(scenes, list) or not scenes:
+            raise ValueError("AI celebrity contract requires scenes")
+
+        normalized_scenes: list[dict[str, Any]] = []
+        metric_label = str(topic.get("metric_label", "NET WORTH") or "NET WORTH").strip()
+        for index, scene in enumerate(scenes):
+            if not isinstance(scene, dict):
+                raise ValueError(f"scene {index} must be an object")
+            title = str(scene.get("title", "")).strip()
+            metric_value = str(scene.get("metricValue", scene.get("caption", ""))).strip()
+            normalized_scenes.append(
+                {
+                    "title": title,
+                    "voiceover": str(scene.get("voiceover", "")).strip(),
+                    "caption": str(scene.get("caption", metric_value)).strip(),
+                    "image_prompt": str(scene.get("image_prompt", "")).strip(),
+                    "statusText": str(scene.get("statusText", metric_value)).strip(),
+                    "countryCode": str(scene.get("countryCode", "")).strip().upper(),
+                    "countryLabel": str(scene.get("countryLabel", "")).strip().upper(),
+                    "metricLabel": str(scene.get("metricLabel", metric_label)).strip().upper(),
+                    "metricValue": metric_value,
+                    "sourceRequirement": str(
+                        scene.get("sourceRequirement", "public source required")
+                    ).strip(),
+                }
+            )
+
+        tags = raw_contract.get("youtube_tags")
+        youtube_tags = [str(tag).strip() for tag in tags if str(tag).strip()] if isinstance(tags, list) else []
+        if "data comparison" not in youtube_tags:
+            youtube_tags.append("data comparison")
+        if "celebrity" not in youtube_tags:
+            youtube_tags.append("celebrity")
+
+        return build_content_contract_v2(
+            niche="celebrity",
+            title=str(raw_contract.get("title", topic["title"])).strip(),
+            hook=str(raw_contract.get("hook", topic.get("reason", ""))).strip(),
+            target_audience=str(
+                raw_contract.get(
+                    "target_audience",
+                    "Viewers who like celebrity statistics and data comparison.",
+                )
+            ).strip(),
+            language=language,
+            scenes=normalized_scenes,
+            thumbnail_prompt=str(raw_contract.get("thumbnail_prompt", "")).strip(),
+            youtube_title=str(raw_contract.get("youtube_title", topic["title"])).strip(),
+            youtube_description=str(raw_contract.get("youtube_description", "")).strip(),
+            youtube_tags=youtube_tags,
+            duration_target=60,
+        )
 
     @staticmethod
     def _build_country_comparison_comedy_contract(

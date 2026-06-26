@@ -13,7 +13,7 @@ import { Branding } from "../components/Branding";
  * Structure:
  *   [Hook: first 3 cards appear in 4s slots] → [Morph: slide left + scroll continues from card 4] → [Main: scroll] → [Outro]
  *
- * - Hook: First 3 cards slide up from bottom one-by-one, each with 2s slide + 2s settled read time
+ * - Hook: First 3 cards slide up from bottom one-by-one and stay visible, each with 2s slide + 2s settled read time
  * - Morph: 3 cards smoothly slide from center to left (scroll position), scroll starts
  * - Main: Continuous scroll — picks up from card 4 onwards (cards 1-3 scroll off left)
  */
@@ -130,8 +130,8 @@ export const TimelineVideo: React.FC<VideoData> = (props) => {
       {!isOutro && (
         <div style={{ position: "absolute", inset: 0 }}>
           {cards.map((card, index) => {
-            // During hook: show exactly one of the first 3 cards per 4s slot.
-            if (isHook && index !== activeHookCardIndex) return null;
+            // During hook: show revealed cards and keep them visible while the next card enters.
+            if (isHook && index > activeHookCardIndex) return null;
 
             const cardX = getCardX(index);
 

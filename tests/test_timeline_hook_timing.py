@@ -18,7 +18,8 @@ def test_timeline_hook_uses_three_sequential_four_second_slots() -> None:
     assert "const HOOK_SETTLE = HOOK_CARD_SLOT - HOOK_SLIDE_IN;" in source
     assert "const hookEnd = hookCardCount * HOOK_CARD_SLOT;" in source
     assert "const activeHookCardIndex = Math.min(" in source
-    assert "if (isHook && index !== activeHookCardIndex) return null;" in source
+    assert "if (isHook && index > activeHookCardIndex) return null;" in source
+    assert "index !== activeHookCardIndex" not in source
     assert "index * HOOK_CARD_SLOT" in source
     assert "HOOK_STAGGER" not in source
     assert "HOOK_HOLD" not in source

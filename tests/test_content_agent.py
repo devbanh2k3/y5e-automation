@@ -39,6 +39,96 @@ async def test_content_agent_builds_celebrity_mvp_contract():
 
 
 @pytest.mark.asyncio
+async def test_content_agent_uses_ai_topic_and_ranking_for_celebrity(monkeypatch):
+    agent = ContentAgent()
+    calls: list[str] = []
+
+    async def fake_ai_json(prompt: str, system: str | None = None, **kwargs):
+        calls.append(prompt)
+        if "Generate 1 optimized Celebrity topic" in prompt:
+            return {
+                "title": "Top 10 Most Followed Singers in 2026",
+                "angle": "most_followed",
+                "metric_label": "FOLLOWERS",
+                "reason": "social proof and recognizable names",
+            }
+        return {
+            "title": "Top 10 Most Followed Singers in 2026",
+            "hook": "A ranking built from public follower estimates.",
+            "target_audience": "Viewers who like celebrity data comparison.",
+            "youtube_title": "Top 10 Most Followed Singers in 2026",
+            "youtube_description": "Celebrity data comparison using public follower estimates.",
+            "youtube_tags": ["celebrity", "data comparison", "most followed singers"],
+            "thumbnail_prompt": "Celebrity ranking thumbnail with follower numbers",
+            "scenes": [
+                {
+                    "title": "#2 Ariana Grande",
+                    "voiceover": "#2 Ariana Grande has about 380M public followers.",
+                    "caption": "380M followers",
+                    "image_prompt": "real editorial photo of Ariana Grande",
+                    "statusText": "#2 | 380M followers",
+                    "countryCode": "US",
+                    "countryLabel": "UNITED STATES",
+                    "metricLabel": "FOLLOWERS",
+                    "metricValue": "380M",
+                    "sourceRequirement": "public social profile estimate",
+                },
+                {
+                    "title": "#1 Selena Gomez",
+                    "voiceover": "#1 Selena Gomez has about 430M public followers.",
+                    "caption": "430M followers",
+                    "image_prompt": "real editorial photo of Selena Gomez",
+                    "statusText": "#1 | 430M followers",
+                    "countryCode": "US",
+                    "countryLabel": "UNITED STATES",
+                    "metricLabel": "FOLLOWERS",
+                    "metricValue": "430M",
+                    "sourceRequirement": "public social profile estimate",
+                },
+            ],
+        }
+
+    monkeypatch.setattr(agent, "ai_json", fake_ai_json)
+
+    contract = await agent.run(
+        niche="celebrity",
+        language="vi",
+        subject="người nổi tiếng",
+    )
+
+    validate_content_contract_v2(contract)
+
+    assert len(calls) == 2
+    assert contract["title"] == "Top 10 Most Followed Singers in 2026"
+    assert contract["hook"] == "A ranking built from public follower estimates."
+    assert contract["scenes"][0]["metricLabel"] == "FOLLOWERS"
+    assert contract["scenes"][0]["title"] == "#2 Ariana Grande"
+    assert contract["scenes"][-1]["title"] == "#1 Selena Gomez"
+    assert "estimated net worth" not in contract["hook"].lower()
+
+
+@pytest.mark.asyncio
+async def test_content_agent_falls_back_when_ai_celebrity_contract_is_invalid(monkeypatch):
+    agent = ContentAgent()
+
+    async def fake_ai_json(prompt: str, system: str | None = None, **kwargs):
+        return {"title": ""}
+
+    monkeypatch.setattr(agent, "ai_json", fake_ai_json)
+
+    contract = await agent.run(
+        niche="celebrity",
+        language="vi",
+        subject="người nổi tiếng",
+    )
+
+    validate_content_contract_v2(contract)
+
+    assert "giàu nhất" in contract["title"].lower()
+    assert contract["scenes"][0]["metricLabel"] == "NET WORTH"
+
+
+@pytest.mark.asyncio
 async def test_content_agent_builds_country_comparison_comedy_contract():
     agent = ContentAgent()
 
