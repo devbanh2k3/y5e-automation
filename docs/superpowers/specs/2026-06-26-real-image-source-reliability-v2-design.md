@@ -11,11 +11,43 @@ Make the strict real-image pipeline actually render celebrity videos with verifi
 ## Non-Negotiable Requirements
 
 - Keep strict identity verification.
+- Add strict content-context verification so the accepted image matches the scene/person, not just a loose keyword.
 - Keep source URL, image URL, license, attribution, local path, confidence, and reject reason metadata.
 - Keep `content_contract_v2` and `TimelineVideo`; this feature only changes source lookup and image download reliability.
 - Do not use AI-generated celebrity portraits.
 - Do not use Picsum, random web thumbnails, social media scraping, search-engine thumbnails, or unlicensed images.
 - If all verified real-image sources fail, return missing-image metadata and block production-looking render.
+
+## Content Match Guard
+
+The existing token match is not enough for names such as `Jay-Z`, because generic search results can match unrelated entities like `John Jay`. Add a deterministic content match layer before any candidate can be accepted.
+
+Each candidate should produce these fields:
+
+- `identity_check_status`: `passed`, `uncertain`, or `failed`.
+- `identity_confidence`: float from `0.0` to `1.0`.
+- `content_match_status`: `passed`, `uncertain`, or `failed`.
+- `content_match_reason`: short explanation for review/debugging.
+- `is_group_photo`: boolean derived from metadata when obvious.
+- `needs_human_review`: boolean.
+
+MVP rules:
+
+- Exact normalized full-name phrase match in title/description/source metadata is required for `identity_check_status=passed`.
+- Weak token-only matches are `uncertain`, not `passed`.
+- For hyphen/stage names like `Jay-Z`, normalize punctuation but require the distinctive full stage name or a curated alias. `John Jay` must not pass for `Jay-Z`.
+- Reject obvious unrelated media types by metadata/source URL: PDFs, books, paintings of unrelated historical figures, diagrams, logos, fan art, memes, and non-photo files.
+- Reject candidates where metadata indicates a group photo unless the person name appears strongly and no solo image is available; MVP should mark group photos as `uncertain` and avoid rendering them in strict mode.
+- For celebrity ranking videos, accepted images should be portraits, performance photos, red-carpet/event photos, or official/encyclopedic photos of the named person.
+
+Production strict render rule:
+
+- license check must pass,
+- identity check must pass,
+- content match must pass,
+- image download and PIL validation must pass.
+
+Any `uncertain` or `failed` identity/content result blocks strict render and becomes review metadata.
 
 ## Recommended Approach
 
@@ -52,6 +84,7 @@ The first implementation should complete adapter 1 fully and add testable struct
 - `attribution`: attribution text.
 - `metadata_text`: normalized metadata used for identity matching.
 - `source_adapter`: adapter name, for example `commons_search_thumbnail`.
+- `identity_check_status`, `identity_confidence`, `content_match_status`, `content_match_reason`, `is_group_photo`, and `needs_human_review`.
 
 `image_url` remains part of the verification contract for provenance. `download_url` is an internal processing field and does not need to be stored in the final contract unless useful for debugging.
 
@@ -80,6 +113,10 @@ Unit tests should cover:
 
 - Commons candidate extraction prefers `thumburl` as `download_url`.
 - Commons candidate still stores original `url` as `image_url`.
+- Full-name identity matching accepts `Celine Dion` metadata for `Celine Dion`.
+- Full-name identity matching rejects `John Jay` metadata for `Jay-Z`.
+- Content match rejects PDFs, books, unrelated historical portraits, fan art, and obvious non-photo files by metadata/source URL.
+- Group-photo metadata is marked `uncertain` or review-needed in strict mode.
 - `_process_verified_candidate` downloads `download_url` when present.
 - `_process_verified_candidate` rejects non-image content types before PIL.
 - `_find_verified_image` tries the next candidate when one download fails.
