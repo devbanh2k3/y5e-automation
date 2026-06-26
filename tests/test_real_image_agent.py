@@ -269,3 +269,87 @@ async def test_process_verified_candidate_rejects_non_image_content(monkeypatch)
                 "needs_human_review": False,
             },
         )
+
+
+@pytest.mark.asyncio
+async def test_find_verified_image_tries_next_candidate_when_download_fails(monkeypatch, tmp_path):
+    agent = RealImageAgent()
+    calls = []
+
+    pages = {
+        "1": {
+            "title": "File:Celine Dion bad.jpg",
+            "imageinfo": [
+                {
+                    "url": "https://upload.wikimedia.org/original/bad.jpg",
+                    "thumburl": "https://upload.wikimedia.org/thumb/bad.jpg",
+                    "descriptionurl": "https://commons.wikimedia.org/wiki/File:Celine_bad.jpg",
+                    "extmetadata": {
+                        "LicenseShortName": {"value": "CC BY-SA 4.0"},
+                        "Artist": {"value": "A"},
+                        "ImageDescription": {"value": "Celine Dion portrait"},
+                    },
+                }
+            ],
+        },
+        "2": {
+            "title": "File:Celine Dion good.jpg",
+            "imageinfo": [
+                {
+                    "url": "https://upload.wikimedia.org/original/good.jpg",
+                    "thumburl": "https://upload.wikimedia.org/thumb/good.jpg",
+                    "descriptionurl": "https://commons.wikimedia.org/wiki/File:Celine_good.jpg",
+                    "extmetadata": {
+                        "LicenseShortName": {"value": "CC BY-SA 4.0"},
+                        "Artist": {"value": "B"},
+                        "ImageDescription": {"value": "Celine Dion portrait"},
+                    },
+                }
+            ],
+        },
+    }
+
+    class FakeResponse:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"query": {"pages": pages}}
+
+    class FakeClient:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return None
+
+        async def get(self, *args, **kwargs):
+            return FakeResponse()
+
+    image = Image.new("RGB", (640, 400), color="green")
+    buffer = BytesIO()
+    image.save(buffer, format="JPEG")
+
+    async def fake_download_image_bytes(url):
+        calls.append(url)
+        if "bad" in url:
+            raise ValueError("blocked")
+        return buffer.getvalue(), "image/jpeg"
+
+    monkeypatch.setenv("STORAGE_PATH", str(tmp_path))
+    monkeypatch.setattr("agents.real_image_agent.httpx.AsyncClient", lambda *args, **kwargs: FakeClient())
+    monkeypatch.setattr(agent, "_download_image_bytes", fake_download_image_bytes)
+
+    item = await agent._find_verified_image(
+        topic_id=1,
+        scene_index=0,
+        person_name="Celine Dion",
+        expected_title="#10 Celine Dion",
+    )
+
+    assert calls == [
+        "https://upload.wikimedia.org/thumb/bad.jpg",
+        "https://upload.wikimedia.org/thumb/good.jpg",
+    ]
+    assert item["status"] == "verified"
+    assert item["image_url"] == "https://upload.wikimedia.org/original/good.jpg"
