@@ -116,6 +116,11 @@ class PipelineWorker:
                     "language": language,
                     "result": pipeline_result,
                 }
+            elif mode == PipelineMode.LOCAL_RENDER.value:
+                result_summary = await pipeline.run_local_render(
+                    category=data["category"],
+                    language=language,
+                )
             else:
                 result_summary = await pipeline.run_smoke(
                     category=data["category"],

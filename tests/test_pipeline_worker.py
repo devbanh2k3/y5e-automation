@@ -12,6 +12,7 @@ class StubPipeline:
         self.fail_times = fail_times
         self.calls: list[tuple[str, str]] = []
         self.smoke_calls: list[tuple[str, str, str]] = []
+        self.local_render_calls: list[tuple[str, str]] = []
 
     async def run_full(self, *, category: str, language: str) -> None:
         self.calls.append((category, language))
@@ -27,6 +28,20 @@ class StubPipeline:
             "language": language,
             "steps": [],
             "side_effects": {"ai_calls": False, "render": False, "upload": False},
+        }
+
+    async def run_local_render(self, *, category: str, language: str):
+        self.local_render_calls.append((category, language))
+        return {
+            "mode": "local_render",
+            "category": category,
+            "language": language,
+            "topic_id": 1,
+            "video_id": 1,
+            "file_path": "/tmp/final_video.mp4",
+            "duration_sec": 0,
+            "status": "rendered",
+            "fallback_used": True,
         }
 
 
@@ -163,6 +178,31 @@ async def test_worker_routes_dry_run_job_to_run_smoke(fake_redis):
     metadata = await queue.get_job_metadata(job_id)
     assert stub.smoke_calls == [("history", "en", "dry_run")]
     assert json.loads(metadata["result_summary"])["mode"] == "dry_run"
+
+
+@pytest.mark.asyncio
+async def test_worker_routes_local_render_job_to_run_local_render(fake_redis):
+    stub = StubPipeline()
+    job_id = await queue.enqueue(
+        "pipeline",
+        {"category": "Science", "language": "vi", "mode": PipelineMode.LOCAL_RENDER.value},
+        action=JobAction.RUN_PIPELINE,
+    )
+    envelope = await queue.dequeue("pipeline", timeout=0)
+
+    worker = PipelineWorker(pipeline_factory=lambda: stub)
+    await worker.process(envelope)
+
+    metadata = await queue.get_job_metadata(job_id)
+    summary = json.loads(metadata["result_summary"])
+
+    assert stub.calls == []
+    assert stub.smoke_calls == []
+    assert stub.local_render_calls == [("Science", "vi")]
+    assert metadata["status"] == JobStatus.COMPLETED.value
+    assert summary["mode"] == "local_render"
+    assert summary["file_path"] == "/tmp/final_video.mp4"
+    assert summary["fallback_used"] is True
 
 
 @pytest.mark.asyncio
