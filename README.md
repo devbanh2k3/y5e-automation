@@ -262,6 +262,22 @@ curl -X POST http://localhost:8000/api/jobs/<job_id>/retry
 curl http://localhost:8000/api/queues
 ```
 
+### Smoke Mode
+
+Use smoke mode before production runs to validate API, Redis, worker, and pipeline wiring without paid AI calls, heavy rendering, or YouTube upload.
+
+```bash
+curl -X POST http://localhost:8000/api/pipeline/start \
+  -H "Content-Type: application/json" \
+  -d '{"category": "Science", "language": "vi", "count": 1, "mode": "smoke"}'
+```
+
+Then inspect the result summary:
+
+```bash
+curl http://localhost:8000/api/jobs/<job_id>
+```
+
 For production, set:
 
 ```env
