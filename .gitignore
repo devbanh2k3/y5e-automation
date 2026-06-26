@@ -25,6 +25,7 @@ video_engine/out/
 video_engine/dist/
 video_engine/public/video_data.json
 video_engine/public/images/local-*.svg
+video_engine/public/images/country_scene_*.svg
 
 # Generated media and runtime output
 output/
