@@ -33,78 +33,40 @@ class ContentAgent(BaseAgent):
     @staticmethod
     def _build_celebrity_contract(*, language: str, subject: str) -> dict[str, Any]:
         safe_subject = subject.strip() or "người nổi tiếng"
-        title = f"5 điều khiến {safe_subject} giữ được sự chú ý"
-        hook = "Sự nổi tiếng không chỉ đến từ một khoảnh khắc may mắn."
+        title = "Top 10 ca sĩ giàu nhất thế giới năm 2026"
+        hook = "Data comparison theo estimated net worth, dùng số liệu ước tính công khai."
         target_audience = (
-            "Người xem Việt Nam quan tâm chuyện hậu trường, giải trí, "
-            "thương hiệu cá nhân và bài học phát triển bản thân."
+            "Người xem Việt Nam thích video thống kê người nổi tiếng, ranking, "
+            "so sánh tài sản và dữ liệu giải trí dễ xem."
         )
+        ranking_items = [
+            (10, "Celine Dion", 550, "catalog âm nhạc, tour diễn và thương hiệu Las Vegas"),
+            (9, "Elton John", 650, "tour diễn toàn cầu, bản quyền âm nhạc và catalog kinh điển"),
+            (8, "Dolly Parton", 700, "bản quyền sáng tác, kinh doanh giải trí và di sản âm nhạc"),
+            (7, "Bono", 750, "U2, touring, bản quyền và các khoản đầu tư dài hạn"),
+            (6, "Madonna", 850, "tour diễn, catalog pop và thương hiệu biểu diễn nhiều thập kỷ"),
+            (5, "Taylor Swift", 1100, "tour Eras, catalog thu âm và quyền kiểm soát master"),
+            (4, "Paul McCartney", 1300, "The Beatles, sáng tác, bản quyền và tour diễn"),
+            (3, "Rihanna", 1400, "âm nhạc, Fenty Beauty và hệ sinh thái thương hiệu"),
+            (2, "Beyonce", 1600, "tour diễn, catalog, thương hiệu và dự án giải trí"),
+            (1, "Jay-Z", 2500, "âm nhạc, đầu tư, rượu champagne và danh mục kinh doanh"),
+        ]
+
         scenes = [
             {
-                "title": "Dấu ấn đầu tiên phải thật rõ",
+                "title": f"#{rank} {name}",
                 "voiceover": (
-                    "Một người nổi tiếng thường được nhớ đến nhờ một hình ảnh, "
-                    "một phong cách hoặc một câu chuyện rất dễ nhận ra."
+                    f"#{rank} là {name}, với estimated net worth khoảng "
+                    f"{value}M USD từ {reason}."
                 ),
-                "caption": "Dấu ấn cá nhân",
+                "caption": f"{value}M USD",
                 "image_prompt": (
-                    "Vietnamese celebrity-inspired stage spotlight, editorial portrait, "
-                    "no real logo, respectful entertainment documentary style"
+                    f"editorial celebrity data comparison card for {name}, premium stage lighting, "
+                    "clean ranking layout, no logo, respectful entertainment style"
                 ),
-                "statusText": "BÀI HỌC 1",
-            },
-            {
-                "title": "Khán giả theo dõi hành trình",
-                "voiceover": (
-                    "Thành tích giúp họ được chú ý, nhưng hành trình vượt áp lực "
-                    "mới khiến khán giả muốn tiếp tục theo dõi."
-                ),
-                "caption": "Câu chuyện",
-                "image_prompt": (
-                    "behind the scenes celebrity preparation, microphone, camera crew, "
-                    "cinematic Vietnamese entertainment mood"
-                ),
-                "statusText": "BÀI HỌC 2",
-            },
-            {
-                "title": "Kỷ luật nằm sau ánh đèn",
-                "voiceover": (
-                    "Phía sau vài phút xuất hiện là lịch tập, lịch quay, luyện giọng, "
-                    "thử trang phục và rất nhiều lần làm lại."
-                ),
-                "caption": "Kỷ luật",
-                "image_prompt": (
-                    "practice room with notes, microphone, stage outfit, professional lighting, "
-                    "documentary realism"
-                ),
-                "statusText": "BÀI HỌC 3",
-            },
-            {
-                "title": "Hình ảnh công chúng cần nhất quán",
-                "voiceover": (
-                    "Nếu hôm nay họ nói một kiểu và ngày mai làm một kiểu khác, "
-                    "niềm tin của khán giả sẽ giảm rất nhanh."
-                ),
-                "caption": "Nhất quán",
-                "image_prompt": (
-                    "public image planning board, social media posts, press photos, "
-                    "clean editorial composition"
-                ),
-                "statusText": "BÀI HỌC 4",
-            },
-            {
-                "title": "Sự chú ý phải biến thành giá trị",
-                "voiceover": (
-                    "Người giữ được sức hút lâu dài thường không chỉ xuất hiện nhiều, "
-                    "mà còn tạo ra sản phẩm, câu chuyện hoặc cảm hứng rõ ràng."
-                ),
-                "caption": "Giá trị",
-                "image_prompt": (
-                    "bright studio desk, creative planning, spotlight fading into audience, "
-                    "premium YouTube documentary style"
-                ),
-                "statusText": "BÀI HỌC 5",
-            },
+                "statusText": f"#{rank} | {value}M USD",
+            }
+            for rank, name, value, reason in ranking_items
         ]
 
         return build_content_contract_v2(
@@ -115,20 +77,21 @@ class ContentAgent(BaseAgent):
             language=language,
             scenes=scenes,
             thumbnail_prompt=(
-                "Vietnamese celebrity analysis YouTube thumbnail, expressive face silhouette, "
-                "spotlight, bold empty text area, red and white accents, high contrast"
+                "Top 10 richest singers 2026 YouTube thumbnail, gold numbers, celebrity silhouettes, "
+                "bold ranking text area, red and white accents, high contrast"
             ),
-            youtube_title=f"5 điều khiến {safe_subject} giữ được sự chú ý",
+            youtube_title=f"Top 10 {safe_subject} giàu nhất thế giới năm 2026",
             youtube_description=(
-                "Video phân tích cách người nổi tiếng xây dựng dấu ấn, giữ niềm tin "
-                "và biến sự chú ý thành giá trị lâu dài."
+                "Video data comparison xếp hạng ca sĩ giàu nhất thế giới theo estimated net worth. "
+                "Các con số là ước tính công khai và cần được fact-check trước khi xuất bản thật."
             ),
             youtube_tags=[
                 "nguoi noi tieng",
+                "data comparison",
+                "richest singers",
+                "top 10 celebrities",
                 "giai tri",
-                "thuong hieu ca nhan",
-                "hau truong showbiz",
-                "bai hoc thanh cong",
+                "thong ke so sanh",
             ],
             duration_target=60,
         )

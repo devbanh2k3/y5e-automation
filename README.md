@@ -304,7 +304,7 @@ curl -X POST http://localhost:8000/api/pipeline/start \
   -d '{"category": "Celebrity", "language": "vi", "count": 1, "mode": "local_render"}'
 ```
 
-This path uses `ContentAgent` and `content_contract_v2` to produce scenes, voiceover text, thumbnail prompt, YouTube title, description, and tags before rendering.
+This path uses `ContentAgent` and `content_contract_v2` to produce data-comparison celebrity scenes, voiceover text, thumbnail prompt, YouTube title, description, and tags before rendering. It keeps the existing timeline video template and changes only the content fed into that template.
 
 ### Review Gate
 

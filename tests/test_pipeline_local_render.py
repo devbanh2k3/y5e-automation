@@ -99,7 +99,9 @@ async def test_run_local_render_uses_content_agent_for_celebrity(monkeypatch):
     assert review_kwargs["job_id"] == ""
     assert review_kwargs["file_path"] == "/tmp/final_video.mp4"
     assert review_kwargs["content_contract"] == content_contract
+    assert video_data["template"] == "timeline"
     assert video_data["cards"][0]["header"] == "SCENE 1"
+    assert video_data["cards"][0]["statusText"].startswith("#10")
 
 
 @pytest.mark.asyncio
