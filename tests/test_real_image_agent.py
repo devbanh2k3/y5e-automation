@@ -74,13 +74,36 @@ def test_wikimedia_headers_reject_placeholder_identity(monkeypatch):
 def test_wikimedia_search_queries_include_celebrity_disambiguation():
     assert RealImageAgent.wikimedia_search_queries("Celine Dion") == [
         "Celine Dion portrait",
-        "Celine Dion singer",
+        "Celine Dion celebrity",
+        "Celine Dion actor",
+        "Celine Dion musician",
+        "Celine Dion footballer",
+        "Celine Dion",
     ]
     assert RealImageAgent.wikimedia_search_queries("Jay-Z") == [
         "Jay-Z portrait",
         "Jay-Z rapper",
         "Jay Z rapper",
         "Shawn Carter Jay-Z",
+    ]
+    assert RealImageAgent.wikimedia_search_queries("Lionel Messi") == [
+        "Lionel Messi portrait",
+        "Lionel Messi footballer",
+        "Lionel Messi Argentina",
+    ]
+    assert RealImageAgent.wikimedia_search_queries("Khloé Kardashian") == [
+        "Khloé Kardashian portrait",
+        "Khloe Kardashian portrait",
+        "Khloé Kardashian celebrity",
+        "Khloé Kardashian actor",
+        "Khloé Kardashian musician",
+        "Khloé Kardashian footballer",
+        "Khloé Kardashian",
+        "Khloe Kardashian celebrity",
+        "Khloe Kardashian actor",
+        "Khloe Kardashian musician",
+        "Khloe Kardashian footballer",
+        "Khloe Kardashian",
     ]
 
 
@@ -98,6 +121,16 @@ def test_identity_check_requires_full_name_not_loose_tokens():
     assert passed["identity_confidence"] == 0.95
     assert failed["identity_check_status"] == "failed"
     assert failed["identity_confidence"] == 0.0
+
+
+def test_identity_check_matches_accented_and_unaccented_names():
+    passed = RealImageAgent.evaluate_identity_match(
+        "Khloé Kardashian",
+        "File:Khloe Kardashian 2019.jpg Khloe Kardashian at an event",
+    )
+
+    assert passed["identity_check_status"] == "passed"
+    assert passed["identity_confidence"] == 0.95
 
 
 def test_content_match_rejects_non_photo_and_reviewable_group_photos():
@@ -120,6 +153,80 @@ def test_content_match_rejects_non_photo_and_reviewable_group_photos():
     assert group_result["is_group_photo"] is True
     assert portrait_result["content_match_status"] == "passed"
     assert portrait_result["needs_human_review"] is False
+
+
+def test_content_match_rejects_known_false_positive_celebrity_files():
+    madonna_artwork = RealImageAgent.evaluate_content_match(
+        metadata_text="File:Madonna and Child in an Evening Landscape Titian painting",
+        source_url="https://commons.wikimedia.org/wiki/File:Madonna_and_Child_in_an_Evening_Landscape_-_Titian.jpg",
+    )
+    madonna_church_artwork = RealImageAgent.evaluate_content_match(
+        metadata_text="File:Madonna dell'Orto (Venice) Beato Leone Bembo",
+        source_url="https://commons.wikimedia.org/wiki/File:Madonna_dell%27Orto_(Venice)_-_Beato_Leone_Bembo.jpg",
+    )
+    madonna_tattoo = RealImageAgent.evaluate_content_match(
+        metadata_text="File:A man with a Madonna tattoo",
+        source_url="https://commons.wikimedia.org/wiki/File:A_man_with_a_Madonna_tattoo.jpg",
+    )
+    rihanna_event = RealImageAgent.evaluate_content_match(
+        metadata_text="File:Prince, People au Défilé Channel, Printemps-Eté 2010",
+        source_url="https://commons.wikimedia.org/wiki/File:Prince,_People_au_D%C3%A9fil%C3%A9_Channel,_Printemps-Et%C3%A9_2010.jpg",
+    )
+    jay_z_couple = RealImageAgent.evaluate_content_match(
+        metadata_text="File:Beyoncé e Jay-Z.jpg Beyoncé and Jay-Z",
+        source_url="https://commons.wikimedia.org/wiki/File:Beyonc%C3%A9_e_Jay-Z.jpg",
+    )
+
+    assert madonna_artwork["content_match_status"] == "failed"
+    assert madonna_church_artwork["content_match_status"] == "failed"
+    assert madonna_tattoo["content_match_status"] == "failed"
+    assert rihanna_event["content_match_status"] == "failed"
+    assert jay_z_couple["content_match_status"] == "uncertain"
+    assert jay_z_couple["is_group_photo"] is True
+
+
+def test_extract_wikimedia_candidate_requires_identity_in_file_context():
+    page = {
+        "title": "File:Prince, People au Défilé Channel, Printemps-Eté 2010.jpg",
+        "imageinfo": [
+            {
+                "url": "https://upload.wikimedia.org/wikipedia/commons/rihanna.jpg",
+                "thumburl": "https://upload.wikimedia.org/thumb/rihanna.jpg",
+                "mime": "image/jpeg",
+                "thumbmime": "image/jpeg",
+                "descriptionurl": "https://commons.wikimedia.org/wiki/File:Prince,_People_au_D%C3%A9fil%C3%A9_Channel,_Printemps-Et%C3%A9_2010.jpg",
+                "extmetadata": {
+                    "LicenseShortName": {"value": "CC BY-SA 2.0"},
+                    "Artist": {"value": "Example photographer"},
+                    "ImageDescription": {"value": "Rihanna attending a fashion event"},
+                },
+            }
+        ],
+    }
+
+    assert RealImageAgent.extract_wikimedia_candidate("Rihanna", page) is None
+
+
+def test_extract_wikimedia_candidate_rejects_ambiguous_madonna_without_person_context():
+    page = {
+        "title": "File:A man with a Madonna tattoo.jpg",
+        "imageinfo": [
+            {
+                "url": "https://upload.wikimedia.org/wikipedia/commons/madonna-tattoo.jpg",
+                "thumburl": "https://upload.wikimedia.org/thumb/madonna-tattoo.jpg",
+                "mime": "image/jpeg",
+                "thumbmime": "image/jpeg",
+                "descriptionurl": "https://commons.wikimedia.org/wiki/File:A_man_with_a_Madonna_tattoo.jpg",
+                "extmetadata": {
+                    "LicenseShortName": {"value": "CC BY 2.0"},
+                    "Artist": {"value": "Example photographer"},
+                    "ImageDescription": {"value": "A man with a Madonna tattoo"},
+                },
+            }
+        ],
+    }
+
+    assert RealImageAgent.extract_wikimedia_candidate("Madonna", page) is None
 
 
 @pytest.mark.asyncio

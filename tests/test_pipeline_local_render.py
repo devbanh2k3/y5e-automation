@@ -4,6 +4,7 @@ import pytest
 
 from agents.pipeline import Pipeline
 from core.config import get_settings
+from core.video_contract import build_content_contract_v2
 
 
 @pytest.mark.asyncio
@@ -27,7 +28,7 @@ async def test_run_local_render_returns_stable_summary(monkeypatch, tmp_path):
     assert result["mode"] == "local_render"
     assert result["category"] == "Science"
     assert result["language"] == "vi"
-    assert result["topic_id"] == 1
+    assert result["topic_id"] >= 100000
     assert result["video_id"] == 456
     assert result["duration_sec"] == 90
     assert result["status"] == "rendered"
@@ -93,6 +94,45 @@ async def test_run_local_render_uses_content_agent_for_celebrity(monkeypatch):
                 ],
             }
 
+    class FakeContentAgent:
+        async def run(self, *, niche, language, subject):
+            return build_content_contract_v2(
+                niche="celebrity",
+                title="Top 10 người nổi tiếng test",
+                hook="Hook test",
+                target_audience="Người xem thích thống kê người nổi tiếng.",
+                language=language,
+                scenes=[
+                    {
+                        "title": "#10 Celine Dion",
+                        "voiceover": "#10 Celine Dion has a public estimate.",
+                        "caption": "550M USD",
+                        "image_prompt": "real editorial photo of Celine Dion",
+                        "statusText": "#10 | 550M USD",
+                        "countryCode": "CA",
+                        "countryLabel": "CANADA",
+                        "metricLabel": "NET WORTH",
+                        "metricValue": "550M USD",
+                    },
+                    {
+                        "title": "#1 Taylor Swift",
+                        "voiceover": "#1 Taylor Swift has a public estimate.",
+                        "caption": "1.6B USD",
+                        "image_prompt": "real editorial photo of Taylor Swift",
+                        "statusText": "#1 | 1.6B USD",
+                        "countryCode": "US",
+                        "countryLabel": "UNITED STATES",
+                        "metricLabel": "NET WORTH",
+                        "metricValue": "1.6B USD",
+                    },
+                ],
+                thumbnail_prompt="Celebrity ranking thumbnail",
+                youtube_title="Top 10 người nổi tiếng test",
+                youtube_description="Public estimates for review.",
+                youtube_tags=["celebrity", "data comparison"],
+                duration_target=60,
+            )
+
     async def fake_render(self, *, topic_id, video_data):
         captured["video_data"] = video_data
         return {
@@ -112,6 +152,7 @@ async def test_run_local_render_uses_content_agent_for_celebrity(monkeypatch):
     monkeypatch.setattr(Pipeline, "_render_local_video", fake_render)
     monkeypatch.setattr("agents.pipeline.create_review", fake_create_review)
     monkeypatch.setattr("agents.pipeline.RealImageAgent", FakeRealImageAgent)
+    monkeypatch.setattr("agents.content_agent.ContentAgent", FakeContentAgent)
 
     pipeline = Pipeline()
     result = await pipeline.run_local_render(category="Celebrity", language="vi")
@@ -129,7 +170,7 @@ async def test_run_local_render_uses_content_agent_for_celebrity(monkeypatch):
     assert result["content_contract"]["niche"] == "celebrity"
     assert result["youtube_title"] == content_contract["youtube_title"]
     assert "người nổi tiếng" in result["youtube_title"].lower()
-    assert captured["image_agent_topic_id"] == 1
+    assert captured["image_agent_topic_id"] == result["topic_id"]
     assert captured["image_agent_content_contract"] == content_contract
     assert captured["image_agent_strict"] is True
     assert image_contract["status"] == "verified"

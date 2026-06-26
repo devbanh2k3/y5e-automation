@@ -229,6 +229,15 @@ def normalize_country_code(value: str) -> str:
     return value.strip().upper()
 
 
+def canonical_country_label(country_code: str) -> str:
+    """Return the renderer-approved uppercase country label for an ISO alpha-2 code."""
+    normalized_code = normalize_country_code(country_code)
+    country = pycountry.countries.get(alpha_2=normalized_code)
+    if country is None:
+        return ""
+    return COUNTRY_LABEL_ALIASES.get(normalized_code, country.name).upper()
+
+
 def validate_country_metadata(scene: dict[str, Any], *, index: int) -> None:
     country_code = normalize_country_code(str(scene.get("countryCode", "")))
     if not country_code:
@@ -245,7 +254,7 @@ def validate_country_metadata(scene: dict[str, Any], *, index: int) -> None:
     valid_labels.discard("")
     country_label = str(scene.get("countryLabel", "")).strip().upper()
     if normalize_country_label(country_label) not in valid_labels:
-        expected_label = COUNTRY_LABEL_ALIASES.get(country_code, country.name).upper()
+        expected_label = canonical_country_label(country_code)
         raise VideoContractError(
             f"scenes[{index}].countryLabel must be {expected_label} for {country_code}"
         )

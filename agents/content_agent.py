@@ -6,7 +6,12 @@ import json
 from typing import Any
 
 from agents.base_agent import BaseAgent
-from core.video_contract import build_content_contract_v2, validate_content_contract_v2
+from core.video_contract import (
+    build_content_contract_v2,
+    canonical_country_label,
+    normalize_country_code,
+    validate_content_contract_v2,
+)
 
 
 class ContentAgent(BaseAgent):
@@ -191,6 +196,10 @@ Return JSON only with this shape:
                 raise ValueError(f"scene {index} must be an object")
             title = str(scene.get("title", "")).strip()
             metric_value = str(scene.get("metricValue", scene.get("caption", ""))).strip()
+            country_code = normalize_country_code(str(scene.get("countryCode", "")))
+            country_label = canonical_country_label(country_code)
+            if not country_label:
+                country_label = str(scene.get("countryLabel", "")).strip().upper()
             normalized_scenes.append(
                 {
                     "title": title,
@@ -198,8 +207,8 @@ Return JSON only with this shape:
                     "caption": str(scene.get("caption", metric_value)).strip(),
                     "image_prompt": str(scene.get("image_prompt", "")).strip(),
                     "statusText": str(scene.get("statusText", metric_value)).strip(),
-                    "countryCode": str(scene.get("countryCode", "")).strip().upper(),
-                    "countryLabel": str(scene.get("countryLabel", "")).strip().upper(),
+                    "countryCode": country_code,
+                    "countryLabel": country_label,
                     "metricLabel": str(scene.get("metricLabel", metric_label)).strip().upper(),
                     "metricValue": metric_value,
                     "sourceRequirement": str(

@@ -5,9 +5,10 @@ from __future__ import annotations
 import html
 import os
 import re
+import unicodedata
 from io import BytesIO
 from typing import Any
-from urllib.parse import quote_plus
+from urllib.parse import quote_plus, unquote
 
 import httpx
 from PIL import Image
@@ -32,6 +33,7 @@ _MIN_IMAGE_WIDTH = 200
 _MIN_IMAGE_HEIGHT = 200
 _QUERY_HINTS_BY_PERSON = {
     "jay-z": ("Jay-Z rapper", "Jay Z rapper", "Shawn Carter Jay-Z"),
+    "lionel messi": ("Lionel Messi footballer", "Lionel Messi Argentina"),
 }
 
 
@@ -75,10 +77,36 @@ class RealImageAgent(BaseAgent):
     def wikimedia_search_queries(person_name: str) -> list[str]:
         """Return strict Commons search queries from broad to disambiguated."""
         cleaned_name = person_name.strip()
+        ascii_name = RealImageAgent.strip_accents(cleaned_name)
         queries = [f"{cleaned_name} portrait"]
+        if ascii_name and ascii_name != cleaned_name:
+            queries.append(f"{ascii_name} portrait")
         queries.extend(_QUERY_HINTS_BY_PERSON.get(cleaned_name.lower(), ()))
+        queries.extend(_QUERY_HINTS_BY_PERSON.get(ascii_name.lower(), ()))
         if cleaned_name.lower() not in _QUERY_HINTS_BY_PERSON:
-            queries.append(f"{cleaned_name} singer")
+            queries.extend(
+                (
+                    f"{cleaned_name} celebrity",
+                    f"{cleaned_name} actor",
+                    f"{cleaned_name} musician",
+                    f"{cleaned_name} footballer",
+                    cleaned_name,
+                )
+            )
+        if (
+            ascii_name
+            and ascii_name != cleaned_name
+            and ascii_name.lower() not in _QUERY_HINTS_BY_PERSON
+        ):
+            queries.extend(
+                (
+                    f"{ascii_name} celebrity",
+                    f"{ascii_name} actor",
+                    f"{ascii_name} musician",
+                    f"{ascii_name} footballer",
+                    ascii_name,
+                )
+            )
         return list(dict.fromkeys(query for query in queries if query.strip()))
 
     async def run_for_content_contract(
@@ -205,7 +233,13 @@ class RealImageAgent(BaseAgent):
 
     @staticmethod
     def normalize_identity_text(value: str) -> str:
-        return re.sub(r"[^a-z0-9]+", " ", value.lower()).strip()
+        return re.sub(r"[^a-z0-9]+", " ", RealImageAgent.strip_accents(value).lower()).strip()
+
+    @staticmethod
+    def strip_accents(value: str) -> str:
+        """Return ASCII-ish text for matching names such as Khloé/Khloe."""
+        normalized = unicodedata.normalize("NFKD", value)
+        return "".join(char for char in normalized if not unicodedata.combining(char))
 
     @classmethod
     def evaluate_identity_match(cls, person_name: str, metadata_text: str) -> dict[str, Any]:
@@ -221,16 +255,28 @@ class RealImageAgent(BaseAgent):
 
     @classmethod
     def evaluate_content_match(cls, metadata_text: str, source_url: str) -> dict[str, Any]:
-        combined = f"{metadata_text} {source_url}".lower()
+        combined = unquote(f"{metadata_text} {source_url}").lower()
         blocked_terms = (
             "pdf",
             "book",
             "archive",
             "painting",
+            "madonna and child",
+            "madonna dell",
+            "madonna_dell",
+            "dell'orto",
+            "dell orto",
+            "beato leone bembo",
+            "tattoo",
+            "titian",
             "diagram",
             "logo",
             "fan art",
             "meme",
+            "people au défilé",
+            "people au defile",
+            "défilé channel",
+            "defile channel",
         )
         if any(term in combined for term in blocked_terms):
             return {
@@ -239,7 +285,19 @@ class RealImageAgent(BaseAgent):
                 "is_group_photo": False,
                 "needs_human_review": True,
             }
-        is_group_photo = any(term in combined for term in ("group", "with other", "honorees"))
+        is_group_photo = any(
+            term in combined
+            for term in (
+                "group",
+                "with other",
+                "honorees",
+                " and ",
+                "_and_",
+                " e jay-z",
+                "beyoncé e jay-z",
+                "beyonce e jay-z",
+            )
+        )
         if is_group_photo:
             return {
                 "content_match_status": "uncertain",
@@ -253,6 +311,38 @@ class RealImageAgent(BaseAgent):
             "is_group_photo": False,
             "needs_human_review": False,
         }
+
+    @classmethod
+    def identity_in_file_context(cls, person_name: str, title: str, source_url: str) -> bool:
+        """Require the Commons file title or source URL to carry the celebrity identity."""
+        identity = cls.evaluate_identity_match(person_name, f"{title} {unquote(source_url)}")
+        return identity["identity_check_status"] == "passed"
+
+    @classmethod
+    def ambiguous_stage_name_has_person_context(
+        cls,
+        person_name: str,
+        metadata_text: str,
+        source_url: str,
+    ) -> bool:
+        """Reject ambiguous one-word stage names unless metadata has person/photo context."""
+        if cls.normalize_identity_text(person_name) != "madonna":
+            return True
+        combined = unquote(f"{metadata_text} {source_url}").lower()
+        person_context_terms = (
+            "singer",
+            "perform",
+            "concert",
+            "entertainer",
+            "artist",
+            "music",
+            "stage",
+            "live",
+            "red carpet",
+            "grammy",
+            "mtv",
+        )
+        return any(term in combined for term in person_context_terms)
 
     @staticmethod
     def build_missing_item(
@@ -316,6 +406,14 @@ class RealImageAgent(BaseAgent):
         identity = cls.evaluate_identity_match(person_name, metadata_text)
         content = cls.evaluate_content_match(metadata_text, source_url)
         if identity["identity_check_status"] != "passed":
+            return None
+        if not cls.identity_in_file_context(person_name, title, source_url):
+            return None
+        if not cls.ambiguous_stage_name_has_person_context(
+            person_name,
+            metadata_text,
+            source_url,
+        ):
             return None
         if content["content_match_status"] != "passed":
             return None

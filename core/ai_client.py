@@ -5,8 +5,10 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from pathlib import Path
 import re
 import time
+from urllib.parse import urlsplit, urlunsplit
 from typing import Any
 
 import httpx
@@ -26,6 +28,27 @@ def _get_client() -> httpx.AsyncClient:
     if _client is None or _client.is_closed:
         _client = httpx.AsyncClient(timeout=httpx.Timeout(120.0, connect=10.0))
     return _client
+
+
+def is_running_in_docker() -> bool:
+    """Return True when running inside a Docker container."""
+    return Path("/.dockerenv").exists()
+
+
+def resolve_docker_host_url(base_url: str, *, running_in_docker: bool | None = None) -> str:
+    """Map host-local AI router URLs to the Docker host when needed."""
+    in_docker = is_running_in_docker() if running_in_docker is None else running_in_docker
+    if not in_docker:
+        return base_url
+
+    parsed = urlsplit(base_url)
+    if parsed.hostname not in {"localhost", "127.0.0.1"}:
+        return base_url
+
+    netloc = "host.docker.internal"
+    if parsed.port:
+        netloc = f"{netloc}:{parsed.port}"
+    return urlunsplit((parsed.scheme, netloc, parsed.path, parsed.query, parsed.fragment))
 
 
 def _extract_json(text: str) -> dict[str, Any]:
@@ -66,6 +89,50 @@ def _extract_json(text: str) -> dict[str, Any]:
             pass
 
     raise ValueError(f"Could not extract valid JSON from response: {text[:200]}")
+
+
+def parse_sse_chat_completion(text: str) -> tuple[str, int]:
+    """Parse OpenAI-compatible streaming SSE chat completion text."""
+    content_parts: list[str] = []
+    total_tokens = 0
+
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if not line.startswith("data:"):
+            continue
+
+        payload = line.removeprefix("data:").strip()
+        if not payload or payload == "[DONE]":
+            continue
+
+        try:
+            event = json.loads(payload)
+        except json.JSONDecodeError:
+            continue
+
+        usage = event.get("usage") or {}
+        total_tokens = int(usage.get("total_tokens") or total_tokens)
+
+        for choice in event.get("choices") or []:
+            delta = choice.get("delta") or {}
+            content = delta.get("content")
+            if content:
+                content_parts.append(content)
+
+    return "".join(content_parts), total_tokens
+
+
+def parse_chat_completion_response(resp: httpx.Response) -> tuple[str, int]:
+    """Parse a chat completion response from JSON or SSE providers."""
+    content_type = resp.headers.get("content-type", "")
+    if "text/event-stream" in content_type or resp.text.lstrip().startswith("data:"):
+        return parse_sse_chat_completion(resp.text)
+
+    data = resp.json()
+    content: str = data["choices"][0]["message"]["content"]
+    usage = data.get("usage", {})
+    total_tokens: int = usage.get("total_tokens", 0)
+    return content, total_tokens
 
 
 async def _call_endpoint(
@@ -118,12 +185,7 @@ async def _call_endpoint(
             resp = await client.post(url, headers=headers, json=payload)
             resp.raise_for_status()
 
-            data = resp.json()
-            content: str = data["choices"][0]["message"]["content"]
-            usage = data.get("usage", {})
-            total_tokens: int = usage.get("total_tokens", 0)
-
-            return content, total_tokens
+            return parse_chat_completion_response(resp)
 
         except httpx.HTTPStatusError as exc:
             if exc.response.status_code in (429, 503) and attempt < max_retries:
@@ -166,11 +228,13 @@ async def generate(
     messages.append({"role": "user", "content": prompt})
 
     primary_model = model or settings.primary_model
+    primary_api_base = resolve_docker_host_url(settings.primary_api_base)
+    fallback_api_base = resolve_docker_host_url(settings.fallback_api_base)
 
     # ── Attempt 1: primary endpoint ──────────────────────────
     try:
         content, tokens = await _call_endpoint(
-            base_url=settings.primary_api_base,
+            base_url=primary_api_base,
             api_key=settings.primary_api_key,
             model=primary_model,
             messages=messages,
@@ -179,7 +243,7 @@ async def generate(
         )
         await log_api_call(
             agent=agent_name,
-            provider=settings.primary_api_base,
+            provider=primary_api_base,
             model=primary_model,
             tokens=tokens,
             is_fallback=False,
@@ -189,7 +253,7 @@ async def generate(
     except (httpx.HTTPStatusError, httpx.TimeoutException, httpx.ConnectError) as exc:
         logger.warning(
             "Primary AI endpoint failed (%s); falling back. Error: %s",
-            settings.primary_api_base,
+            primary_api_base,
             exc,
         )
 
@@ -197,7 +261,7 @@ async def generate(
     fallback_model = model or settings.fallback_model
     try:
         content, tokens = await _call_endpoint(
-            base_url=settings.fallback_api_base,
+            base_url=fallback_api_base,
             api_key=settings.fallback_api_key,
             model=fallback_model,
             messages=messages,
@@ -206,7 +270,7 @@ async def generate(
         )
         await log_api_call(
             agent=agent_name,
-            provider=settings.fallback_api_base,
+            provider=fallback_api_base,
             model=fallback_model,
             tokens=tokens,
             is_fallback=True,

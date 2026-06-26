@@ -5,8 +5,13 @@ from core.video_contract import validate_content_contract_v2
 
 
 @pytest.mark.asyncio
-async def test_content_agent_builds_celebrity_mvp_contract():
+async def test_content_agent_builds_seeded_celebrity_mvp_contract(monkeypatch):
     agent = ContentAgent()
+
+    async def fake_ai_json(prompt: str, system: str | None = None, **kwargs):
+        raise RuntimeError("AI unavailable")
+
+    monkeypatch.setattr(agent, "ai_json", fake_ai_json)
 
     contract = await agent.run(
         niche="celebrity",
@@ -105,6 +110,51 @@ async def test_content_agent_uses_ai_topic_and_ranking_for_celebrity(monkeypatch
     assert contract["scenes"][0]["title"] == "#2 Ariana Grande"
     assert contract["scenes"][-1]["title"] == "#1 Selena Gomez"
     assert "estimated net worth" not in contract["hook"].lower()
+
+
+@pytest.mark.asyncio
+async def test_content_agent_normalizes_ai_country_labels(monkeypatch):
+    agent = ContentAgent()
+
+    async def fake_ai_json(prompt: str, system: str | None = None, **kwargs):
+        if "Generate 1 optimized Celebrity topic" in prompt:
+            return {
+                "title": "Top 2 Most Followed Athletes",
+                "angle": "most_followed_athletes",
+                "metric_label": "FOLLOWERS",
+                "reason": "recognizable global athletes",
+            }
+        return {
+            "title": "Top 2 Most Followed Athletes",
+            "hook": "Public follower estimates ranked fast.",
+            "target_audience": "Sports and celebrity ranking viewers.",
+            "youtube_title": "Top 2 Most Followed Athletes",
+            "youtube_description": "Public follower estimates.",
+            "youtube_tags": ["celebrity"],
+            "thumbnail_prompt": "Athlete ranking thumbnail",
+            "scenes": [
+                {
+                    "title": "#2 Athlete",
+                    "voiceover": "#2 has a huge public following.",
+                    "caption": "300M followers",
+                    "image_prompt": "real editorial photo of an athlete",
+                    "statusText": "#2 | 300M",
+                    "countryCode": "US",
+                    "countryLabel": "USA",
+                    "metricLabel": "FOLLOWERS",
+                    "metricValue": "300M",
+                    "sourceRequirement": "public social profile estimate",
+                }
+            ],
+        }
+
+    monkeypatch.setattr(agent, "ai_json", fake_ai_json)
+
+    contract = await agent.run(niche="celebrity", language="vi", subject="athletes")
+
+    validate_content_contract_v2(contract)
+    assert contract["scenes"][0]["countryCode"] == "US"
+    assert contract["scenes"][0]["countryLabel"] == "UNITED STATES"
 
 
 @pytest.mark.asyncio

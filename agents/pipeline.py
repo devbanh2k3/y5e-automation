@@ -264,6 +264,7 @@ class Pipeline:
         content_contract: dict[str, Any] | None = None
         image_verification_contract: dict[str, Any] | None = None
         fallback_used = True
+        topic_id = self._new_local_render_topic_id()
 
         if resolved_category.lower() in {"celebrity", "nguoi_noi_tieng", "người nổi tiếng"}:
             from agents.content_agent import ContentAgent
@@ -275,7 +276,7 @@ class Pipeline:
             )
             video_data = build_video_data_from_content_contract(content_contract)
             image_verification_contract = await RealImageAgent().run_for_content_contract(
-                topic_id=1,
+                topic_id=topic_id,
                 content_contract=content_contract,
                 strict=True,
             )
@@ -293,7 +294,6 @@ class Pipeline:
             )
         validate_video_data(video_data)
 
-        topic_id = 1
         render_result = await self._render_local_video(
             topic_id=topic_id,
             video_data=video_data,
@@ -334,6 +334,11 @@ class Pipeline:
             "thumbnail_prompt": content_contract["thumbnail_prompt"] if content_contract else "",
             "image_verification_contract": image_verification_contract,
         }
+
+    @staticmethod
+    def _new_local_render_topic_id() -> int:
+        """Return a unique local-render topic id without requiring a database row."""
+        return int(datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S%f"))
 
     async def _render_local_video(
         self,
