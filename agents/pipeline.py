@@ -9,13 +9,16 @@ notifications.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import traceback
 from datetime import datetime, timezone
 from typing import Any
 
 from core import database as db
+from core.config import get_settings
 from core.notifier import notify, notify_error
+from core.video_contract import build_local_render_video_data, validate_video_data
 
 logger = logging.getLogger(__name__)
 
@@ -236,6 +239,64 @@ class Pipeline:
                 "render": False,
                 "upload": False,
             },
+        }
+
+    async def run_local_render(
+        self,
+        *,
+        category: str,
+        language: str = "vi",
+    ) -> dict[str, Any]:
+        """Create a local render artifact using explicit fallback content."""
+        resolved_category = category.strip() or "Local"
+        title = f"{resolved_category} Local Render Validation"
+        video_data = build_local_render_video_data(
+            title=title,
+            category=resolved_category,
+            language=language,
+        )
+        validate_video_data(video_data)
+
+        topic_id = 1
+        render_result = await self._render_local_video(
+            topic_id=topic_id,
+            video_data=video_data,
+        )
+
+        return {
+            "mode": "local_render",
+            "category": resolved_category,
+            "language": language,
+            "topic_id": topic_id,
+            "video_id": render_result["video_id"],
+            "file_path": render_result["file_path"],
+            "duration_sec": render_result["duration_sec"],
+            "status": render_result["status"],
+            "fallback_used": True,
+        }
+
+    async def _render_local_video(
+        self,
+        *,
+        topic_id: int,
+        video_data: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Write a deterministic local render placeholder artifact."""
+        settings = get_settings()
+        topic_dir = settings.storage_dir / "topics" / str(topic_id)
+        topic_dir.mkdir(parents=True, exist_ok=True)
+
+        data_path = topic_dir / "video_data.json"
+        data_path.write_text(json.dumps(video_data, ensure_ascii=False, indent=2))
+
+        output_path = topic_dir / "final_video.mp4"
+        output_path.write_bytes(b"local render placeholder\n")
+
+        return {
+            "video_id": topic_id,
+            "file_path": str(output_path.resolve()),
+            "duration_sec": 0,
+            "status": "rendered",
         }
 
     # ── Analytics shortcut ───────────────────────────────────
