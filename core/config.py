@@ -4,6 +4,14 @@ from pathlib import Path
 from functools import lru_cache
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import BaseModel
+
+
+class ConfigValidationResult(BaseModel):
+    """Structured production configuration validation result."""
+
+    ok: bool
+    errors: dict[str, str]
 
 
 class Settings(BaseSettings):
@@ -15,6 +23,9 @@ class Settings(BaseSettings):
         case_sensitive=False,
         extra="ignore",
     )
+
+    # ── Runtime mode ──────────────────────────────────────────
+    app_env: str = "development"
 
     # ── Database ──────────────────────────────────────────────
     database_url: str = "postgresql://ytbot:ytbot@localhost:5432/youtube_automation"
@@ -60,6 +71,33 @@ class Settings(BaseSettings):
         if dsn.startswith("postgresql+asyncpg://"):
             dsn = dsn.replace("postgresql+asyncpg://", "postgresql://", 1)
         return dsn
+
+    def validate_production_config(self) -> ConfigValidationResult:
+        """Validate production-only required configuration without exposing secrets."""
+        if self.app_env.lower() != "production":
+            return ConfigValidationResult(ok=True, errors={})
+
+        errors: dict[str, str] = {}
+        required_values = {
+            "primary_api_key": self.primary_api_key,
+            "youtube_api_key": self.youtube_api_key,
+            "database_url": self.database_url,
+            "redis_url": self.redis_url,
+        }
+
+        for field_name, value in required_values.items():
+            if self._is_missing_or_placeholder(value):
+                errors[field_name] = "must be set to a real value"
+
+        return ConfigValidationResult(ok=not errors, errors=errors)
+
+    @staticmethod
+    def _is_missing_or_placeholder(value: str) -> bool:
+        normalized = value.strip()
+        if not normalized:
+            return True
+        unsafe_markers = ("CHANGE_ME", "your-", "xxx", "placeholder")
+        return any(marker.lower() in normalized.lower() for marker in unsafe_markers)
 
 
 @lru_cache(maxsize=1)
