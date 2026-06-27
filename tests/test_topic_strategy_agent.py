@@ -22,6 +22,11 @@ def candidate(**overrides):
         "image_availability_reason": "Editorial portraits exist",
         "viral_reason": "Recognizable names and money",
         "time_scope": "all_time",
+        "content_format": "ranking",
+        "metric_scope": "finite public ranking dataset",
+        "factual_basis": "public records",
+        "measurability_score": 90,
+        "privacy_risk": "low",
     }
     value.update(overrides)
     return value
@@ -50,6 +55,30 @@ def test_validation_accepts_open_taxonomy_but_rejects_unsafe_or_non_person_topic
     assert validate_candidate(open_taxonomy) == []
     assert "individual people" in " ".join(validate_candidate(non_person)).lower()
     assert "unsafe" in " ".join(validate_candidate(unsafe)).lower()
+
+
+def test_candidate_rejects_unbounded_or_private_metric():
+    unbounded = normalize_candidate(
+        candidate(
+            content_format="count_comparison",
+            metric_scope="all outfits ever worn",
+            factual_basis="AI estimate",
+            measurability_score=20,
+            privacy_risk="low",
+        )
+    )
+    private = normalize_candidate(
+        candidate(
+            content_format="count_comparison",
+            metric_scope="unacknowledged children",
+            factual_basis="rumor",
+            measurability_score=90,
+            privacy_risk="high",
+        )
+    )
+
+    assert "measurable" in " ".join(validate_candidate(unbounded)).lower()
+    assert "privacy" in " ".join(validate_candidate(private)).lower()
 
 
 def test_similarity_detects_minor_title_variants():
