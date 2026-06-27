@@ -176,6 +176,34 @@ async def test_produce_batch_reports_exhausted_replacement(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_produce_batch_reports_initial_topic_selection_failure(monkeypatch):
+    from scripts import batch_produce_celebrity_videos as batch_script
+
+    strategy = FakeStrategy(
+        [TopicSelectionError("could not select 3 diverse Celebrity topics")]
+    )
+
+    async def fake_produce(**kwargs):
+        raise AssertionError("render must not start without a reserved slate")
+
+    monkeypatch.setattr(batch_script, "produce", fake_produce)
+
+    summary = await batch_script.produce_batch(
+        count=3,
+        language="en",
+        card_layout="flag_hero",
+        write_files=True,
+        stop_on_error=False,
+        strategy=strategy,
+    )
+
+    assert summary["success_count"] == 0
+    assert summary["failure_count"] == 1
+    assert summary["attempted_count"] == 0
+    assert summary["failures"][0]["error_type"] == "TopicSelectionError"
+
+
+@pytest.mark.asyncio
 async def test_produce_batch_stop_on_error(monkeypatch):
     from scripts import batch_produce_celebrity_videos as batch_script
 

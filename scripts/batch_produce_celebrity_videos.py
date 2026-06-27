@@ -70,11 +70,22 @@ async def produce_batch(
     stopped_on_error = False
     batch_id = str(uuid4())
     topic_strategy = strategy or TopicStrategyAgent()
-    slate = await topic_strategy.run(
-        count=count,
-        language=language,
-        batch_id=batch_id,
-    )
+    try:
+        slate = await topic_strategy.run(
+            count=count,
+            language=language,
+            batch_id=batch_id,
+        )
+    except Exception as exc:  # noqa: BLE001 - return structured selection failures.
+        failures.append(
+            {
+                "batch_index": 0,
+                "reservation_id": "",
+                "error": str(exc),
+                "error_type": exc.__class__.__name__,
+            }
+        )
+        slate = []
     queue = [(selected_topic, True) for selected_topic in slate]
     attempt_index = 0
 

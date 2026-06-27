@@ -1,3 +1,5 @@
+import json
+
 import pytest
 
 from agents.topic_strategy_agent import TopicStrategyAgent
@@ -219,3 +221,48 @@ async def test_strategy_expands_pool_once_when_first_pool_is_not_diverse(
 
     assert len(selected) == 2
     assert calls == 2
+
+
+@pytest.mark.asyncio
+async def test_strategy_excludes_near_duplicate_legacy_content_contract(
+    agent,
+    repository,
+    monkeypatch,
+):
+    contract_dir = repository.path.parent / "topics" / "legacy-1"
+    contract_dir.mkdir(parents=True)
+    (contract_dir / "content_contract.json").write_text(
+        json.dumps(
+            {
+                "youtube_title": "Top 10 Highest-Paid Movie Roles of All Time",
+                "scenes": [{"metricLabel": "USD EARNINGS"}],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    async def fake_ai_json(prompt, system=None, **kwargs):
+        return {
+            "candidates": [
+                scored_candidate(
+                    "Top 10 Highest-Paid Actors per Movie Role",
+                    "film",
+                    "single_movie_salary",
+                    "USD EARNINGS",
+                    99,
+                ),
+                scored_candidate(
+                    "Top 10 Celebrity Touring Revenues",
+                    "touring_revenue",
+                    "tour_income",
+                    "TOUR REVENUE",
+                    88,
+                ),
+            ]
+        }
+
+    monkeypatch.setattr(agent, "ai_json", fake_ai_json)
+
+    selected = await agent.run(count=1, language="en", batch_id="legacy-batch")
+
+    assert selected[0]["angle"] == "tour_income"

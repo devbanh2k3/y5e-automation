@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import json
 import re
 from difflib import SequenceMatcher
+from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
@@ -80,8 +82,12 @@ def topic_similarity(left: dict[str, Any], right: dict[str, Any]) -> float:
         str(left["normalized_title"]),
         str(right["normalized_title"]),
     ).ratio()
-    same_angle = float(left.get("angle") == right.get("angle"))
+    left_angle = str(left.get("angle", ""))
+    right_angle = str(right.get("angle", ""))
     same_metric = float(left.get("metric_label") == right.get("metric_label"))
+    if not left_angle or not right_angle:
+        return 0.90 * title_ratio + 0.10 * same_metric
+    same_angle = float(left_angle == right_angle)
     return 0.65 * title_ratio + 0.25 * same_angle + 0.10 * same_metric
 
 
@@ -107,7 +113,16 @@ class TopicStrategyAgent(BaseAgent):
         if count < 1:
             raise ValueError("topic count must be at least 1")
 
-        history = self.repository.load()
+        durable_history = self.repository.load()
+        durable_titles = {
+            str(item.get("normalized_title", "")) for item in durable_history
+        }
+        legacy_history = [
+            item
+            for item in self._load_legacy_history(self.repository.path.parent)
+            if item["normalized_title"] not in durable_titles
+        ]
+        history = legacy_history + durable_history
         pool_size = max(count * 5, 10)
         candidates = await self._generate_candidates(
             count=pool_size,
@@ -276,6 +291,44 @@ both angle and metric from other candidates. Every score must be an integer on a
         if item.get("normalized_title"):
             return dict(item)
         return normalize_candidate(item)
+
+    @staticmethod
+    def _load_legacy_history(storage_dir: Path) -> list[dict[str, Any]]:
+        history: list[dict[str, Any]] = []
+        for contract_path in sorted(
+            (storage_dir / "topics").glob("*/content_contract.json")
+        ):
+            try:
+                contract = json.loads(contract_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            if not isinstance(contract, dict):
+                continue
+            title = str(
+                contract.get("youtube_title") or contract.get("title") or ""
+            ).strip()
+            if not title:
+                continue
+            scenes = contract.get("scenes", [])
+            first_scene = scenes[0] if isinstance(scenes, list) and scenes else {}
+            metric_label = (
+                str(first_scene.get("metricLabel", "")).strip().upper()
+                if isinstance(first_scene, dict)
+                else ""
+            )
+            history.append(
+                {
+                    "title": title,
+                    "normalized_title": _normalized_text(title),
+                    "category": "legacy_content",
+                    "angle": "",
+                    "metric_label": metric_label,
+                    "time_scope": "legacy",
+                    "status": "produced",
+                    "source": str(contract_path),
+                }
+            )
+        return history
 
     @staticmethod
     def _prepare_reservations(
