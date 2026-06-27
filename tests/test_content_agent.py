@@ -4,6 +4,73 @@ from agents.content_agent import ContentAgent
 from core.video_contract import validate_content_contract_v2
 
 
+def awards_contract_payload():
+    return {
+        "title": "Top 10 Most-Awarded Living Musicians",
+        "hook": "Living music legends ranked by public award records.",
+        "target_audience": "Music fans who enjoy data comparisons.",
+        "youtube_title": "Top 10 Most-Awarded Living Musicians",
+        "youtube_description": "A ranking based on public award records.",
+        "youtube_tags": ["celebrity", "music awards"],
+        "thumbnail_prompt": "Famous musicians with bold award totals",
+        "scenes": [
+            {
+                "title": "#2 Taylor Swift",
+                "voiceover": "Taylor Swift ranks second by public award totals.",
+                "caption": "AWARDS: 600",
+                "image_prompt": "real editorial photo of Taylor Swift",
+                "statusText": "#2 | 600 awards",
+                "countryCode": "US",
+                "countryLabel": "UNITED STATES",
+                "metricLabel": "AWARDS",
+                "metricValue": "600",
+                "sourceRequirement": "official award databases",
+            },
+            {
+                "title": "#1 Beyonce",
+                "voiceover": "Beyonce ranks first by public award totals.",
+                "caption": "AWARDS: 700",
+                "image_prompt": "real editorial photo of Beyonce",
+                "statusText": "#1 | 700 awards",
+                "countryCode": "US",
+                "countryLabel": "UNITED STATES",
+                "metricLabel": "AWARDS",
+                "metricValue": "700",
+                "sourceRequirement": "official award databases",
+            },
+        ],
+    }
+
+
+@pytest.mark.asyncio
+async def test_content_agent_uses_selected_topic_without_regenerating_it(monkeypatch):
+    agent = ContentAgent()
+    selected = {
+        "title": "Top 10 Most-Awarded Living Musicians",
+        "angle": "living_musician_awards",
+        "metric_label": "AWARDS",
+    }
+    prompts = []
+
+    async def fake_ai_json(prompt, system=None, **kwargs):
+        prompts.append(prompt)
+        return awards_contract_payload()
+
+    monkeypatch.setattr(agent, "ai_json", fake_ai_json)
+
+    contract = await agent.run(
+        niche="celebrity",
+        language="en",
+        subject="famous people",
+        card_layout="flag_hero",
+        selected_topic=selected,
+    )
+
+    assert len(prompts) == 1
+    assert "Top 10 Most-Awarded Living Musicians" in prompts[0]
+    assert contract["youtube_title"] == "Top 10 Most-Awarded Living Musicians"
+
+
 @pytest.mark.asyncio
 async def test_content_agent_builds_seeded_celebrity_mvp_contract(monkeypatch):
     agent = ContentAgent()
