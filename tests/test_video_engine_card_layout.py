@@ -9,3 +9,11 @@ def test_flag_hero_card_does_not_overlay_country_label_on_flag():
     flag_hero_section = source.split("const FlagHeroCard", 1)[1].split("const SplitDataCard", 1)[0]
 
     assert "props.countryLabel" not in flag_hero_section
+
+
+def test_flag_block_uses_full_detail_flag_icons_assets():
+    source = (ROOT / "video_engine" / "src" / "components" / "Card.tsx").read_text()
+
+    assert "country-flag-icons/react/3x2" not in source
+    assert "flag-icons/css/flag-icons.min.css" in source
+    assert "fi fi-" in source

@@ -1,6 +1,6 @@
 import React from "react";
 import { Img, staticFile, useCurrentFrame } from "remotion";
-import * as Flags from "country-flag-icons/react/3x2";
+import "flag-icons/css/flag-icons.min.css";
 import type { CardData, VideoData } from "../types/video-data";
 import { kenBurnsScale } from "../utils/animations";
 
@@ -231,9 +231,8 @@ const SafeMainImage: React.FC<{ imagePath: string; kbScale: number }> = ({ image
 );
 
 const FlagBlock: React.FC<{ countryCode?: string; width: number }> = ({ countryCode, width }) => {
-  const normalized = (countryCode || "").toUpperCase();
-  const FlagComponent = (Flags as Record<string, React.FC<React.SVGProps<SVGSVGElement>>>)[normalized];
-  if (!FlagComponent) {
+  const normalized = (countryCode || "").toLowerCase();
+  if (!/^[a-z]{2}$/.test(normalized)) {
     return (
       <div
         style={{
@@ -253,12 +252,14 @@ const FlagBlock: React.FC<{ countryCode?: string; width: number }> = ({ countryC
     );
   }
   return (
-    <FlagComponent
+    <span
+      className={`fi fi-${normalized}`}
       style={{
         width,
         height: Math.round(width * 2 / 3),
         display: "block",
         boxShadow: "0 10px 26px rgba(0,0,0,0.32)",
+        backgroundSize: "cover",
       }}
     />
   );
