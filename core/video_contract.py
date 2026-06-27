@@ -18,6 +18,16 @@ COUNTRY_LABEL_ALIASES = {
     "US": "UNITED STATES",
 }
 
+CONTENT_FORMATS = {
+    "ranking",
+    "count_comparison",
+    "timeline",
+    "record_comparison",
+    "before_after",
+    "fact_collection",
+    "binary_comparison",
+}
+
 
 def build_content_contract_v2(
     *,
@@ -33,9 +43,12 @@ def build_content_contract_v2(
     youtube_tags: list[str],
     duration_target: int,
     cardLayout: str = "classic",
+    contentFormat: str | None = None,
+    metricScope: str = "",
+    timeScope: str = "",
 ) -> dict[str, Any]:
     """Build the normalized content contract used before video rendering."""
-    return {
+    contract = {
         "schema_version": "content_contract_v2",
         "niche": niche,
         "title": title,
@@ -50,6 +63,15 @@ def build_content_contract_v2(
         "duration_target": duration_target,
         "cardLayout": cardLayout,
     }
+    if contentFormat is not None:
+        contract.update(
+            {
+                "contentFormat": contentFormat,
+                "metricScope": metricScope,
+                "timeScope": timeScope,
+            }
+        )
+    return contract
 
 
 def validate_content_contract_v2(payload: dict[str, Any]) -> None:
@@ -72,6 +94,15 @@ def validate_content_contract_v2(payload: dict[str, Any]) -> None:
     if payload["schema_version"] != "content_contract_v2":
         raise VideoContractError("schema_version must be content_contract_v2")
 
+    explicit_format = "contentFormat" in payload
+    content_format = str(payload.get("contentFormat", "ranking"))
+    if content_format not in CONTENT_FORMATS:
+        raise VideoContractError("contentFormat is invalid")
+    if explicit_format:
+        for field_name in ("metricScope", "timeScope"):
+            if not str(payload.get(field_name, "")).strip():
+                raise VideoContractError(f"{field_name} is required")
+
     scenes = payload.get("scenes")
     if not isinstance(scenes, list) or not scenes:
         raise VideoContractError("scenes must contain at least one scene")
@@ -82,6 +113,18 @@ def validate_content_contract_v2(payload: dict[str, Any]) -> None:
         for field_name in ("title", "voiceover", "caption", "image_prompt", "statusText"):
             if not str(scene.get(field_name, "")).strip():
                 raise VideoContractError(f"scenes[{index}].{field_name} is required")
+        if explicit_format:
+            for field_name in (
+                "factClaim",
+                "factValue",
+                "factUnit",
+                "factAsOf",
+                "factContext",
+            ):
+                if not str(scene.get(field_name, "")).strip():
+                    raise VideoContractError(
+                        f"scenes[{index}].{field_name} is required"
+                    )
         if scene.get("countryCode") or scene.get("countryLabel"):
             validate_country_metadata(scene, index=index)
 
@@ -179,11 +222,16 @@ def build_video_data_from_content_contract(payload: dict[str, Any]) -> dict[str,
     """Convert content contract v2 into Remotion-compatible video data."""
     validate_content_contract_v2(payload)
 
+    content_format = str(payload.get("contentFormat", "ranking"))
     cards: list[dict[str, str]] = []
     for index, scene in enumerate(payload["scenes"]):
         cards.append(
             {
-                "header": build_ranking_header(scene=scene, fallback_rank=index + 1),
+                "header": build_card_header(
+                    scene=scene,
+                    content_format=content_format,
+                    index=index,
+                ),
                 "title": str(scene["title"]),
                 "description": str(scene["voiceover"]),
                 "imagePath": "images/local-placeholder.svg",
@@ -198,6 +246,7 @@ def build_video_data_from_content_contract(payload: dict[str, Any]) -> dict[str,
     return {
         "template": "timeline",
         "cardLayout": str(payload.get("cardLayout", "classic") or "classic"),
+        "contentFormat": content_format,
         "title": payload["title"],
         "subtitle": payload["hook"],
         "category": payload["niche"],
@@ -223,6 +272,29 @@ def build_ranking_header(*, scene: dict[str, Any], fallback_rank: int) -> str:
     rank_match = re.search(r"#\s*(\d+)", combined_text)
     rank = rank_match.group(1) if rank_match else str(fallback_rank)
     return f"TOP {rank}"
+
+
+def build_card_header(
+    *,
+    scene: dict[str, Any],
+    content_format: str,
+    index: int,
+) -> str:
+    """Return the concise card header for a factual content format."""
+    if content_format == "ranking":
+        return build_ranking_header(scene=scene, fallback_rank=index + 1)
+    if content_format == "fact_collection":
+        return f"FACT {index + 1}"
+    if content_format == "timeline":
+        return "MILESTONE"
+    if content_format == "record_comparison":
+        return "RECORD"
+    if content_format == "before_after":
+        return "THEN / NOW"
+    if content_format == "count_comparison":
+        return "COUNT"
+    value = str(scene.get("factValue", scene.get("metricValue", ""))).strip().upper()
+    return "YES" if value in {"YES", "TRUE", "1"} else "NO"
 
 
 def normalize_country_code(value: str) -> str:

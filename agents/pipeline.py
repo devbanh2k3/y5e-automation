@@ -18,9 +18,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from agents.ai_fact_verification_agent import AIFactVerificationAgent
 from agents.real_image_agent import RealImageAgent
 from core import database as db
 from core.config import get_settings
+from core.fact_verification import apply_fact_corrections
 from core.notifier import notify, notify_error
 from core.quality_gate import run_production_quality_gate
 from core.reviews import create_review
@@ -265,6 +267,7 @@ class Pipeline:
         """Create a local render artifact using explicit fallback content."""
         resolved_category = category.strip() or "Local"
         content_contract: dict[str, Any] | None = None
+        fact_verification_contract: dict[str, Any] | None = None
         image_verification_contract: dict[str, Any] | None = None
         fallback_used = True
         topic_id = self._new_local_render_topic_id()
@@ -279,6 +282,14 @@ class Pipeline:
                 card_layout=card_layout,
                 selected_topic=selected_topic,
             )
+            if content_contract.get("contentFormat"):
+                fact_verification_contract = await AIFactVerificationAgent().run(
+                    content_contract=content_contract,
+                )
+                content_contract = apply_fact_corrections(
+                    content_contract,
+                    fact_verification_contract,
+                )
             video_data = build_video_data_from_content_contract(content_contract)
             image_verification_contract = await RealImageAgent().run_for_content_contract(
                 topic_id=topic_id,
@@ -289,6 +300,8 @@ class Pipeline:
                 video_data,
                 image_verification_contract,
             )
+            if fact_verification_contract:
+                video_data["fact_verification_contract"] = fact_verification_contract
             fallback_used = False
         else:
             title = f"{resolved_category} Local Render Validation"
@@ -311,6 +324,7 @@ class Pipeline:
                 video_path=render_result["file_path"],
                 video_data=video_data,
                 content_contract=content_contract,
+                fact_verification_contract=fact_verification_contract,
                 image_verification_contract=image_verification_contract,
                 expected_card_layout=card_layout,
             )
@@ -320,6 +334,7 @@ class Pipeline:
                 video_id=render_result["video_id"],
                 file_path=render_result["file_path"],
                 content_contract=content_contract,
+                fact_verification_contract=fact_verification_contract,
                 image_verification_contract=image_verification_contract,
                 quality_gate=quality_gate,
                 youtube_title=content_contract["youtube_title"],
@@ -341,6 +356,7 @@ class Pipeline:
             "review_id": review["review_id"] if review else "",
             "review_status": review["status"] if review else "",
             "content_contract": content_contract,
+            "fact_verification_contract": fact_verification_contract,
             "youtube_title": content_contract["youtube_title"] if content_contract else "",
             "youtube_description": (
                 content_contract["youtube_description"] if content_contract else ""

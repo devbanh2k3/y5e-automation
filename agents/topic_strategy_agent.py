@@ -23,7 +23,20 @@ REQUIRED_FIELDS = (
     "data_availability_reason",
     "image_availability_reason",
     "viral_reason",
+    "content_format",
+    "metric_scope",
+    "factual_basis",
+    "privacy_risk",
 )
+CONTENT_FORMATS = {
+    "ranking",
+    "count_comparison",
+    "timeline",
+    "record_comparison",
+    "before_after",
+    "fact_collection",
+    "binary_comparison",
+}
 UNSAFE_TERMS = {
     "addiction",
     "affair",
@@ -50,8 +63,17 @@ def normalize_candidate(raw: dict[str, Any]) -> dict[str, Any]:
     result["angle"] = _slug(result["angle"])
     result["metric_label"] = result["metric_label"].upper()
     result["entity_type"] = _slug(result["entity_type"])
+    result["content_format"] = _slug(result["content_format"])
+    result["metric_scope"] = _normalized_text(result["metric_scope"])
+    result["privacy_risk"] = _slug(result["privacy_risk"])
     result["time_scope"] = _slug(str(raw.get("time_scope", "current")))
-    for score_name in ("viral_score", "data_score", "image_score", "safety_score"):
+    for score_name in (
+        "viral_score",
+        "data_score",
+        "image_score",
+        "safety_score",
+        "measurability_score",
+    ):
         try:
             score = max(0.0, min(100.0, float(raw.get(score_name, 0))))
             result[score_name] = score * 10 if score <= 10 else score
@@ -72,6 +94,15 @@ def validate_candidate(candidate: dict[str, Any]) -> list[str]:
     title_tokens = set(str(candidate.get("normalized_title", "")).split())
     if title_tokens & UNSAFE_TERMS:
         errors.append("unsafe or sensitive topic")
+    if candidate.get("content_format") not in CONTENT_FORMATS:
+        errors.append("content_format is invalid")
+    if float(candidate.get("measurability_score", 0)) < 80:
+        errors.append("metric must be measurable with confidence of at least 80")
+    if candidate.get("privacy_risk") != "low":
+        errors.append("privacy risk must be low")
+    scope = str(candidate.get("metric_scope", ""))
+    if any(marker in scope for marker in ("all outfits ever", "times ever performed")):
+        errors.append("metric scope is not finite or measurable")
     return errors
 
 
@@ -166,7 +197,8 @@ class TopicStrategyAgent(BaseAgent):
     ) -> list[dict[str, Any]]:
         history_lines = [
             f"- {item.get('title', '')} | {item.get('angle', '')} | "
-            f"{item.get('metric_label', '')}"
+            f"{item.get('metric_label', '')} | {item.get('content_format', '')} | "
+            f"{item.get('metric_scope', '')}"
             for item in history[-30:]
         ]
         expansion_instruction = (
@@ -189,7 +221,8 @@ Previously considered or produced topics:
 Every candidate must compare individual public people, have measurable public data,
 support real editorial photos, avoid gossip/private or medical claims, and differ in
 both angle and metric from other candidates. Every score must be an integer on a
-0-100 scale. Return JSON only:
+0-100 scale. Use at least four content formats when enough factual topics exist.
+Return JSON only:
 {{
   "candidates": [
     {{
@@ -202,6 +235,11 @@ both angle and metric from other candidates. Every score must be an integer on a
       "image_availability_reason": "real editorial photos likely available",
       "viral_reason": "specific audience appeal",
       "time_scope": "2026 or all_time",
+      "content_format": "ranking | count_comparison | timeline | record_comparison | before_after | fact_collection | binary_comparison",
+      "metric_scope": "finite named dataset, event, or date range",
+      "factual_basis": "publicly established facts",
+      "measurability_score": 90,
+      "privacy_risk": "low",
       "viral_score": 85,
       "data_score": 90,
       "image_score": 90,
@@ -253,9 +291,13 @@ both angle and metric from other candidates. Every score must be an integer on a
             if max_similarity >= 0.72:
                 continue
             novelty_score = max(0.0, 100.0 * (1.0 - max_similarity))
+            effective_data_score = min(
+                item["data_score"],
+                item["measurability_score"],
+            )
             score_breakdown = {
                 "viral": item["viral_score"],
-                "data": item["data_score"],
+                "data": effective_data_score,
                 "novelty": round(novelty_score, 2),
                 "image": item["image_score"],
                 "safety": item["safety_score"],
@@ -274,14 +316,24 @@ both angle and metric from other candidates. Every score must be an integer on a
         selected: list[dict[str, Any]] = []
         used_angles: set[str] = set()
         used_metrics: set[str] = set()
+        used_formats: set[str] = set()
+        used_scopes: set[str] = set()
+        require_unique_formats = len({item["content_format"] for item in eligible}) >= count
+        require_unique_scopes = len({item["metric_scope"] for item in eligible}) >= count
         for item in sorted(eligible, key=lambda value: value["score_total"], reverse=True):
             if item["angle"] in used_angles or item["metric_label"] in used_metrics:
+                continue
+            if require_unique_formats and item["content_format"] in used_formats:
+                continue
+            if require_unique_scopes and item["metric_scope"] in used_scopes:
                 continue
             if any(topic_similarity(item, chosen) >= 0.72 for chosen in selected):
                 continue
             selected.append(item)
             used_angles.add(item["angle"])
             used_metrics.add(item["metric_label"])
+            used_formats.add(item["content_format"])
+            used_scopes.add(item["metric_scope"])
             if len(selected) == count:
                 break
         return selected
