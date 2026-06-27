@@ -491,7 +491,7 @@ Run: `python3 -m pytest tests/test_quality_gate.py tests/test_reviews.py tests/t
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit production evidence**
+- [x] **Step 5: Commit production evidence**
 
 ```bash
 git add core/quality_gate.py core/reviews.py scripts/produce_celebrity_video.py tests/test_quality_gate.py tests/test_reviews.py tests/test_produce_celebrity_video.py
@@ -507,13 +507,13 @@ git commit -m "feat: persist and enforce ai fact evidence"
 - Modify: `video_engine/package.json`
 - Modify: `video_engine/package-lock.json`
 
-- [ ] **Step 1: Install the existing-toolchain-compatible test runner**
+- [x] **Step 1: Install the existing-toolchain-compatible test runner**
 
 Run: `cd video_engine && npm install --save-dev vitest`
 
 Expected: `package.json` and `package-lock.json` add Vitest without changing production dependencies.
 
-- [ ] **Step 2: Write a failing semantic helper test**
+- [x] **Step 2: Write a failing semantic helper test**
 
 ```typescript
 import {describe, expect, it} from "vitest";
@@ -531,13 +531,13 @@ describe("getHeaderStat", () => {
 });
 ```
 
-- [ ] **Step 3: Run the helper test and verify RED**
+- [x] **Step 3: Run the helper test and verify RED**
 
 Run: `cd video_engine && npx vitest run src/components/card-semantics.test.ts`
 
 Expected: FAIL because `card-semantics.ts` does not exist.
 
-- [ ] **Step 4: Implement and consume semantic stat labels**
+- [x] **Step 4: Implement and consume semantic stat labels**
 
 Create:
 
@@ -553,7 +553,7 @@ export const getHeaderStat = (header: string): {label: string; value: string} =>
 
 Import `getHeaderStat()` in `Card.tsx` and pass its label/value to the existing `StatBlock`. Do not alter dimensions, motion, colors, image fit, or layout selection.
 
-- [ ] **Step 5: Run helper tests and TypeScript build**
+- [x] **Step 5: Run helper tests and TypeScript build**
 
 Run: `cd video_engine && npx vitest run src/components/card-semantics.test.ts && npm run build`
 

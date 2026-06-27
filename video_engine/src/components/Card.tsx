@@ -3,6 +3,7 @@ import { Img, staticFile, useCurrentFrame } from "remotion";
 import "flag-icons/css/flag-icons.min.css";
 import type { CardData, VideoData } from "../types/video-data";
 import { kenBurnsScale } from "../utils/animations";
+import { getHeaderStat } from "./card-semantics";
 
 interface CardProps extends CardData {
   isActive: boolean;
@@ -157,42 +158,45 @@ const FlagHeroCard: React.FC<CardProps & { kbScale: number }> = (props) => {
   );
 };
 
-const SplitDataCard: React.FC<CardProps & { kbScale: number }> = (props) => (
-  <div style={{ ...cardBase, backgroundColor: "#080808", padding: 18, gap: 14 }}>
-    <div style={{ display: "grid", gridTemplateColumns: "1fr 1.25fr", gap: 14, height: 150, flexShrink: 0 }}>
-      <StatBlock label="RANK" value={props.header.replace(/^TOP\s*/i, "#")} />
-      <StatBlock label={props.metricLabel || "VALUE"} value={props.metricValue || props.statusText} />
-    </div>
-
-    <div style={{ height: 190, display: "grid", gridTemplateColumns: "220px 1fr", gap: 14, flexShrink: 0 }}>
-      <div style={{ backgroundColor: "#ffffff", padding: 12, display: "flex", alignItems: "center" }}>
-        <FlagBlock countryCode={props.countryCode} width={196} />
+const SplitDataCard: React.FC<CardProps & { kbScale: number }> = (props) => {
+  const headerStat = getHeaderStat(props.header);
+  return (
+    <div style={{ ...cardBase, backgroundColor: "#080808", padding: 18, gap: 14 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1.25fr", gap: 14, height: 150, flexShrink: 0 }}>
+        <StatBlock label={headerStat.label} value={headerStat.value} />
+        <StatBlock label={props.metricLabel || "VALUE"} value={props.metricValue || props.statusText} />
       </div>
-      <div
-        style={{
-          backgroundColor: "#38bdf8",
-          color: "#050505",
-          display: "flex",
-          flexDirection: "column",
-          justifyContent: "center",
-          padding: "0 18px",
-          overflow: "hidden",
-        }}
-      >
-        <div style={{ fontSize: 22, fontWeight: 900, opacity: 0.75, textTransform: "uppercase" }}>
-          {props.countryLabel || "GLOBAL"}
+
+      <div style={{ height: 190, display: "grid", gridTemplateColumns: "220px 1fr", gap: 14, flexShrink: 0 }}>
+        <div style={{ backgroundColor: "#ffffff", padding: 12, display: "flex", alignItems: "center" }}>
+          <FlagBlock countryCode={props.countryCode} width={196} />
         </div>
-        <div style={{ fontSize: 37, fontWeight: 950, lineHeight: 1.02, textTransform: "uppercase" }}>
-          {props.title}
+        <div
+          style={{
+            backgroundColor: "#38bdf8",
+            color: "#050505",
+            display: "flex",
+            flexDirection: "column",
+            justifyContent: "center",
+            padding: "0 18px",
+            overflow: "hidden",
+          }}
+        >
+          <div style={{ fontSize: 22, fontWeight: 900, opacity: 0.75, textTransform: "uppercase" }}>
+            {props.countryLabel || "GLOBAL"}
+          </div>
+          <div style={{ fontSize: 37, fontWeight: 950, lineHeight: 1.02, textTransform: "uppercase" }}>
+            {props.title}
+          </div>
         </div>
       </div>
-    </div>
 
-    <div style={{ flex: 1, minHeight: 0 }}>
-      <SafeMainImage imagePath={props.imagePath} kbScale={props.kbScale} />
+      <div style={{ flex: 1, minHeight: 0 }}>
+        <SafeMainImage imagePath={props.imagePath} kbScale={props.kbScale} />
+      </div>
     </div>
-  </div>
-);
+  );
+};
 
 const SafeMainImage: React.FC<{ imagePath: string; kbScale: number }> = ({ imagePath, kbScale }) => (
   <div
