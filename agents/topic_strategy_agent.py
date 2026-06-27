@@ -51,7 +51,8 @@ def normalize_candidate(raw: dict[str, Any]) -> dict[str, Any]:
     result["time_scope"] = _slug(str(raw.get("time_scope", "current")))
     for score_name in ("viral_score", "data_score", "image_score", "safety_score"):
         try:
-            result[score_name] = max(0.0, min(100.0, float(raw.get(score_name, 0))))
+            score = max(0.0, min(100.0, float(raw.get(score_name, 0))))
+            result[score_name] = score * 10 if score <= 10 else score
         except (TypeError, ValueError):
             result[score_name] = 0.0
     return result
@@ -172,7 +173,8 @@ Previously considered or produced topics:
 
 Every candidate must compare individual public people, have measurable public data,
 support real editorial photos, avoid gossip/private or medical claims, and differ in
-both angle and metric from other candidates. Return JSON only:
+both angle and metric from other candidates. Every score must be an integer on a
+0-100 scale. Return JSON only:
 {{
   "candidates": [
     {{
@@ -185,10 +187,10 @@ both angle and metric from other candidates. Return JSON only:
       "image_availability_reason": "real editorial photos likely available",
       "viral_reason": "specific audience appeal",
       "time_scope": "2026 or all_time",
-      "viral_score": 0,
-      "data_score": 0,
-      "image_score": 0,
-      "safety_score": 0
+      "viral_score": 85,
+      "data_score": 90,
+      "image_score": 90,
+      "safety_score": 95
     }}
   ]
 }}"""

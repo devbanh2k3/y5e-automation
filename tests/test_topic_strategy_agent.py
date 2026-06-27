@@ -33,6 +33,13 @@ def test_normalize_candidate_uses_stable_keys():
     assert result["metric_label"] == "SALARY"
 
 
+def test_normalize_candidate_accepts_ai_scores_on_zero_to_ten_scale():
+    result = normalize_candidate(candidate(viral_score=9, data_score=10))
+
+    assert result["viral_score"] == 90
+    assert result["data_score"] == 100
+
+
 def test_validation_accepts_open_taxonomy_but_rejects_unsafe_or_non_person_topics():
     open_taxonomy = normalize_candidate(candidate(category="touring_revenue"))
     non_person = normalize_candidate(candidate(entity_type="bands"))
