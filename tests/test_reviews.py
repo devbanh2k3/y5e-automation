@@ -241,3 +241,48 @@ async def test_create_review_persists_image_verification_contract(review_storage
     loaded = await get_review(review["review_id"])
 
     assert loaded["image_verification_contract"] == image_contract
+
+
+@pytest.mark.asyncio
+async def test_create_review_persists_fact_verification_contract(review_storage):
+    fact_contract = {
+        "schema_version": "fact_verification_contract_v1",
+        "verification_policy": "ai_only_independent_pass",
+        "status": "ai_verified",
+        "required_count": 1,
+        "verified_count": 1,
+        "corrected_count": 0,
+        "rejected_count": 0,
+        "items": [
+            {
+                "scene_index": 0,
+                "person_name": "Celine Dion",
+                "metric_label": "NET WORTH",
+                "original_value": "550M USD",
+                "verified_value": "550M USD",
+                "unit": "USD",
+                "as_of": "2026",
+                "status": "verified",
+                "confidence": 0.92,
+                "reason": "Public estimate check.",
+                "knowledge_cutoff_risk": "medium",
+            }
+        ],
+    }
+
+    review = await create_review(
+        job_id="job-123",
+        topic_id=1,
+        video_id=2,
+        file_path="/tmp/final_video.mp4",
+        content_contract={"schema_version": "content_contract_v2", "title": "Video"},
+        fact_verification_contract=fact_contract,
+        youtube_title="YouTube title",
+        youtube_description="Description",
+        youtube_tags=["celebrity"],
+        thumbnail_prompt="thumbnail prompt",
+    )
+
+    loaded = await get_review(review["review_id"])
+
+    assert loaded["fact_verification_contract"] == fact_contract

@@ -324,6 +324,7 @@ class Pipeline:
                 video_path=render_result["file_path"],
                 video_data=video_data,
                 content_contract=content_contract,
+                fact_verification_contract=fact_verification_contract,
                 image_verification_contract=image_verification_contract,
                 expected_card_layout=card_layout,
             )

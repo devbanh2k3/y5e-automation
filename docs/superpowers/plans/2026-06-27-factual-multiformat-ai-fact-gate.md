@@ -434,7 +434,7 @@ Run: `python3 -m pytest tests/test_content_agent.py tests/test_pipeline_local_re
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit pipeline integration**
+- [x] **Step 5: Commit pipeline integration**
 
 ```bash
 git add agents/content_agent.py agents/pipeline.py tests/test_content_agent.py tests/test_pipeline_local_render.py
@@ -451,7 +451,7 @@ git commit -m "feat: gate celebrity rendering on ai fact verification"
 - Modify: `tests/test_reviews.py`
 - Modify: `tests/test_produce_celebrity_video.py`
 
-- [ ] **Step 1: Write failing evidence persistence and gate tests**
+- [x] **Step 1: Write failing evidence persistence and gate tests**
 
 Add tests asserting Celebrity Quality Gate rejects missing fact contracts, low confidence, item/scene mismatch, and rendered card values that differ from corrected values. Add passing coverage for a complete contract.
 
@@ -475,17 +475,17 @@ assert json.loads(Path(artifacts["fact_verification_contract_path"]).read_text()
     == review["fact_verification_contract"]
 ```
 
-- [ ] **Step 2: Run focused tests and verify RED**
+- [x] **Step 2: Run focused tests and verify RED**
 
 Run: `python3 -m pytest tests/test_quality_gate.py tests/test_reviews.py tests/test_produce_celebrity_video.py -q`
 
 Expected: FAIL because fact verification is neither required nor persisted.
 
-- [ ] **Step 3: Extend gate and persistence boundaries**
+- [x] **Step 3: Extend gate and persistence boundaries**
 
 Add `fact_verification_contract` to `run_production_quality_gate()` and `create_review()`. Validate with `validate_fact_verification_contract_v1(require_ai_verified=True)`, match item count/index/value against corrected scenes/cards, and add per-scene confidence checks. Pass the contract from Pipeline to Quality Gate and Review. Write `fact_verification_contract.json` next to existing artifacts and expose its path in producer output.
 
-- [ ] **Step 4: Run evidence and pipeline tests**
+- [x] **Step 4: Run evidence and pipeline tests**
 
 Run: `python3 -m pytest tests/test_quality_gate.py tests/test_reviews.py tests/test_produce_celebrity_video.py tests/test_pipeline_local_render.py -q`
 

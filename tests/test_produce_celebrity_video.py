@@ -29,12 +29,14 @@ def test_write_artifacts_persists_review_contracts_next_to_video(tmp_path):
         "review_id": "review-1",
         "review_status": "pending_review",
         "content_contract": {"title": "Top Celebrity"},
+        "fact_verification_contract": {"schema_version": "fact_verification_contract_v1"},
         "image_verification_contract": {"status": "verified"},
         "quality_gate": {"status": "passed"},
     }
     review = {
         "review_id": "review-1",
         "content_contract": result["content_contract"],
+        "fact_verification_contract": result["fact_verification_contract"],
         "image_verification_contract": result["image_verification_contract"],
         "quality_gate": result["quality_gate"],
     }
@@ -43,9 +45,14 @@ def test_write_artifacts_persists_review_contracts_next_to_video(tmp_path):
 
     assert Path(artifacts["review_path"]).exists()
     assert Path(artifacts["content_contract_path"]).exists()
+    assert Path(artifacts["fact_verification_contract_path"]).exists()
     assert Path(artifacts["image_verification_contract_path"]).exists()
     assert Path(artifacts["quality_gate_path"]).exists()
     assert json.loads(Path(artifacts["review_path"]).read_text())["review_id"] == "review-1"
+    assert (
+        json.loads(Path(artifacts["fact_verification_contract_path"]).read_text())
+        == result["fact_verification_contract"]
+    )
     assert json.loads(Path(artifacts["quality_gate_path"]).read_text())["status"] == "passed"
 
 

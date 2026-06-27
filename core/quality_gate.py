@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from core.config import get_settings
+from core.fact_verification import validate_fact_verification_contract_v1
 from core.video_contract import validate_image_verification_contract_v1, validate_video_data
 
 MIN_IMAGE_QUALITY_SCORE = 0.58
@@ -21,6 +22,7 @@ def run_production_quality_gate(
     video_path: str,
     video_data: dict[str, Any],
     content_contract: dict[str, Any],
+    fact_verification_contract: dict[str, Any] | None = None,
     image_verification_contract: dict[str, Any] | None,
     expected_card_layout: str,
 ) -> dict[str, Any]:
@@ -60,6 +62,59 @@ def run_production_quality_gate(
     cards = video_data.get("cards") if isinstance(video_data.get("cards"), list) else []
     scenes = content_contract.get("scenes") if isinstance(content_contract.get("scenes"), list) else []
     record("scene_count", len(cards) == len(scenes) and len(cards) > 0, "cards must match scenes")
+
+    if content_contract.get("contentFormat"):
+        if fact_verification_contract is None:
+            record(
+                "fact_contract",
+                False,
+                "fact verification contract is required for factual Celebrity content",
+            )
+            fact_items: list[dict[str, Any]] = []
+        else:
+            try:
+                validate_fact_verification_contract_v1(
+                    fact_verification_contract,
+                    require_ai_verified=True,
+                )
+                record("fact_contract", True, "fact verification contract is valid")
+            except Exception as exc:
+                record("fact_contract", False, str(exc))
+            fact_items = fact_verification_contract.get("items", [])
+            if not isinstance(fact_items, list):
+                fact_items = []
+        record(
+            "fact_item_count",
+            len(fact_items) == len(scenes) == len(cards) and len(fact_items) > 0,
+            "fact item count must match scenes and cards",
+        )
+        for index, item in enumerate(fact_items):
+            if index >= len(scenes) or index >= len(cards):
+                continue
+            verified_value = str(item.get("verified_value", "")).strip()
+            scene_value = str(scenes[index].get("factValue", scenes[index].get("metricValue", ""))).strip()
+            card_value = str(cards[index].get("metricValue", "")).strip()
+            record(
+                f"fact_{index}_scene_index",
+                item.get("scene_index") == index,
+                f"scene_index must be {index}",
+            )
+            record(
+                f"fact_{index}_scene_value",
+                scene_value == verified_value,
+                "scene factValue must match verified_value",
+            )
+            record(
+                f"fact_{index}_card_value",
+                card_value == verified_value,
+                "card metricValue must match verified_value",
+            )
+            confidence = item.get("confidence")
+            record(
+                f"fact_{index}_confidence",
+                isinstance(confidence, int | float) and confidence >= 0.80,
+                "confidence must be at least 0.80",
+            )
 
     if image_verification_contract is None:
         record("image_contract", False, "image verification contract is required")
