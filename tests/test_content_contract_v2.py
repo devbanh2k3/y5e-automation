@@ -4,7 +4,6 @@ from core.video_contract import (
     VideoContractError,
     build_content_contract_v2,
     build_video_data_from_content_contract,
-    calculate_hold_duration_frames,
     validate_country_metadata,
     validate_content_contract_v2,
     validate_video_data,
@@ -106,7 +105,7 @@ def test_build_video_data_from_content_contract_maps_scenes_to_cards():
     assert video_data["cards"][0]["metricValue"] == "550M USD"
 
 
-def test_build_video_data_from_content_contract_honors_duration_target():
+def test_build_video_data_from_content_contract_keeps_stable_slide_pacing():
     scenes = [
         {
             "title": f"#{10 - index} Celebrity {index}",
@@ -136,19 +135,8 @@ def test_build_video_data_from_content_contract_honors_duration_target():
     )
 
     video_data = build_video_data_from_content_contract(contract)
-    total_frames = (
-        90
-        + len(scenes) * video_data["holdDurationFrames"]
-        + (len(scenes) - 1) * video_data["transitionDurationFrames"]
-        + 150
-    )
-
-    assert video_data["holdDurationFrames"] == calculate_hold_duration_frames(
-        duration_target=90,
-        card_count=10,
-        transition_duration_frames=15,
-    )
-    assert round(total_frames / 30) == 90
+    assert video_data["holdDurationFrames"] == 120
+    assert video_data["transitionDurationFrames"] == 15
 
 
 def test_validate_country_metadata_rejects_wrong_flag_label_pairing():

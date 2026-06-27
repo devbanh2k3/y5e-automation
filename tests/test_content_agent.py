@@ -4,7 +4,7 @@ from agents.content_agent import ContentAgent
 from core.video_contract import validate_content_contract_v2
 
 
-def awards_contract_payload():
+def awards_contract_payload(count=10):
     return {
         "title": "Top 10 Most-Awarded Living Musicians",
         "hook": "Living music legends ranked by public award records.",
@@ -15,31 +15,28 @@ def awards_contract_payload():
         "thumbnail_prompt": "Famous musicians with bold award totals",
         "scenes": [
             {
-                "title": "#2 Taylor Swift",
-                "voiceover": "Taylor Swift ranks second by public award totals.",
-                "caption": "AWARDS: 600",
-                "image_prompt": "real editorial photo of Taylor Swift",
-                "statusText": "#2 | 600 awards",
+                "title": f"#{count - index} Musician {index}",
+                "voiceover": f"Musician {index} has a public award estimate.",
+                "caption": f"AWARDS: {500 + index}",
+                "image_prompt": f"real editorial photo of Musician {index}",
+                "statusText": f"#{count - index} | {500 + index} awards",
                 "countryCode": "US",
                 "countryLabel": "UNITED STATES",
                 "metricLabel": "AWARDS",
-                "metricValue": "600",
+                "metricValue": str(500 + index),
                 "sourceRequirement": "official award databases",
-            },
-            {
-                "title": "#1 Beyonce",
-                "voiceover": "Beyonce ranks first by public award totals.",
-                "caption": "AWARDS: 700",
-                "image_prompt": "real editorial photo of Beyonce",
-                "statusText": "#1 | 700 awards",
-                "countryCode": "US",
-                "countryLabel": "UNITED STATES",
-                "metricLabel": "AWARDS",
-                "metricValue": "700",
-                "sourceRequirement": "official award databases",
-            },
+            }
+            for index in range(count)
         ],
     }
+
+
+@pytest.mark.parametrize(
+    ("duration_target", "expected_scene_count"),
+    [(40, 6), (60, 10), (90, 16), (120, 22), (300, 24)],
+)
+def test_desired_scene_count_for_duration(duration_target, expected_scene_count):
+    assert ContentAgent.desired_scene_count_for_duration(duration_target) == expected_scene_count
 
 
 @pytest.mark.asyncio
@@ -85,13 +82,14 @@ async def test_content_agent_preserves_selected_factual_format(monkeypatch):
     payload = awards_contract_payload()
     payload["scenes"] = [
         {
-            **payload["scenes"][0],
+            **scene,
             "factClaim": "Taylor Swift released her debut album in 2006",
             "factValue": "2006",
             "factUnit": "year",
             "factAsOf": "2026",
             "factContext": "official debut album release year",
         }
+        for scene in payload["scenes"]
     ]
 
     async def fake_ai_json(prompt, system=None, **kwargs):
@@ -113,7 +111,7 @@ async def test_content_agent_preserves_selected_factual_format(monkeypatch):
 @pytest.mark.asyncio
 async def test_content_agent_uses_explicit_duration_target(monkeypatch):
     agent = ContentAgent()
-    payload = awards_contract_payload()
+    payload = awards_contract_payload(count=16)
 
     async def fake_ai_json(prompt, system=None, **kwargs):
         return payload
@@ -128,6 +126,40 @@ async def test_content_agent_uses_explicit_duration_target(monkeypatch):
     )
 
     assert contract["duration_target"] == 90
+    assert len(contract["scenes"]) == 16
+
+
+@pytest.mark.asyncio
+async def test_content_agent_prompt_requests_duration_based_scene_count(monkeypatch):
+    agent = ContentAgent()
+    payload = awards_contract_payload(count=16)
+    prompts = []
+
+    async def fake_ai_json(prompt, system=None, **kwargs):
+        prompts.append(prompt)
+        return payload
+
+    monkeypatch.setattr(agent, "ai_json", fake_ai_json)
+
+    await agent.run(
+        niche="celebrity",
+        language="en",
+        selected_topic={"title": "Awards", "metric_label": "AWARDS"},
+        duration_target=90,
+    )
+
+    assert "Use exactly 16 ranking scenes" in prompts[0]
+
+
+def test_normalize_ai_celebrity_contract_rejects_too_few_duration_scenes():
+    with pytest.raises(ValueError, match="requires at least 16 scenes"):
+        ContentAgent._normalize_ai_celebrity_contract(
+            raw_contract=awards_contract_payload(count=10),
+            language="en",
+            topic={"title": "Awards", "metric_label": "AWARDS"},
+            card_layout="flag_hero",
+            duration_target=90,
+        )
 
 
 @pytest.mark.asyncio
@@ -206,6 +238,21 @@ async def test_content_agent_uses_ai_topic_and_ranking_for_celebrity(monkeypatch
                     "metricValue": "380M",
                     "sourceRequirement": "public social profile estimate",
                 },
+                *[
+                    {
+                        "title": f"#{rank} Singer {rank}",
+                        "voiceover": f"#{rank} Singer {rank} has a large public following.",
+                        "caption": f"{300 + rank}M followers",
+                        "image_prompt": f"real editorial photo of Singer {rank}",
+                        "statusText": f"#{rank} | {300 + rank}M followers",
+                        "countryCode": "US",
+                        "countryLabel": "UNITED STATES",
+                        "metricLabel": "FOLLOWERS",
+                        "metricValue": f"{300 + rank}M",
+                        "sourceRequirement": "public social profile estimate",
+                    }
+                    for rank in range(9, 1, -1)
+                ],
                 {
                     "title": "#1 Selena Gomez",
                     "voiceover": "#1 Selena Gomez has about 430M public followers.",
@@ -321,17 +368,18 @@ async def test_content_agent_normalizes_ai_country_labels(monkeypatch):
             "thumbnail_prompt": "Athlete ranking thumbnail",
             "scenes": [
                 {
-                    "title": "#2 Athlete",
-                    "voiceover": "#2 has a huge public following.",
+                    "title": f"#{10 - index} Athlete {index}",
+                    "voiceover": f"#{10 - index} has a huge public following.",
                     "caption": "300M followers",
                     "image_prompt": "real editorial photo of an athlete",
-                    "statusText": "#2 | 300M",
+                    "statusText": f"#{10 - index} | 300M",
                     "countryCode": "US",
                     "countryLabel": "USA",
                     "metricLabel": "FOLLOWERS",
                     "metricValue": "300M",
                     "sourceRequirement": "public social profile estimate",
                 }
+                for index in range(10)
             ],
         }
 

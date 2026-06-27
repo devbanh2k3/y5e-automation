@@ -25,6 +25,11 @@ _CELEBRITY_GROUP_NAMES = {
     "u2",
 }
 
+_FIXED_TEMPLATE_SECONDS = 8
+_SECONDS_PER_CARD = 5.0
+_MIN_DURATION_SCENES = 6
+_MAX_DURATION_SCENES = 24
+
 
 class ContentAgent(BaseAgent):
     """Build a production-shaped content contract without external side effects."""
@@ -87,6 +92,7 @@ class ContentAgent(BaseAgent):
                 topic=topic,
                 card_layout=card_layout,
                 duration_target=duration_target,
+                desired_scene_count=self.desired_scene_count_for_duration(duration_target),
             )
             validate_content_contract_v2(contract)
             return contract
@@ -155,7 +161,9 @@ Return JSON only:
         topic: dict[str, Any],
         card_layout: str,
         duration_target: int = 60,
+        desired_scene_count: int | None = None,
     ) -> dict[str, Any]:
+        scene_count = desired_scene_count or self.desired_scene_count_for_duration(duration_target)
         prompt = f"""Create a complete content_contract_v2 payload for a Celebrity data-comparison video.
 
 Topic candidate:
@@ -165,7 +173,7 @@ Language: {language}
 Subject hint: {subject}
 
 Hard rules:
-1. Use 8-12 ranking scenes.
+1. Use exactly {scene_count} ranking scenes.
 2. Each scene must be one real public celebrity/person.
 3. Each scene must include short voiceover, caption, image_prompt, statusText.
 4. Each scene must include countryCode and countryLabel matching the person's nationality/origin.
@@ -216,6 +224,7 @@ Return JSON only with this shape:
             topic=topic,
             card_layout=card_layout,
             duration_target=duration_target,
+            desired_scene_count=scene_count,
         )
 
     @staticmethod
@@ -226,14 +235,20 @@ Return JSON only with this shape:
         topic: dict[str, Any],
         card_layout: str,
         duration_target: int = 60,
+        desired_scene_count: int | None = None,
     ) -> dict[str, Any]:
         scenes = raw_contract.get("scenes")
         if not isinstance(scenes, list) or not scenes:
             raise ValueError("AI celebrity contract requires scenes")
+        scene_count = desired_scene_count or ContentAgent.desired_scene_count_for_duration(duration_target)
+        if len(scenes) < scene_count:
+            raise ValueError(
+                f"AI celebrity contract requires at least {scene_count} scenes, got {len(scenes)}"
+            )
 
         normalized_scenes: list[dict[str, Any]] = []
         metric_label = str(topic.get("metric_label", "NET WORTH") or "NET WORTH").strip()
-        for index, scene in enumerate(scenes):
+        for index, scene in enumerate(scenes[:scene_count]):
             if not isinstance(scene, dict):
                 raise ValueError(f"scene {index} must be an object")
             title = str(scene.get("title", "")).strip()
@@ -304,6 +319,11 @@ Return JSON only with this shape:
             metricScope=str(topic.get("metric_scope", "")),
             timeScope=str(topic.get("time_scope", "")),
         )
+
+    @staticmethod
+    def desired_scene_count_for_duration(duration_target: int) -> int:
+        raw_count = round((duration_target - _FIXED_TEMPLATE_SECONDS) / _SECONDS_PER_CARD)
+        return max(_MIN_DURATION_SCENES, min(_MAX_DURATION_SCENES, raw_count))
 
     @staticmethod
     def _extract_ranked_name(title: str) -> str:
