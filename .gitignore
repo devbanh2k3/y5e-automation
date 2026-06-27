@@ -50,6 +50,7 @@ output/
 Thumbs.db
 .idea/
 .vscode/
+.worktrees/
 
 # Logs
 *.log
