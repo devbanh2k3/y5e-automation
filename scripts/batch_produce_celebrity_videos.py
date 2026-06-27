@@ -338,6 +338,24 @@ def build_parser() -> argparse.ArgumentParser:
         help="Skip writing review.json and contract snapshots next to each MP4.",
     )
     parser.add_argument(
+        "--max-attempts",
+        type=int,
+        default=None,
+        help="Maximum production attempts before leaving the batch incomplete. Defaults to count * 3.",
+    )
+    parser.add_argument(
+        "--duration-profile",
+        choices=sorted(DURATION_PROFILE_TARGETS),
+        default="standard",
+        help="Target duration profile for generated videos.",
+    )
+    parser.add_argument(
+        "--target-duration",
+        type=int,
+        default=None,
+        help="Explicit target duration in seconds. Overrides --duration-profile target.",
+    )
+    parser.add_argument(
         "--stop-on-error",
         action="store_true",
         help="Stop the batch at the first failed video candidate.",
@@ -356,6 +374,9 @@ def main(argv: Sequence[str] | None = None) -> int:
                 card_layout=args.card_layout,
                 write_files=not args.no_write_artifacts,
                 stop_on_error=args.stop_on_error,
+                max_attempts=args.max_attempts,
+                duration_profile=args.duration_profile,
+                target_duration=args.target_duration,
             )
         )
     except ValueError as exc:

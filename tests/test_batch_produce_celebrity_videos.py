@@ -406,6 +406,69 @@ def test_main_returns_nonzero_when_stop_on_error_fails(monkeypatch, capsys):
     assert '"failure_count": 1' in capsys.readouterr().out
 
 
+def test_cli_accepts_batch_v2_options():
+    from scripts.batch_produce_celebrity_videos import build_parser
+
+    args = build_parser().parse_args(
+        [
+            "--count",
+            "10",
+            "--language",
+            "en",
+            "--card-layout",
+            "flag_hero",
+            "--max-attempts",
+            "30",
+            "--duration-profile",
+            "long",
+            "--target-duration",
+            "95",
+        ]
+    )
+
+    assert args.max_attempts == 30
+    assert args.duration_profile == "long"
+    assert args.target_duration == 95
+
+
+def test_main_passes_batch_v2_options(monkeypatch, capsys):
+    from scripts import batch_produce_celebrity_videos as batch_script
+
+    captured = {}
+
+    async def fake_produce_batch(**kwargs):
+        captured.update(kwargs)
+        return {
+            "requested_count": 2,
+            "success_count": 2,
+            "failure_count": 0,
+            "stopped_on_error": False,
+            "items": [],
+            "failures": [],
+        }
+
+    monkeypatch.setattr(batch_script, "produce_batch", fake_produce_batch)
+
+    exit_code = batch_script.main(
+        [
+            "--count",
+            "2",
+            "--max-attempts",
+            "5",
+            "--duration-profile",
+            "short",
+            "--target-duration",
+            "45",
+        ]
+    )
+
+    assert exit_code == 0
+    assert captured["max_attempts"] == 5
+    assert captured["duration_profile"] == "short"
+    assert captured["target_duration"] == 45
+    assert '"success_count": 2' in capsys.readouterr().out
+
+
 def test_cli_help_describes_batch_options():
     result = subprocess.run(
         [sys.executable, "scripts/batch_produce_celebrity_videos.py", "--help"],
@@ -418,5 +481,8 @@ def test_cli_help_describes_batch_options():
     assert "--count" in result.stdout
     assert "--language" in result.stdout
     assert "--card-layout" in result.stdout
+    assert "--max-attempts" in result.stdout
+    assert "--duration-profile" in result.stdout
+    assert "--target-duration" in result.stdout
     assert "--stop-on-error" in result.stdout
     assert "--no-write-artifacts" in result.stdout
