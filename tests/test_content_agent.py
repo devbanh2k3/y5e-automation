@@ -111,6 +111,26 @@ async def test_content_agent_preserves_selected_factual_format(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_content_agent_uses_explicit_duration_target(monkeypatch):
+    agent = ContentAgent()
+    payload = awards_contract_payload()
+
+    async def fake_ai_json(prompt, system=None, **kwargs):
+        return payload
+
+    monkeypatch.setattr(agent, "ai_json", fake_ai_json)
+
+    contract = await agent.run(
+        niche="celebrity",
+        language="en",
+        selected_topic={"title": "Awards", "metric_label": "AWARDS"},
+        duration_target=90,
+    )
+
+    assert contract["duration_target"] == 90
+
+
+@pytest.mark.asyncio
 async def test_content_agent_builds_seeded_celebrity_mvp_contract(monkeypatch):
     agent = ContentAgent()
 

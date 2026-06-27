@@ -10,6 +10,20 @@ from agents.topic_strategy_agent import TopicSelectionError
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def test_resolve_duration_target_uses_profile_defaults():
+    from scripts.batch_produce_celebrity_videos import resolve_duration_target
+
+    assert resolve_duration_target("short", None) == 40
+    assert resolve_duration_target("standard", None) == 60
+    assert resolve_duration_target("long", None) == 90
+
+
+def test_resolve_duration_target_allows_explicit_override():
+    from scripts.batch_produce_celebrity_videos import resolve_duration_target
+
+    assert resolve_duration_target("standard", 75) == 75
+
+
 def selected_topic(index, *, angle=None, metric=None):
     return {
         "reservation_id": f"reservation-{index}",

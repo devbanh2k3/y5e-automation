@@ -263,6 +263,7 @@ class Pipeline:
         language: str = "vi",
         card_layout: str = "flag_hero",
         selected_topic: dict[str, Any] | None = None,
+        duration_target: int = 60,
     ) -> dict[str, Any]:
         """Create a local render artifact using explicit fallback content."""
         resolved_category = category.strip() or "Local"
@@ -281,6 +282,7 @@ class Pipeline:
                 subject="người nổi tiếng",
                 card_layout=card_layout,
                 selected_topic=selected_topic,
+                duration_target=duration_target,
             )
             if content_contract.get("contentFormat"):
                 fact_verification_contract = await AIFactVerificationAgent().run(

@@ -18,9 +18,23 @@ if str(ROOT_DIR) not in sys.path:
 from agents.topic_strategy_agent import TopicStrategyAgent
 from scripts.produce_celebrity_video import produce
 
+DURATION_PROFILE_TARGETS = {
+    "short": 40,
+    "standard": 60,
+    "long": 90,
+}
+
 
 def print_json(payload: Any) -> None:
     print(json.dumps(payload, ensure_ascii=False, indent=2))
+
+
+def resolve_duration_target(duration_profile: str, target_duration: int | None) -> int:
+    if target_duration is not None:
+        if target_duration < 15:
+            raise ValueError("--target-duration must be at least 15 seconds")
+        return target_duration
+    return DURATION_PROFILE_TARGETS[duration_profile]
 
 
 def summarize_success(

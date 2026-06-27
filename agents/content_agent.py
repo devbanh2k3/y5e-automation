@@ -40,6 +40,7 @@ class ContentAgent(BaseAgent):
         subject: str = "người nổi tiếng",
         card_layout: str = "flag_hero",
         selected_topic: dict[str, Any] | None = None,
+        duration_target: int = 60,
     ) -> dict[str, Any]:
         """Return a complete content contract for the requested niche."""
         normalized_niche = niche.strip().lower() or "celebrity"
@@ -61,6 +62,7 @@ class ContentAgent(BaseAgent):
             subject=subject,
             card_layout=card_layout,
             selected_topic=selected_topic,
+            duration_target=duration_target,
         )
         validate_content_contract_v2(contract)
         return contract
@@ -72,6 +74,7 @@ class ContentAgent(BaseAgent):
         subject: str,
         card_layout: str,
         selected_topic: dict[str, Any] | None = None,
+        duration_target: int = 60,
     ) -> dict[str, Any]:
         try:
             topic = selected_topic or await self._generate_celebrity_topic(
@@ -83,6 +86,7 @@ class ContentAgent(BaseAgent):
                 subject=subject,
                 topic=topic,
                 card_layout=card_layout,
+                duration_target=duration_target,
             )
             validate_content_contract_v2(contract)
             return contract
@@ -94,6 +98,7 @@ class ContentAgent(BaseAgent):
                 language=language,
                 subject=subject,
                 card_layout=card_layout,
+                duration_target=duration_target,
             )
 
     async def _generate_celebrity_topic(
@@ -149,6 +154,7 @@ Return JSON only:
         subject: str,
         topic: dict[str, Any],
         card_layout: str,
+        duration_target: int = 60,
     ) -> dict[str, Any]:
         prompt = f"""Create a complete content_contract_v2 payload for a Celebrity data-comparison video.
 
@@ -209,6 +215,7 @@ Return JSON only with this shape:
             language=language,
             topic=topic,
             card_layout=card_layout,
+            duration_target=duration_target,
         )
 
     @staticmethod
@@ -218,6 +225,7 @@ Return JSON only with this shape:
         language: str,
         topic: dict[str, Any],
         card_layout: str,
+        duration_target: int = 60,
     ) -> dict[str, Any]:
         scenes = raw_contract.get("scenes")
         if not isinstance(scenes, list) or not scenes:
@@ -288,7 +296,7 @@ Return JSON only with this shape:
             youtube_title=str(raw_contract.get("youtube_title", topic["title"])).strip(),
             youtube_description=str(raw_contract.get("youtube_description", "")).strip(),
             youtube_tags=youtube_tags,
-            duration_target=60,
+            duration_target=duration_target,
             cardLayout=card_layout,
             contentFormat=(
                 str(topic["content_format"]) if topic.get("content_format") else None
@@ -389,6 +397,7 @@ Return JSON only with this shape:
         language: str,
         subject: str,
         card_layout: str = "flag_hero",
+        duration_target: int = 60,
     ) -> dict[str, Any]:
         safe_subject = subject.strip() or "người nổi tiếng"
         title = "Top 10 ca sĩ giàu nhất thế giới năm 2026"
@@ -525,6 +534,6 @@ Return JSON only with this shape:
                 "giai tri",
                 "thong ke so sanh",
             ],
-            duration_target=60,
+            duration_target=duration_target,
             cardLayout=card_layout,
         )

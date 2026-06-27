@@ -110,10 +110,11 @@ async def test_run_local_render_uses_content_agent_for_celebrity(monkeypatch, tm
             *,
             niche,
             language,
-            subject,
-            card_layout="flag_hero",
-            selected_topic=None,
-        ):
+                subject,
+                card_layout="flag_hero",
+                selected_topic=None,
+                duration_target=60,
+            ):
             captured["content_agent_card_layout"] = card_layout
             captured["selected_topic"] = selected_topic
             return build_content_contract_v2(
@@ -364,6 +365,105 @@ async def test_run_local_render_blocks_factual_celebrity_when_fact_gate_rejects(
 
     assert captured["image_called"] is False
     assert captured["render_called"] is False
+
+
+@pytest.mark.asyncio
+async def test_run_local_render_passes_duration_target_to_content_agent(
+    monkeypatch,
+    tmp_path,
+):
+    get_settings.cache_clear()
+    monkeypatch.setenv("STORAGE_PATH", str(tmp_path))
+    captured: dict[str, object] = {}
+
+    class FakeContentAgent:
+        async def run(self, **kwargs):
+            captured["duration_target"] = kwargs["duration_target"]
+            return build_content_contract_v2(
+                niche="celebrity",
+                title="Duration Test",
+                hook="Hook",
+                target_audience="Fans",
+                language="en",
+                scenes=[
+                    {
+                        "title": "#1 Taylor Swift",
+                        "voiceover": "Taylor Swift has a public estimate.",
+                        "caption": "1.6B USD",
+                        "image_prompt": "real editorial photo of Taylor Swift",
+                        "statusText": "#1 | 1.6B USD",
+                        "countryCode": "US",
+                        "countryLabel": "UNITED STATES",
+                        "metricLabel": "NET WORTH",
+                        "metricValue": "1.6B USD",
+                    }
+                ],
+                thumbnail_prompt="thumbnail",
+                youtube_title="Duration Test",
+                youtube_description="Description",
+                youtube_tags=["celebrity"],
+                duration_target=kwargs["duration_target"],
+                cardLayout="flag_hero",
+            )
+
+    class FakeRealImageAgent:
+        async def run_for_content_contract(self, *, topic_id, content_contract, strict=True):
+            return {
+                "schema_version": "image_verification_contract_v1",
+                "topic_id": topic_id,
+                "source_policy": "wikimedia_commons_strict",
+                "required_count": 1,
+                "verified_count": 1,
+                "status": "verified",
+                "items": [
+                    {
+                        "scene_index": 0,
+                        "person_name": "Taylor Swift",
+                        "expected_title": "#1 Taylor Swift",
+                        "status": "verified",
+                        "confidence": 0.9,
+                        "local_path": "/tmp/real_0.webp",
+                        "render_image_path": "images/real_0.webp",
+                        "source_url": "https://commons.wikimedia.org/wiki/File:Example.jpg",
+                        "image_url": "https://upload.wikimedia.org/wikipedia/commons/example.jpg",
+                        "license": "CC BY-SA 4.0",
+                        "attribution": "Example photographer",
+                        "quality_score": 0.82,
+                        "quality_reason": "portrait metadata",
+                        "identity_confidence": 0.95,
+                        "content_match_status": "passed",
+                        "needs_human_review": False,
+                        "source_adapter": "test",
+                        "reject_reason": "",
+                    }
+                ],
+            }
+
+    async def fake_render(self, *, topic_id, video_data):
+        output = tmp_path / "topics" / str(topic_id) / "final_video.mp4"
+        image_dir = output.parent / "images"
+        image_dir.mkdir(parents=True)
+        (image_dir / "real_0.webp").write_bytes(b"image")
+        output.write_bytes(b"fake mp4")
+        return {"video_id": 1, "file_path": str(output), "duration_sec": 60, "status": "rendered"}
+
+    async def fake_create_review(**kwargs):
+        return {"review_id": "review-1", "status": "pending_review"}
+
+    monkeypatch.setattr("agents.content_agent.ContentAgent", FakeContentAgent)
+    monkeypatch.setattr("agents.pipeline.RealImageAgent", FakeRealImageAgent)
+    monkeypatch.setattr("agents.pipeline.create_review", fake_create_review)
+    monkeypatch.setattr(Pipeline, "_render_local_video", fake_render)
+
+    result = await Pipeline().run_local_render(
+        category="Celebrity",
+        language="en",
+        card_layout="flag_hero",
+        duration_target=75,
+    )
+
+    assert captured["duration_target"] == 75
+    assert result["content_contract"]["duration_target"] == 75
 
 
 @pytest.mark.asyncio

@@ -84,12 +84,15 @@ async def produce(
     card_layout: str = "flag_hero",
     write_files: bool = True,
     selected_topic: dict[str, Any] | None = None,
+    duration_profile: str = "standard",
+    target_duration: int = 60,
 ) -> dict[str, Any]:
     result = await Pipeline().run_local_render(
         category="Celebrity",
         language=language,
         card_layout=card_layout,
         selected_topic=selected_topic,
+        duration_target=target_duration,
     )
     if result.get("review_status") != "pending_review":
         raise RuntimeError(f"expected pending_review, got {result.get('review_status')}")
@@ -108,6 +111,9 @@ async def produce(
         "video_path": str(Path(str(result["file_path"])).resolve()),
         "card_layout": card_layout,
         "fact_verification_contract": result.get("fact_verification_contract", {}),
+        "duration_profile": duration_profile,
+        "target_duration": target_duration,
+        "actual_duration_sec": result.get("duration_sec", 0),
         "quality_gate": result.get("quality_gate", {}),
         "youtube_title": result.get("youtube_title", ""),
         "artifacts": artifacts,

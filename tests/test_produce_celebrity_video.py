@@ -90,6 +90,7 @@ async def test_produce_passes_selected_topic_to_pipeline(monkeypatch):
         language,
         card_layout,
         selected_topic,
+        duration_target,
     ):
         captured["selected_topic"] = selected_topic
         return {
@@ -117,3 +118,51 @@ async def test_produce_passes_selected_topic_to_pipeline(monkeypatch):
 
     assert captured["selected_topic"] == selected_topic
     assert result["selected_topic"] == selected_topic
+
+
+@pytest.mark.asyncio
+async def test_produce_passes_duration_target_to_pipeline(monkeypatch):
+    from scripts import produce_celebrity_video as producer
+
+    captured = {}
+
+    async def fake_run_local_render(
+        self,
+        *,
+        category,
+        language,
+        card_layout,
+        selected_topic,
+        duration_target,
+    ):
+        captured["duration_target"] = duration_target
+        return {
+            "review_status": "pending_review",
+            "review_id": "review-1",
+            "topic_id": 123,
+            "file_path": "/tmp/final_video.mp4",
+            "duration_sec": 62,
+            "quality_gate": {"status": "passed"},
+            "youtube_title": "Title",
+            "selected_topic": selected_topic,
+        }
+
+    async def fake_get_review(review_id):
+        return {"review_id": review_id}
+
+    monkeypatch.setattr(producer.Pipeline, "run_local_render", fake_run_local_render)
+    monkeypatch.setattr(producer, "get_review", fake_get_review)
+
+    result = await producer.produce(
+        language="en",
+        card_layout="flag_hero",
+        write_files=False,
+        selected_topic={"title": "Topic"},
+        duration_profile="standard",
+        target_duration=60,
+    )
+
+    assert captured["duration_target"] == 60
+    assert result["duration_profile"] == "standard"
+    assert result["target_duration"] == 60
+    assert result["actual_duration_sec"] == 62
