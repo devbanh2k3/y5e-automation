@@ -15,7 +15,9 @@ ROOT_DIR = Path(__file__).resolve().parents[1]
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
-from agents.topic_strategy_agent import TopicStrategyAgent
+from agents.topic_strategy_agent import TopicSelectionError, TopicStrategyAgent
+from core.fact_verification import FactVerificationError
+from core.video_contract import VideoContractError
 from scripts.produce_celebrity_video import produce
 
 DURATION_PROFILE_TARGETS = {
@@ -35,6 +37,49 @@ def resolve_duration_target(duration_profile: str, target_duration: int | None) 
             raise ValueError("--target-duration must be at least 15 seconds")
         return target_duration
     return DURATION_PROFILE_TARGETS[duration_profile]
+
+
+def classify_batch_failure(exc: Exception) -> str:
+    message = str(exc).lower()
+    if isinstance(exc, TopicSelectionError):
+        return "topic_selection_failed"
+    if isinstance(exc, FactVerificationError):
+        return "fact_rejected"
+    if isinstance(exc, VideoContractError):
+        if any(
+            marker in message
+            for marker in (
+                "factclaim",
+                "factvalue",
+                "factunit",
+                "factasof",
+                "factcontext",
+                "countrycode",
+                "is required",
+            )
+        ):
+            return "repairable_contract"
+        return "unknown"
+    if "image" in message or "photo" in message or "wikimedia" in message:
+        return "image_failed"
+    if "render" in message or "remotion" in message or "ffmpeg" in message:
+        return "render_failed"
+    return "unknown"
+
+
+def recovery_action_for(
+    classification: str,
+    *,
+    retry_available: bool,
+    stop_on_error: bool,
+) -> str:
+    if stop_on_error:
+        return "stop_on_error"
+    if classification in {"repairable_contract", "render_failed"} and retry_available:
+        return "retry_same_topic"
+    if classification == "topic_selection_failed":
+        return "no_replacement_available"
+    return "request_replacement"
 
 
 def summarize_success(

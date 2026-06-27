@@ -5,6 +5,8 @@ from pathlib import Path
 import pytest
 
 from agents.topic_strategy_agent import TopicSelectionError
+from core.fact_verification import FactVerificationError
+from core.video_contract import VideoContractError
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -22,6 +24,27 @@ def test_resolve_duration_target_allows_explicit_override():
     from scripts.batch_produce_celebrity_videos import resolve_duration_target
 
     assert resolve_duration_target("standard", 75) == 75
+
+
+@pytest.mark.parametrize(
+    ("exc", "expected"),
+    [
+        (VideoContractError("scenes[0].factClaim is required"), "repairable_contract"),
+        (VideoContractError("scenes[8].countryCode is not supported"), "repairable_contract"),
+        (
+            FactVerificationError("all facts must be AI verified with confidence >= 0.80"),
+            "fact_rejected",
+        ),
+        (RuntimeError("image verification failed: wrong person"), "image_failed"),
+        (RuntimeError("remotion render failed with exit code 1"), "render_failed"),
+        (TopicSelectionError("could not select diverse topics"), "topic_selection_failed"),
+        (RuntimeError("anything else"), "unknown"),
+    ],
+)
+def test_classify_batch_failure(exc, expected):
+    from scripts.batch_produce_celebrity_videos import classify_batch_failure
+
+    assert classify_batch_failure(exc) == expected
 
 
 def selected_topic(index, *, angle=None, metric=None):
