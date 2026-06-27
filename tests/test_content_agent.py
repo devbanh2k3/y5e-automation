@@ -115,6 +115,65 @@ async def test_content_agent_uses_ai_topic_and_ranking_for_celebrity(monkeypatch
 
 
 @pytest.mark.asyncio
+async def test_content_agent_rejects_band_names_for_celebrity_person_contract(monkeypatch):
+    agent = ContentAgent()
+
+    async def fake_ai_json(prompt: str, system: str | None = None, **kwargs):
+        if "Generate 1 optimized Celebrity topic" in prompt:
+            return {
+                "title": "Top 2 Most Followed Music Acts",
+                "angle": "most_followed_music_acts",
+                "metric_label": "FOLLOWERS",
+                "reason": "music rankings",
+            }
+        return {
+            "title": "Top 2 Most Followed Music Acts",
+            "hook": "Music acts ranked by public estimates.",
+            "target_audience": "Music ranking viewers.",
+            "youtube_title": "Top 2 Most Followed Music Acts",
+            "youtube_description": "Public estimates.",
+            "youtube_tags": ["celebrity"],
+            "thumbnail_prompt": "Music ranking thumbnail",
+            "scenes": [
+                {
+                    "title": "#2 Coldplay",
+                    "voiceover": "#2 Coldplay has a large following.",
+                    "caption": "70M followers",
+                    "image_prompt": "real editorial photo of Coldplay",
+                    "statusText": "#2 | 70M",
+                    "countryCode": "GB",
+                    "countryLabel": "UNITED KINGDOM",
+                    "metricLabel": "FOLLOWERS",
+                    "metricValue": "70M",
+                    "sourceRequirement": "public social profile estimate",
+                },
+                {
+                    "title": "#1 U2",
+                    "voiceover": "#1 U2 has a large following.",
+                    "caption": "80M followers",
+                    "image_prompt": "real editorial photo of U2",
+                    "statusText": "#1 | 80M",
+                    "countryCode": "IE",
+                    "countryLabel": "IRELAND",
+                    "metricLabel": "FOLLOWERS",
+                    "metricValue": "80M",
+                    "sourceRequirement": "public social profile estimate",
+                },
+            ],
+        }
+
+    monkeypatch.setattr(agent, "ai_json", fake_ai_json)
+
+    contract = await agent.run(niche="celebrity", language="en", subject="famous people")
+
+    validate_content_contract_v2(contract)
+    titles = {scene["title"].split(" ", 1)[1] for scene in contract["scenes"]}
+    assert "Coldplay" not in titles
+    assert "U2" not in titles
+    assert "Celine Dion" in titles
+
+
+@pytest.mark.asyncio
 async def test_content_agent_normalizes_ai_country_labels(monkeypatch):
     agent = ContentAgent()
 

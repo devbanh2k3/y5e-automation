@@ -86,6 +86,12 @@ def test_wikimedia_search_queries_include_celebrity_disambiguation():
         "Jay Z rapper",
         "Shawn Carter Jay-Z",
     ]
+    assert RealImageAgent.wikimedia_search_queries("Drake") == [
+        "Drake portrait",
+        "Drake rapper",
+        "Aubrey Graham Drake",
+        "Drake musician",
+    ]
     assert RealImageAgent.wikimedia_search_queries("Lionel Messi") == [
         "Lionel Messi portrait",
         "Lionel Messi footballer",
@@ -185,6 +191,15 @@ def test_content_match_rejects_known_false_positive_celebrity_files():
     assert jay_z_couple["is_group_photo"] is True
 
 
+def test_content_match_rejects_historical_drake_false_positive():
+    result = RealImageAgent.evaluate_content_match(
+        metadata_text="File:Francis Drake por un artista anonimo historical painting",
+        source_url="https://commons.wikimedia.org/wiki/File:Francis_Drake,_por_un_artista_an%C3%B3nimo.jpg",
+    )
+
+    assert result["content_match_status"] == "failed"
+
+
 def test_content_match_rejects_quote_campaign_posters():
     result = RealImageAgent.evaluate_content_match(
         metadata_text=(
@@ -224,6 +239,16 @@ def test_score_image_candidate_prefers_portrait_or_stage_photos():
     assert RealImageAgent.score_image_candidate(poster)["quality_score"] < 0.5
     assert RealImageAgent.score_image_candidate(portrait)["quality_score"] > RealImageAgent.score_image_candidate(event)["quality_score"]
     assert RealImageAgent.score_image_candidate(portrait)["quality_score"] >= 0.72
+    golden_globes = RealImageAgent.score_image_candidate(
+        {
+            "metadata_text": "Taylor Swift at the 2024 Golden Globes photo",
+            "source_url": "https://commons.wikimedia.org/wiki/File:Taylor_Swift_at_the_2024_Golden_Globes.png",
+            "content_match_status": "passed",
+            "needs_human_review": False,
+            "is_group_photo": False,
+        }
+    )
+    assert golden_globes["quality_score"] >= 0.72
 
 
 def test_extract_wikimedia_candidate_requires_identity_in_file_context():

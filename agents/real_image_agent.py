@@ -32,6 +32,7 @@ _HTTP_TIMEOUT = httpx.Timeout(connect=10.0, read=30.0, write=10.0, pool=10.0)
 _MIN_IMAGE_WIDTH = 200
 _MIN_IMAGE_HEIGHT = 200
 _QUERY_HINTS_BY_PERSON = {
+    "drake": ("Drake rapper", "Aubrey Graham Drake", "Drake musician"),
     "jay-z": ("Jay-Z rapper", "Jay Z rapper", "Shawn Carter Jay-Z"),
     "lionel messi": ("Lionel Messi footballer", "Lionel Messi Argentina"),
 }
@@ -275,6 +276,10 @@ class RealImageAgent(BaseAgent):
             "dell'orto",
             "dell orto",
             "beato leone bembo",
+            "francis drake",
+            "por un artista anonimo",
+            "por un artista anónimo",
+            "historical painting",
             "tattoo",
             "titian",
             "diagram",
@@ -372,7 +377,21 @@ class RealImageAgent(BaseAgent):
         if any(term in combined for term in ("performing", "concert", "live", "stage", "singer")):
             score += 0.14
             reasons.append("stage or performance metadata")
-        if any(term in combined for term in ("red carpet", "premiere", "award", "event")):
+        if any(
+            term in combined
+            for term in (
+                "red carpet",
+                "premiere",
+                "award",
+                "awards",
+                "event",
+                "golden globes",
+                "grammy",
+                "grammys",
+                "oscars",
+                "met gala",
+            )
+        ):
             score += 0.16
             reasons.append("public event metadata")
         if any(term in combined for term in ("photo", "photograph")):

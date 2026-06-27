@@ -13,6 +13,18 @@ from core.video_contract import (
     validate_content_contract_v2,
 )
 
+_CELEBRITY_GROUP_NAMES = {
+    "bts",
+    "blackpink",
+    "coldplay",
+    "one direction",
+    "the beatles",
+    "beatles",
+    "the rolling stones",
+    "rolling stones",
+    "u2",
+}
+
 
 class ContentAgent(BaseAgent):
     """Build a production-shaped content contract without external side effects."""
@@ -148,6 +160,7 @@ Hard rules:
 7. Do not invent scandals, private allegations, health claims, or criminal claims.
 8. image_prompt must ask for a real editorial/photo-source image, not AI art.
 9. Put lower ranks first and #1 last so the video builds suspense.
+10. Use individual people only. Do not use bands, groups, teams, brands, couples, or families.
 
 Return JSON only with this shape:
 {{
@@ -206,6 +219,9 @@ Return JSON only with this shape:
             if not isinstance(scene, dict):
                 raise ValueError(f"scene {index} must be an object")
             title = str(scene.get("title", "")).strip()
+            person_name = ContentAgent._extract_ranked_name(title)
+            if ContentAgent._is_group_or_band_name(person_name):
+                raise ValueError(f"scene {index} is not an individual person: {person_name}")
             metric_value = str(scene.get("metricValue", scene.get("caption", ""))).strip()
             country_code = normalize_country_code(str(scene.get("countryCode", "")))
             country_label = canonical_country_label(country_code)
@@ -254,6 +270,16 @@ Return JSON only with this shape:
             duration_target=60,
             cardLayout=card_layout,
         )
+
+    @staticmethod
+    def _extract_ranked_name(title: str) -> str:
+        parts = title.strip().split(" ", 1)
+        return parts[1].strip() if parts and parts[0].startswith("#") and len(parts) > 1 else title.strip()
+
+    @staticmethod
+    def _is_group_or_band_name(name: str) -> bool:
+        normalized = name.strip().lower()
+        return normalized in _CELEBRITY_GROUP_NAMES
 
     @staticmethod
     def _build_country_comparison_comedy_contract(
