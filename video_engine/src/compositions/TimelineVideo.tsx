@@ -11,9 +11,9 @@ import { Branding } from "../components/Branding";
  * TimelineVideo composition.
  *
  * Structure:
- *   [Hook: first 3 cards appear in 4s slots] → [Morph: slide left + scroll continues from card 4] → [Main: scroll] → [Outro]
+ *   [Hook: first 3 cards appear; card 3 starts morph immediately after slide-in] → [Main scroll] → [Outro]
  *
- * - Hook: First 3 cards slide up from bottom one-by-one and stay visible, each with 2s slide + 2s settled read time
+ * - Hook: First 3 cards slide up from bottom one-by-one. Cards 1-2 get settled read time; card 3 starts morph immediately after slide-in.
  * - Morph: 3 cards smoothly slide from center to left (scroll position), scroll starts
  * - Main: Continuous scroll — picks up from card 4 onwards (cards 1-3 scroll off left)
  */
@@ -21,9 +21,7 @@ import { Branding } from "../components/Branding";
 const HOOK_CARDS = 3;
 const HOOK_CARD_SLOT = 120;    // 4s per hook card at 30fps
 const HOOK_SLIDE_IN = 60;      // 2s slide up animation
-const HOOK_SETTLE = HOOK_CARD_SLOT - HOOK_SLIDE_IN; // 2s settled read time
 const MORPH_FRAMES = 30;       // 1s morph to scroll
-// Total hook: 3 cards × 120 frames = 360 frames = 12s
 
 export const TimelineVideo: React.FC<VideoData> = (props) => {
   const frame = useCurrentFrame();
@@ -43,7 +41,7 @@ export const TimelineVideo: React.FC<VideoData> = (props) => {
 
   // Phase timing
   const hookCardCount = Math.min(HOOK_CARDS, cards.length);
-  const hookEnd = hookCardCount * HOOK_CARD_SLOT;
+  const hookEnd = Math.max(0, hookCardCount - 1) * HOOK_CARD_SLOT + HOOK_SLIDE_IN;
   const morphEnd = hookEnd + MORPH_FRAMES;
   const outroStart = durationInFrames - OUTRO_DURATION_FRAMES;
   const activeHookCardIndex = Math.min(

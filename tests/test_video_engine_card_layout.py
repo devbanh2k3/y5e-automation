@@ -24,3 +24,10 @@ def test_timeline_scroll_centers_final_card_before_outro():
 
     assert "finalCardCenteredScrollDistance" in source
     assert "(width - CARD_WIDTH) / 2" in source
+
+
+def test_timeline_hook_starts_scroll_after_third_card_slide_in():
+    source = (ROOT / "video_engine" / "src" / "compositions" / "TimelineVideo.tsx").read_text()
+
+    assert "hookEnd = Math.max(0, hookCardCount - 1) * HOOK_CARD_SLOT + HOOK_SLIDE_IN" in source
+    assert "hookCardCount * HOOK_CARD_SLOT" not in source

@@ -10,13 +10,14 @@ TIMELINE_PATH = (
 )
 
 
-def test_timeline_hook_uses_three_sequential_four_second_slots() -> None:
+def test_timeline_hook_starts_scroll_after_final_hook_card_slides_in() -> None:
     source = TIMELINE_PATH.read_text()
 
     assert "const HOOK_CARD_SLOT = 120;" in source
     assert "const HOOK_SLIDE_IN = 60;" in source
-    assert "const HOOK_SETTLE = HOOK_CARD_SLOT - HOOK_SLIDE_IN;" in source
-    assert "const hookEnd = hookCardCount * HOOK_CARD_SLOT;" in source
+    assert "const hookEnd = Math.max(0, hookCardCount - 1) * HOOK_CARD_SLOT + HOOK_SLIDE_IN;" in source
+    assert "const hookEnd = hookCardCount * HOOK_CARD_SLOT;" not in source
+    assert "const HOOK_SETTLE" not in source
     assert "const activeHookCardIndex = Math.min(" in source
     assert "if (isHook && index > activeHookCardIndex) return null;" in source
     assert "index !== activeHookCardIndex" not in source
