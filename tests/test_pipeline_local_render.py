@@ -60,7 +60,9 @@ async def test_run_local_render_validates_video_data_before_render(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_run_local_render_uses_content_agent_for_celebrity(monkeypatch):
+async def test_run_local_render_uses_content_agent_for_celebrity(monkeypatch, tmp_path):
+    get_settings.cache_clear()
+    monkeypatch.setenv("STORAGE_PATH", str(tmp_path))
     captured: dict[str, object] = {}
 
     class FakeRealImageAgent:
@@ -137,9 +139,15 @@ async def test_run_local_render_uses_content_agent_for_celebrity(monkeypatch):
 
     async def fake_render(self, *, topic_id, video_data):
         captured["video_data"] = video_data
+        output = tmp_path / "topics" / str(topic_id) / "final_video.mp4"
+        image_dir = output.parent / "images"
+        image_dir.mkdir(parents=True)
+        output.write_bytes(b"fake mp4")
+        for index in range(len(video_data["cards"])):
+            (image_dir / f"real_{index}.webp").write_bytes(f"image {index}".encode())
         return {
             "video_id": 456,
-            "file_path": "/tmp/final_video.mp4",
+            "file_path": str(output),
             "duration_sec": 90,
             "status": "rendered",
         }
@@ -173,6 +181,7 @@ async def test_run_local_render_uses_content_agent_for_celebrity(monkeypatch):
     assert result["fallback_used"] is False
     assert result["review_id"] == "review-123"
     assert result["review_status"] == "pending_review"
+    assert result["quality_gate"]["status"] == "passed"
     assert result["content_contract"]["niche"] == "celebrity"
     assert result["content_contract"]["cardLayout"] == "flag_hero"
     assert captured["content_agent_card_layout"] == "flag_hero"
@@ -183,9 +192,10 @@ async def test_run_local_render_uses_content_agent_for_celebrity(monkeypatch):
     assert captured["image_agent_strict"] is True
     assert image_contract["status"] == "verified"
     assert review_kwargs["job_id"] == ""
-    assert review_kwargs["file_path"] == "/tmp/final_video.mp4"
+    assert review_kwargs["file_path"].endswith("/final_video.mp4")
     assert review_kwargs["content_contract"] == content_contract
     assert review_kwargs["image_verification_contract"] == image_contract
+    assert review_kwargs["quality_gate"]["status"] == "passed"
     assert result["image_verification_contract"] == image_contract
     assert video_data["template"] == "timeline"
     assert video_data["cards"][0]["header"] == "TOP 10"

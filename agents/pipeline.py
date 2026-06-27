@@ -22,6 +22,7 @@ from agents.real_image_agent import RealImageAgent
 from core import database as db
 from core.config import get_settings
 from core.notifier import notify, notify_error
+from core.quality_gate import run_production_quality_gate
 from core.reviews import create_review
 from core.video_contract import (
     apply_verified_images_to_video_data,
@@ -301,7 +302,16 @@ class Pipeline:
             video_data=video_data,
         )
         review: dict[str, Any] | None = None
+        quality_gate: dict[str, Any] | None = None
         if content_contract:
+            quality_gate = run_production_quality_gate(
+                topic_id=topic_id,
+                video_path=render_result["file_path"],
+                video_data=video_data,
+                content_contract=content_contract,
+                image_verification_contract=image_verification_contract,
+                expected_card_layout=card_layout,
+            )
             review = await create_review(
                 job_id="",
                 topic_id=topic_id,
@@ -309,6 +319,7 @@ class Pipeline:
                 file_path=render_result["file_path"],
                 content_contract=content_contract,
                 image_verification_contract=image_verification_contract,
+                quality_gate=quality_gate,
                 youtube_title=content_contract["youtube_title"],
                 youtube_description=content_contract["youtube_description"],
                 youtube_tags=content_contract["youtube_tags"],
@@ -335,6 +346,7 @@ class Pipeline:
             "youtube_tags": content_contract["youtube_tags"] if content_contract else [],
             "thumbnail_prompt": content_contract["thumbnail_prompt"] if content_contract else "",
             "image_verification_contract": image_verification_contract,
+            "quality_gate": quality_gate,
         }
 
     @staticmethod

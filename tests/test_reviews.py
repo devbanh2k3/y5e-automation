@@ -46,6 +46,26 @@ async def test_create_review_persists_pending_review(review_storage):
 
 
 @pytest.mark.asyncio
+async def test_create_review_persists_quality_gate(review_storage):
+    review = await create_review(
+        job_id="job-123",
+        topic_id=1,
+        video_id=2,
+        file_path="/tmp/final_video.mp4",
+        content_contract={"schema_version": "content_contract_v2", "title": "Video"},
+        quality_gate={"status": "passed", "checks": [{"name": "mp4", "status": "passed"}]},
+        youtube_title="YouTube title",
+        youtube_description="Description",
+        youtube_tags=["celebrity"],
+        thumbnail_prompt="thumbnail prompt",
+    )
+
+    loaded = await get_review(review["review_id"])
+
+    assert loaded["quality_gate"]["status"] == "passed"
+
+
+@pytest.mark.asyncio
 async def test_list_reviews_filters_by_status(review_storage):
     first = await create_review(
         job_id="job-1",

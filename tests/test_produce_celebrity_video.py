@@ -28,11 +28,13 @@ def test_write_artifacts_persists_review_contracts_next_to_video(tmp_path):
         "review_status": "pending_review",
         "content_contract": {"title": "Top Celebrity"},
         "image_verification_contract": {"status": "verified"},
+        "quality_gate": {"status": "passed"},
     }
     review = {
         "review_id": "review-1",
         "content_contract": result["content_contract"],
         "image_verification_contract": result["image_verification_contract"],
+        "quality_gate": result["quality_gate"],
     }
 
     artifacts = write_artifacts(result=result, review=review)
@@ -40,7 +42,9 @@ def test_write_artifacts_persists_review_contracts_next_to_video(tmp_path):
     assert Path(artifacts["review_path"]).exists()
     assert Path(artifacts["content_contract_path"]).exists()
     assert Path(artifacts["image_verification_contract_path"]).exists()
+    assert Path(artifacts["quality_gate_path"]).exists()
     assert json.loads(Path(artifacts["review_path"]).read_text())["review_id"] == "review-1"
+    assert json.loads(Path(artifacts["quality_gate_path"]).read_text())["status"] == "passed"
 
 
 def test_cli_help_describes_review_output_command():

@@ -30,6 +30,7 @@ def write_artifacts(*, result: dict[str, Any], review: dict[str, Any]) -> dict[s
     review_path = artifact_dir / "review.json"
     content_contract_path = artifact_dir / "content_contract.json"
     image_verification_contract_path = artifact_dir / "image_verification_contract.json"
+    quality_gate_path = artifact_dir / "quality_gate.json"
 
     review_path.write_text(json.dumps(review, ensure_ascii=False, indent=2))
     content_contract_path.write_text(
@@ -38,11 +39,15 @@ def write_artifacts(*, result: dict[str, Any], review: dict[str, Any]) -> dict[s
     image_verification_contract_path.write_text(
         json.dumps(review.get("image_verification_contract", {}), ensure_ascii=False, indent=2)
     )
+    quality_gate_path.write_text(
+        json.dumps(review.get("quality_gate", result.get("quality_gate", {})), ensure_ascii=False, indent=2)
+    )
 
     return {
         "review_path": str(review_path),
         "content_contract_path": str(content_contract_path),
         "image_verification_contract_path": str(image_verification_contract_path),
+        "quality_gate_path": str(quality_gate_path),
     }
 
 
@@ -88,6 +93,7 @@ async def produce(
         "topic_id": result["topic_id"],
         "video_path": str(Path(str(result["file_path"])).resolve()),
         "card_layout": card_layout,
+        "quality_gate": result.get("quality_gate", {}),
         "youtube_title": result.get("youtube_title", ""),
         "artifacts": artifacts,
         "next_commands": build_next_commands(review_id),

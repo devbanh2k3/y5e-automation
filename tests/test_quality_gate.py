@@ -1,0 +1,163 @@
+from pathlib import Path
+
+import pytest
+
+from core.config import get_settings
+from core.quality_gate import ProductionQualityGateError, run_production_quality_gate
+from core.video_contract import build_content_contract_v2
+
+
+def _contracts(topic_id: int, *, card_layout: str = "flag_hero"):
+    scenes = [
+        {
+            "title": "#2 Celine Dion",
+            "voiceover": "Celine Dion has a public estimate.",
+            "caption": "550M USD",
+            "image_prompt": "real photo of Celine Dion",
+            "statusText": "#2 | 550M USD",
+            "countryCode": "CA",
+            "countryLabel": "CANADA",
+            "metricLabel": "NET WORTH",
+            "metricValue": "550M USD",
+        },
+        {
+            "title": "#1 Taylor Swift",
+            "voiceover": "Taylor Swift has a public estimate.",
+            "caption": "1.6B USD",
+            "image_prompt": "real photo of Taylor Swift",
+            "statusText": "#1 | 1.6B USD",
+            "countryCode": "US",
+            "countryLabel": "UNITED STATES",
+            "metricLabel": "NET WORTH",
+            "metricValue": "1.6B USD",
+        },
+    ]
+    content_contract = build_content_contract_v2(
+        niche="celebrity",
+        title="Top Celebrity",
+        hook="Hook",
+        target_audience="Fans",
+        language="vi",
+        scenes=scenes,
+        thumbnail_prompt="thumbnail",
+        youtube_title="Top Celebrity",
+        youtube_description="Description",
+        youtube_tags=["celebrity"],
+        duration_target=60,
+        cardLayout=card_layout,
+    )
+    video_data = {
+        "template": "timeline",
+        "cardLayout": card_layout,
+        "title": "Top Celebrity",
+        "subtitle": "Hook",
+        "category": "celebrity",
+        "language": "vi",
+        "cards": [
+            {
+                "header": "TOP 2",
+                "title": "#2 Celine Dion",
+                "description": "Celine Dion has a public estimate.",
+                "imagePath": "images/real_0.webp",
+                "countryCode": "CA",
+                "countryLabel": "CANADA",
+                "metricLabel": "NET WORTH",
+                "metricValue": "550M USD",
+                "statusText": "#2 | 550M USD",
+            },
+            {
+                "header": "TOP 1",
+                "title": "#1 Taylor Swift",
+                "description": "Taylor Swift has a public estimate.",
+                "imagePath": "images/real_1.webp",
+                "countryCode": "US",
+                "countryLabel": "UNITED STATES",
+                "metricLabel": "NET WORTH",
+                "metricValue": "1.6B USD",
+                "statusText": "#1 | 1.6B USD",
+            },
+        ],
+    }
+    image_contract = {
+        "schema_version": "image_verification_contract_v1",
+        "topic_id": topic_id,
+        "source_policy": "wikimedia_commons_strict",
+        "required_count": 2,
+        "verified_count": 2,
+        "status": "verified",
+        "items": [
+            {
+                "scene_index": index,
+                "person_name": scenes[index]["title"].split(" ", 1)[1],
+                "expected_title": scenes[index]["title"],
+                "status": "verified",
+                "confidence": 0.92,
+                "local_path": str(Path("/tmp") / f"real_{index}.webp"),
+                "render_image_path": f"images/real_{index}.webp",
+                "source_url": "https://commons.wikimedia.org/wiki/File:Example.jpg",
+                "image_url": "https://upload.wikimedia.org/wikipedia/commons/example.jpg",
+                "license": "CC BY-SA 4.0",
+                "attribution": "Example photographer",
+                "reject_reason": "",
+            }
+            for index in range(2)
+        ],
+    }
+    return content_contract, video_data, image_contract
+
+
+def test_quality_gate_passes_verified_render(tmp_path, monkeypatch):
+    get_settings.cache_clear()
+    monkeypatch.setenv("STORAGE_PATH", str(tmp_path))
+    topic_id = 123
+    topic_dir = tmp_path / "topics" / str(topic_id)
+    (topic_dir / "images").mkdir(parents=True)
+    (topic_dir / "final_video.mp4").write_bytes(b"fake mp4")
+    (topic_dir / "images" / "real_0.webp").write_bytes(b"image 0")
+    (topic_dir / "images" / "real_1.webp").write_bytes(b"image 1")
+    content_contract, video_data, image_contract = _contracts(topic_id)
+
+    result = run_production_quality_gate(
+        topic_id=topic_id,
+        video_path=str(topic_dir / "final_video.mp4"),
+        video_data=video_data,
+        content_contract=content_contract,
+        image_verification_contract=image_contract,
+        expected_card_layout="flag_hero",
+    )
+
+    assert result["status"] == "passed"
+    assert result["required_checks"] >= 8
+    get_settings.cache_clear()
+
+
+@pytest.mark.parametrize(
+    ("mutate", "message"),
+    [
+        (lambda _, video_data, __: video_data["cards"][0].update({"imagePath": "images/local-placeholder.svg"}), "placeholder"),
+        (lambda _, video_data, __: video_data.update({"cardLayout": "split_data"}), "cardLayout"),
+        (lambda _, __, image_contract: image_contract["items"][1].update({"render_image_path": "images/real_9.webp"}), "render_image_path"),
+    ],
+)
+def test_quality_gate_rejects_production_blockers(tmp_path, monkeypatch, mutate, message):
+    get_settings.cache_clear()
+    monkeypatch.setenv("STORAGE_PATH", str(tmp_path))
+    topic_id = 456
+    topic_dir = tmp_path / "topics" / str(topic_id)
+    (topic_dir / "images").mkdir(parents=True)
+    (topic_dir / "final_video.mp4").write_bytes(b"fake mp4")
+    (topic_dir / "images" / "real_0.webp").write_bytes(b"image 0")
+    (topic_dir / "images" / "real_1.webp").write_bytes(b"image 1")
+    content_contract, video_data, image_contract = _contracts(topic_id)
+    mutate(content_contract, video_data, image_contract)
+
+    with pytest.raises(ProductionQualityGateError, match=message):
+        run_production_quality_gate(
+            topic_id=topic_id,
+            video_path=str(topic_dir / "final_video.mp4"),
+            video_data=video_data,
+            content_contract=content_contract,
+            image_verification_contract=image_contract,
+            expected_card_layout="flag_hero",
+        )
+    get_settings.cache_clear()
