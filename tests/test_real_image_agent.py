@@ -185,6 +185,19 @@ def test_content_match_rejects_known_false_positive_celebrity_files():
     assert jay_z_couple["is_group_photo"] is True
 
 
+def test_content_match_rejects_quote_campaign_posters():
+    result = RealImageAgent.evaluate_content_match(
+        metadata_text=(
+            "File:Ariana Grande Wiki Loves Women SheSaid poster "
+            "#SheSaid Wees haar stem quote QR code social media"
+        ),
+        source_url="https://commons.wikimedia.org/wiki/File:Ariana_Grande_Wiki_Loves_Women_SheSaid.jpg",
+    )
+
+    assert result["content_match_status"] == "failed"
+    assert result["needs_human_review"] is True
+
+
 def test_extract_wikimedia_candidate_requires_identity_in_file_context():
     page = {
         "title": "File:Prince, People au Défilé Channel, Printemps-Eté 2010.jpg",
