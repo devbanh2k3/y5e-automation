@@ -5,6 +5,11 @@ from __future__ import annotations
 import re
 from difflib import SequenceMatcher
 from typing import Any
+from uuid import uuid4
+
+from agents.base_agent import BaseAgent
+from core.config import get_settings
+from core.topic_history import TopicHistoryRepository
 
 
 REQUIRED_FIELDS = (
@@ -44,6 +49,11 @@ def normalize_candidate(raw: dict[str, Any]) -> dict[str, Any]:
     result["metric_label"] = result["metric_label"].upper()
     result["entity_type"] = _slug(result["entity_type"])
     result["time_scope"] = _slug(str(raw.get("time_scope", "current")))
+    for score_name in ("viral_score", "data_score", "image_score", "safety_score"):
+        try:
+            result[score_name] = max(0.0, min(100.0, float(raw.get(score_name, 0))))
+        except (TypeError, ValueError):
+            result[score_name] = 0.0
     return result
 
 
@@ -72,3 +82,217 @@ def topic_similarity(left: dict[str, Any], right: dict[str, Any]) -> float:
     same_angle = float(left.get("angle") == right.get("angle"))
     same_metric = float(left.get("metric_label") == right.get("metric_label"))
     return 0.65 * title_ratio + 0.25 * same_angle + 0.10 * same_metric
+
+
+class TopicSelectionError(RuntimeError):
+    """Raised when a diverse topic slate cannot be selected durably."""
+
+
+class TopicStrategyAgent(BaseAgent):
+    """Generate, score, and reserve diverse Celebrity topics."""
+
+    def __init__(self, repository: TopicHistoryRepository | None = None) -> None:
+        super().__init__(name="topic_strategy_agent")
+        history_path = get_settings().storage_dir / "celebrity_topic_history.json"
+        self.repository = repository or TopicHistoryRepository(history_path)
+
+    async def run(
+        self,
+        *,
+        count: int,
+        language: str,
+        batch_id: str,
+    ) -> list[dict[str, Any]]:
+        if count < 1:
+            raise ValueError("topic count must be at least 1")
+
+        history = self.repository.load()
+        pool_size = max(count * 5, 10)
+        candidates = await self._generate_candidates(
+            count=pool_size,
+            language=language,
+            history=history,
+            expanded=False,
+        )
+        selected = self._select_diverse(candidates, history=history, count=count)
+        if len(selected) < count:
+            candidates.extend(
+                await self._generate_candidates(
+                    count=pool_size,
+                    language=language,
+                    history=history + candidates,
+                    expanded=True,
+                )
+            )
+            selected = self._select_diverse(
+                candidates,
+                history=history,
+                count=count,
+            )
+        if len(selected) != count:
+            raise TopicSelectionError(
+                f"could not select {count} diverse Celebrity topics"
+            )
+
+        reservations = self._prepare_reservations(selected, batch_id=batch_id)
+        reserved = self.repository.reserve_many(reservations)
+        if len(reserved) != count:
+            raise TopicSelectionError("topic reservations changed concurrently")
+        return reserved
+
+    async def _generate_candidates(
+        self,
+        *,
+        count: int,
+        language: str,
+        history: list[dict[str, Any]],
+        expanded: bool,
+    ) -> list[dict[str, Any]]:
+        history_lines = [
+            f"- {item.get('title', '')} | {item.get('angle', '')} | "
+            f"{item.get('metric_label', '')}"
+            for item in history[-30:]
+        ]
+        expansion_instruction = (
+            "The first pool lacked diversity. Explore entirely new categories and metrics."
+            if expanded
+            else "Build a broad initial candidate pool."
+        )
+        prompt = f"""Generate {count} diverse topic candidates for autonomous Celebrity
+data-comparison videos in language {language}.
+
+Seed dimensions are examples, not an allowlist: wealth, earnings, social reach,
+awards, film, music, age, height, career duration, country, generation, profession,
+touring revenue, streaming records, and box-office salary.
+
+{expansion_instruction}
+
+Previously considered or produced topics:
+{chr(10).join(history_lines) or "- none"}
+
+Every candidate must compare individual public people, have measurable public data,
+support real editorial photos, avoid gossip/private or medical claims, and differ in
+both angle and metric from other candidates. Return JSON only:
+{{
+  "candidates": [
+    {{
+      "title": "Top 10 ...",
+      "category": "open taxonomy category",
+      "angle": "specific_snake_case_angle",
+      "metric_label": "SHORT METRIC",
+      "entity_type": "individual_people",
+      "data_availability_reason": "public sources likely available",
+      "image_availability_reason": "real editorial photos likely available",
+      "viral_reason": "specific audience appeal",
+      "time_scope": "2026 or all_time",
+      "viral_score": 0,
+      "data_score": 0,
+      "image_score": 0,
+      "safety_score": 0
+    }}
+  ]
+}}"""
+        payload = await self.ai_json(
+            prompt,
+            system=(
+                "You are a rigorous YouTube portfolio strategist. Return valid JSON only. "
+                "Favor editorial diversity, verifiable public data, and real-image availability."
+            ),
+        )
+        raw_candidates = payload.get("candidates", []) if isinstance(payload, dict) else []
+        if not isinstance(raw_candidates, list):
+            raise TopicSelectionError("AI topic candidates must be a list")
+        return [
+            normalize_candidate(item)
+            for item in raw_candidates
+            if isinstance(item, dict)
+        ]
+
+    def _select_diverse(
+        self,
+        candidates: list[dict[str, Any]],
+        *,
+        history: list[dict[str, Any]],
+        count: int,
+    ) -> list[dict[str, Any]]:
+        normalized_history = [
+            self._history_candidate(item)
+            for item in history
+            if item.get("normalized_title") or item.get("title")
+        ]
+        cooldown_angles = {
+            str(item.get("angle", "")) for item in normalized_history[-10:]
+        }
+        eligible: list[dict[str, Any]] = []
+
+        for raw_candidate in candidates:
+            item = normalize_candidate(raw_candidate)
+            if validate_candidate(item) or item["angle"] in cooldown_angles:
+                continue
+            max_similarity = max(
+                (topic_similarity(item, old) for old in normalized_history),
+                default=0.0,
+            )
+            if max_similarity >= 0.72:
+                continue
+            novelty_score = max(0.0, 100.0 * (1.0 - max_similarity))
+            score_breakdown = {
+                "viral": item["viral_score"],
+                "data": item["data_score"],
+                "novelty": round(novelty_score, 2),
+                "image": item["image_score"],
+                "safety": item["safety_score"],
+            }
+            item["score_breakdown"] = score_breakdown
+            item["score_total"] = round(
+                score_breakdown["viral"] * 0.30
+                + score_breakdown["data"] * 0.25
+                + score_breakdown["novelty"] * 0.25
+                + score_breakdown["image"] * 0.15
+                + score_breakdown["safety"] * 0.05,
+                2,
+            )
+            eligible.append(item)
+
+        selected: list[dict[str, Any]] = []
+        used_angles: set[str] = set()
+        used_metrics: set[str] = set()
+        for item in sorted(eligible, key=lambda value: value["score_total"], reverse=True):
+            if item["angle"] in used_angles or item["metric_label"] in used_metrics:
+                continue
+            if any(topic_similarity(item, chosen) >= 0.72 for chosen in selected):
+                continue
+            selected.append(item)
+            used_angles.add(item["angle"])
+            used_metrics.add(item["metric_label"])
+            if len(selected) == count:
+                break
+        return selected
+
+    @staticmethod
+    def _history_candidate(item: dict[str, Any]) -> dict[str, Any]:
+        if item.get("normalized_title"):
+            return dict(item)
+        return normalize_candidate(item)
+
+    @staticmethod
+    def _prepare_reservations(
+        selected: list[dict[str, Any]],
+        *,
+        batch_id: str,
+    ) -> list[dict[str, Any]]:
+        reservations = []
+        for item in selected:
+            reservation = dict(item)
+            reservation.update(
+                {
+                    "reservation_id": str(uuid4()),
+                    "batch_id": batch_id,
+                    "status": "reserved",
+                    "selection_reason": (
+                        "Highest-scoring valid candidate that preserves batch diversity."
+                    ),
+                }
+            )
+            reservations.append(reservation)
+        return reservations
