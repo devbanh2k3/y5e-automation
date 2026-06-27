@@ -98,6 +98,11 @@ def _contracts(topic_id: int, *, card_layout: str = "flag_hero"):
                 "image_url": "https://upload.wikimedia.org/wikipedia/commons/example.jpg",
                 "license": "CC BY-SA 4.0",
                 "attribution": "Example photographer",
+                "quality_score": 0.82,
+                "quality_reason": "portrait or stage photo metadata",
+                "identity_confidence": 0.95,
+                "content_match_status": "passed",
+                "needs_human_review": False,
                 "reject_reason": "",
             }
             for index in range(2)
@@ -137,6 +142,7 @@ def test_quality_gate_passes_verified_render(tmp_path, monkeypatch):
         (lambda _, video_data, __: video_data["cards"][0].update({"imagePath": "images/local-placeholder.svg"}), "placeholder"),
         (lambda _, video_data, __: video_data.update({"cardLayout": "split_data"}), "cardLayout"),
         (lambda _, __, image_contract: image_contract["items"][1].update({"render_image_path": "images/real_9.webp"}), "render_image_path"),
+        (lambda _, __, image_contract: image_contract["items"][0].update({"quality_score": 0.4}), "quality_score"),
     ],
 )
 def test_quality_gate_rejects_production_blockers(tmp_path, monkeypatch, mutate, message):

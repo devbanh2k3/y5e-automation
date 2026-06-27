@@ -8,6 +8,8 @@ from typing import Any
 from core.config import get_settings
 from core.video_contract import validate_image_verification_contract_v1, validate_video_data
 
+MIN_IMAGE_QUALITY_SCORE = 0.72
+
 
 class ProductionQualityGateError(ValueError):
     """Raised when a rendered artifact is not ready for pending review."""
@@ -119,6 +121,22 @@ def run_production_quality_gate(
             f"image_{index}_render_path",
             item.get("render_image_path") == expected_image_path,
             f"render_image_path must be {expected_image_path}",
+        )
+        quality_score = item.get("quality_score")
+        record(
+            f"image_{index}_quality_score",
+            isinstance(quality_score, int | float) and quality_score >= MIN_IMAGE_QUALITY_SCORE,
+            f"quality_score must be at least {MIN_IMAGE_QUALITY_SCORE}",
+        )
+        record(
+            f"image_{index}_content_match",
+            item.get("content_match_status") == "passed",
+            "content_match_status must be passed",
+        )
+        record(
+            f"image_{index}_human_review",
+            item.get("needs_human_review") is False,
+            "needs_human_review must be false",
         )
 
     if errors:

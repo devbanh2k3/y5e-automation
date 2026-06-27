@@ -171,6 +171,7 @@ class RealImageAgent(BaseAgent):
     ) -> dict[str, Any] | None:
         async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT, follow_redirects=True) as client:
             for search_query in self.wikimedia_search_queries(person_name):
+                candidates: list[dict[str, Any]] = []
                 query = quote_plus(search_query)
                 url = (
                     "https://commons.wikimedia.org/w/api.php"
@@ -195,6 +196,13 @@ class RealImageAgent(BaseAgent):
                     candidate = self.extract_wikimedia_candidate(person_name, page)
                     if candidate is None:
                         continue
+                    candidates.append(candidate)
+
+                candidates.sort(
+                    key=lambda candidate: float(candidate.get("quality_score", 0.0)),
+                    reverse=True,
+                )
+                for candidate in candidates:
                     try:
                         return await self._process_verified_candidate(
                             topic_id=topic_id,
@@ -321,6 +329,63 @@ class RealImageAgent(BaseAgent):
         }
 
     @classmethod
+    def score_image_candidate(cls, candidate: dict[str, Any]) -> dict[str, Any]:
+        """Score how suitable a verified real image is for a celebrity ranking card."""
+        combined = cls.normalize_identity_text(
+            f"{candidate.get('metadata_text', '')} {candidate.get('source_url', '')}"
+        )
+        reasons: list[str] = []
+        score = 0.58
+
+        hard_negative_terms = (
+            "poster",
+            "quote",
+            "qr code",
+            "wiki loves women",
+            "shesaid",
+            "social media",
+            "campaign",
+            "infographic",
+            "collage",
+            "logo",
+            "meme",
+        )
+        if any(term in combined for term in hard_negative_terms):
+            return {
+                "quality_score": 0.15,
+                "quality_reason": "metadata indicates poster, quote graphic, campaign, or infographic",
+            }
+
+        if candidate.get("content_match_status") != "passed":
+            score -= 0.35
+            reasons.append("content match is not passed")
+        if candidate.get("needs_human_review"):
+            score -= 0.3
+            reasons.append("candidate needs human review")
+        if candidate.get("is_group_photo"):
+            score -= 0.25
+            reasons.append("metadata indicates group photo")
+
+        if any(term in combined for term in ("portrait", "close up", "closeup", "headshot")):
+            score += 0.18
+            reasons.append("portrait or close-up metadata")
+        if any(term in combined for term in ("performing", "concert", "live", "stage", "singer")):
+            score += 0.14
+            reasons.append("stage or performance metadata")
+        if any(term in combined for term in ("red carpet", "premiere", "award", "event")):
+            score += 0.16
+            reasons.append("public event metadata")
+        if any(term in combined for term in ("photo", "photograph")):
+            score += 0.04
+            reasons.append("photo metadata")
+
+        score = max(0.0, min(0.98, score))
+        return {
+            "quality_score": round(score, 2),
+            "quality_reason": "; ".join(reasons) or "basic verified celebrity image metadata",
+        }
+
+    @classmethod
     def identity_in_file_context(cls, person_name: str, title: str, source_url: str) -> bool:
         """Require the Commons file title or source URL to carry the celebrity identity."""
         identity = cls.evaluate_identity_match(person_name, f"{title} {unquote(source_url)}")
@@ -425,6 +490,13 @@ class RealImageAgent(BaseAgent):
             return None
         if content["content_match_status"] != "passed":
             return None
+        quality = cls.score_image_candidate(
+            {
+                "metadata_text": metadata_text,
+                "source_url": source_url,
+                **content,
+            }
+        )
         return {
             "download_url": download_url,
             "image_url": image_url,
@@ -437,6 +509,7 @@ class RealImageAgent(BaseAgent):
             "source_adapter": "commons_search_thumbnail",
             **identity,
             **content,
+            **quality,
         }
 
     async def _download_image_bytes(self, image_url: str) -> tuple[bytes, str]:
@@ -485,5 +558,11 @@ class RealImageAgent(BaseAgent):
             "image_url": candidate["image_url"],
             "license": candidate["license"],
             "attribution": candidate["attribution"],
+            "quality_score": float(candidate.get("quality_score", 0.0)),
+            "quality_reason": candidate.get("quality_reason", ""),
+            "identity_confidence": float(candidate.get("identity_confidence", 0.0)),
+            "content_match_status": candidate.get("content_match_status", ""),
+            "needs_human_review": bool(candidate.get("needs_human_review", False)),
+            "source_adapter": candidate.get("source_adapter", ""),
             "reject_reason": "",
         }

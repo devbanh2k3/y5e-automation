@@ -198,6 +198,34 @@ def test_content_match_rejects_quote_campaign_posters():
     assert result["needs_human_review"] is True
 
 
+def test_score_image_candidate_prefers_portrait_or_stage_photos():
+    poster = {
+        "metadata_text": "Ariana Grande Wiki Loves Women SheSaid poster quote QR code",
+        "source_url": "https://commons.wikimedia.org/wiki/File:Ariana_Grande_SheSaid.jpg",
+        "content_match_status": "passed",
+        "needs_human_review": False,
+        "is_group_photo": False,
+    }
+    event = {
+        "metadata_text": "Ariana Grande at a public event",
+        "source_url": "https://commons.wikimedia.org/wiki/File:Ariana_Grande_event.jpg",
+        "content_match_status": "passed",
+        "needs_human_review": False,
+        "is_group_photo": False,
+    }
+    portrait = {
+        "metadata_text": "Ariana Grande portrait performing live concert close-up",
+        "source_url": "https://commons.wikimedia.org/wiki/File:Ariana_Grande_portrait.jpg",
+        "content_match_status": "passed",
+        "needs_human_review": False,
+        "is_group_photo": False,
+    }
+
+    assert RealImageAgent.score_image_candidate(poster)["quality_score"] < 0.5
+    assert RealImageAgent.score_image_candidate(portrait)["quality_score"] > RealImageAgent.score_image_candidate(event)["quality_score"]
+    assert RealImageAgent.score_image_candidate(portrait)["quality_score"] >= 0.72
+
+
 def test_extract_wikimedia_candidate_requires_identity_in_file_context():
     page = {
         "title": "File:Prince, People au Défilé Channel, Printemps-Eté 2010.jpg",
@@ -326,6 +354,8 @@ def test_extract_wikimedia_candidate_reads_license_and_attribution():
         "content_match_reason": "metadata matches acceptable celebrity photo context",
         "is_group_photo": False,
         "needs_human_review": False,
+        "quality_score": 0.76,
+        "quality_reason": "stage or performance metadata; photo metadata",
     }
 
 
@@ -540,6 +570,89 @@ async def test_find_verified_image_tries_next_candidate_when_download_fails(monk
     ]
     assert item["status"] == "verified"
     assert item["image_url"] == "https://upload.wikimedia.org/original/good.jpg"
+
+
+@pytest.mark.asyncio
+async def test_find_verified_image_selects_highest_quality_candidate(monkeypatch, tmp_path):
+    agent = RealImageAgent()
+    downloads = []
+
+    pages = {
+        "1": {
+            "title": "File:Ariana Grande event.jpg",
+            "imageinfo": [
+                {
+                    "url": "https://upload.wikimedia.org/original/event.jpg",
+                    "thumburl": "https://upload.wikimedia.org/thumb/event.jpg",
+                    "descriptionurl": "https://commons.wikimedia.org/wiki/File:Ariana_Grande_event.jpg",
+                    "mime": "image/jpeg",
+                    "thumbmime": "image/jpeg",
+                    "extmetadata": {
+                        "LicenseShortName": {"value": "CC BY-SA 4.0"},
+                        "Artist": {"value": "A"},
+                        "ImageDescription": {"value": "Ariana Grande at a public event"},
+                    },
+                }
+            ],
+        },
+        "2": {
+            "title": "File:Ariana Grande portrait.jpg",
+            "imageinfo": [
+                {
+                    "url": "https://upload.wikimedia.org/original/portrait.jpg",
+                    "thumburl": "https://upload.wikimedia.org/thumb/portrait.jpg",
+                    "descriptionurl": "https://commons.wikimedia.org/wiki/File:Ariana_Grande_portrait.jpg",
+                    "mime": "image/jpeg",
+                    "thumbmime": "image/jpeg",
+                    "extmetadata": {
+                        "LicenseShortName": {"value": "CC BY-SA 4.0"},
+                        "Artist": {"value": "B"},
+                        "ImageDescription": {"value": "Ariana Grande portrait performing live concert close-up"},
+                    },
+                }
+            ],
+        },
+    }
+
+    class FakeResponse:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"query": {"pages": pages}}
+
+    class FakeClient:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return None
+
+        async def get(self, *args, **kwargs):
+            return FakeResponse()
+
+    image = Image.new("RGB", (640, 400), color="pink")
+    buffer = BytesIO()
+    image.save(buffer, format="JPEG")
+
+    async def fake_download_image_bytes(url):
+        downloads.append(url)
+        return buffer.getvalue(), "image/jpeg"
+
+    monkeypatch.setenv("STORAGE_PATH", str(tmp_path))
+    monkeypatch.setattr("agents.real_image_agent.httpx.AsyncClient", lambda *args, **kwargs: FakeClient())
+    monkeypatch.setattr(agent, "_download_image_bytes", fake_download_image_bytes)
+
+    item = await agent._find_verified_image(
+        topic_id=1,
+        scene_index=0,
+        person_name="Ariana Grande",
+        expected_title="#6 Ariana Grande",
+    )
+
+    assert downloads == ["https://upload.wikimedia.org/thumb/portrait.jpg"]
+    assert item["image_url"] == "https://upload.wikimedia.org/original/portrait.jpg"
+    assert item["quality_score"] >= 0.72
 
 
 @pytest.mark.asyncio

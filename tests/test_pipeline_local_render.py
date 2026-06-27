@@ -90,6 +90,12 @@ async def test_run_local_render_uses_content_agent_for_celebrity(monkeypatch, tm
                         "image_url": "https://upload.wikimedia.org/wikipedia/commons/example.jpg",
                         "license": "CC BY-SA 4.0",
                         "attribution": "Example photographer",
+                        "quality_score": 0.82,
+                        "quality_reason": "portrait or stage photo metadata",
+                        "identity_confidence": 0.95,
+                        "content_match_status": "passed",
+                        "needs_human_review": False,
+                        "source_adapter": "test",
                         "reject_reason": "",
                     }
                     for index, scene in enumerate(content_contract["scenes"])
