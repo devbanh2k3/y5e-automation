@@ -559,7 +559,7 @@ Run: `cd video_engine && npx vitest run src/components/card-semantics.test.ts &&
 
 Expected: PASS.
 
-- [ ] **Step 6: Commit renderer semantics**
+- [x] **Step 6: Commit renderer semantics**
 
 ```bash
 git add video_engine/src/components/card-semantics.ts video_engine/src/components/card-semantics.test.ts video_engine/src/components/Card.tsx video_engine/package.json video_engine/package-lock.json
@@ -571,7 +571,7 @@ git commit -m "fix: render non-ranking card semantics"
 **Files:**
 - Modify only files above if verification exposes a defect.
 
-- [ ] **Step 1: Run all Python tests and static diff checks**
+- [x] **Step 1: Run all Python tests and static diff checks**
 
 ```bash
 git diff --check
@@ -580,7 +580,7 @@ python3 -m pytest -q
 
 Expected: all tests PASS.
 
-- [ ] **Step 2: Run video-engine verification**
+- [x] **Step 2: Run video-engine verification**
 
 ```bash
 cd video_engine
@@ -590,13 +590,13 @@ npm run build
 
 Expected: tests and build PASS.
 
-- [ ] **Step 3: Run a no-render 9router probe**
+- [x] **Step 3: Run a no-render 9router probe**
 
 Generate three topics through `TopicStrategyAgent` and assert distinct formats, angles, metrics, and scopes. Build one content contract and pass it through `AIFactVerificationAgent`, but do not call RealImageAgent or renderer. Print only topic metadata and fact status/confidence, then mark probe reservations failed with `fact_gate_probe_only`.
 
 Expected: diverse topics and a structurally valid verification result, or a clear factual rejection without rendering side effects.
 
-- [ ] **Step 4: Verify branch state and commit any probe-driven fix**
+- [x] **Step 4: Verify branch state and commit any probe-driven fix**
 
 Run: `git status --short --branch`
 
