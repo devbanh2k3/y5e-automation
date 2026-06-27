@@ -32,7 +32,7 @@
 - Modify: `core/video_contract.py`
 - Create: `tests/test_multiformat_video_contract.py`
 
-- [ ] **Step 1: Write failing format validation and header tests**
+- [x] **Step 1: Write failing format validation and header tests**
 
 ```python
 import pytest
@@ -98,13 +98,13 @@ def test_factual_format_rejects_unscoped_scene():
         build_video_data_from_content_contract(payload)
 ```
 
-- [ ] **Step 2: Run the tests and verify RED**
+- [x] **Step 2: Run the tests and verify RED**
 
 Run: `python3 -m pytest tests/test_multiformat_video_contract.py -q`
 
 Expected: FAIL because `build_content_contract_v2()` does not accept multi-format fields and headers remain ranking-only.
 
-- [ ] **Step 3: Implement backward-compatible multi-format fields**
+- [x] **Step 3: Implement backward-compatible multi-format fields**
 
 Add optional `contentFormat: str | None = None`, `metricScope: str = ""`, and `timeScope: str = ""` parameters to `build_content_contract_v2()`. Only include the three new top-level keys when `contentFormat` is not `None`; this preserves the ability to distinguish legacy contracts. `build_video_data_from_content_contract()` treats a missing format as `ranking`. Define:
 
@@ -134,13 +134,13 @@ def build_card_header(*, scene: dict[str, Any], content_format: str, index: int)
 
 For contracts that explicitly include `contentFormat`, validate top-level scope and scene `factClaim`, `factValue`, `factUnit`, `factAsOf`, and `factContext`. Preserve legacy contracts that omit `contentFormat` by treating them as ranking contracts without requiring new fact fields.
 
-- [ ] **Step 4: Run focused and legacy contract tests**
+- [x] **Step 4: Run focused and legacy contract tests**
 
 Run: `python3 -m pytest tests/test_multiformat_video_contract.py tests/test_content_agent.py tests/test_pipeline_local_render.py -q`
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit contract semantics**
+- [x] **Step 5: Commit contract semantics**
 
 ```bash
 git add core/video_contract.py tests/test_multiformat_video_contract.py
@@ -153,7 +153,7 @@ git commit -m "feat: add factual multi-format content contracts"
 - Modify: `agents/topic_strategy_agent.py`
 - Modify: `tests/test_topic_strategy_agent.py`
 
-- [ ] **Step 1: Write failing candidate and slate tests**
+- [x] **Step 1: Write failing candidate and slate tests**
 
 ```python
 def test_candidate_rejects_unbounded_or_private_metric():
@@ -187,13 +187,13 @@ async def test_strategy_prefers_distinct_formats_angles_metrics_and_scopes(agent
 
 The fake payload must include valid ranking, timeline, and fact-collection candidates plus a higher-scored invalid unbounded candidate.
 
-- [ ] **Step 2: Run strategy tests and verify RED**
+- [x] **Step 2: Run strategy tests and verify RED**
 
 Run: `python3 -m pytest tests/test_topic_strategy_agent.py -q`
 
 Expected: FAIL because format, scope, measurability, and privacy are not normalized or selected.
 
-- [ ] **Step 3: Extend candidate normalization and deterministic validation**
+- [x] **Step 3: Extend candidate normalization and deterministic validation**
 
 Add required fields `content_format`, `metric_scope`, `factual_basis`, `measurability_score`, and `privacy_risk`; keep `time_scope`. Normalize measurability on the existing 0-10/0-100 score rules. Reject unknown formats, measurability below 80, `privacy_risk != "low"`, and explicitly unbounded scopes such as `all outfits ever worn` or `number of times ever performed` when no named dataset/event/date bounds the claim. Allow all-time metrics backed by finite public datasets such as Grammy wins or box-office records.
 
@@ -205,13 +205,13 @@ effective_data_score = min(item["data_score"], item["measurability_score"])
 
 Selection requires unique format, angle, metric, and scope on the first pass. The expanded pass may reuse format but never angle, metric, scope, safety, or measurability failures.
 
-- [ ] **Step 4: Run strategy tests**
+- [x] **Step 4: Run strategy tests**
 
 Run: `python3 -m pytest tests/test_topic_strategy_agent.py tests/test_topic_history.py -q`
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit strategy changes**
+- [x] **Step 5: Commit strategy changes**
 
 ```bash
 git add agents/topic_strategy_agent.py tests/test_topic_strategy_agent.py
@@ -224,7 +224,7 @@ git commit -m "feat: diversify factual celebrity content formats"
 - Create: `core/fact_verification.py`
 - Create: `tests/test_fact_verification.py`
 
-- [ ] **Step 1: Write failing contract, rejection, and correction tests**
+- [x] **Step 1: Write failing contract, rejection, and correction tests**
 
 ```python
 import pytest
@@ -281,23 +281,23 @@ def test_corrections_update_values_and_rerank_numeric_ranking(content_contract):
     assert corrected["scenes"][1]["title"].startswith("#1 ")
 ```
 
-- [ ] **Step 2: Run tests and verify RED**
+- [x] **Step 2: Run tests and verify RED**
 
 Run: `python3 -m pytest tests/test_fact_verification.py -q`
 
 Expected: FAIL with missing `core.fact_verification`.
 
-- [ ] **Step 3: Implement strict contract and correction APIs**
+- [x] **Step 3: Implement strict contract and correction APIs**
 
 Define `MIN_FACT_CONFIDENCE = 0.80`, `FactVerificationError`, contract builder/validator, and `apply_fact_corrections()`. Deep-copy content before editing. A corrected item updates `factValue`, `metricValue`, `caption`, and `statusText`; preserve original values only in the verification contract. Parse numeric values with units removed for ranking order, reject reranking when values cannot be compared, sort ranking ascending so number one remains last, and rewrite `#N` prefixes consistently.
 
-- [ ] **Step 4: Run contract tests**
+- [x] **Step 4: Run contract tests**
 
 Run: `python3 -m pytest tests/test_fact_verification.py -q`
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit fact contract**
+- [x] **Step 5: Commit fact contract**
 
 ```bash
 git add core/fact_verification.py tests/test_fact_verification.py
@@ -310,7 +310,7 @@ git commit -m "feat: add ai fact verification contract"
 - Create: `agents/ai_fact_verification_agent.py`
 - Create: `tests/test_ai_fact_verification_agent.py`
 
-- [ ] **Step 1: Write failing agent tests**
+- [x] **Step 1: Write failing agent tests**
 
 ```python
 import pytest
@@ -343,23 +343,23 @@ async def test_agent_rejects_missing_scene_or_low_confidence(monkeypatch, conten
         await agent.run(content_contract=content_contract)
 ```
 
-- [ ] **Step 2: Run tests and verify RED**
+- [x] **Step 2: Run tests and verify RED**
 
 Run: `python3 -m pytest tests/test_ai_fact_verification_agent.py -q`
 
 Expected: FAIL with missing agent module.
 
-- [ ] **Step 3: Implement adversarial verification prompt and normalization**
+- [x] **Step 3: Implement adversarial verification prompt and normalization**
 
 Implement `AIFactVerificationAgent(BaseAgent).run(*, content_contract: dict[str, Any])`. Send only scene index, person name, fact claim/value/unit/as-of/context, format, scope, and ordering. The system prompt must instruct the model to challenge the claims independently, return one item per scene, never invent missing private facts, and mark uncertainty as rejected. Normalize scene indices and status values, then call `build_fact_verification_contract_v1()` and strict validation.
 
-- [ ] **Step 4: Run agent and contract tests**
+- [x] **Step 4: Run agent and contract tests**
 
 Run: `python3 -m pytest tests/test_ai_fact_verification_agent.py tests/test_fact_verification.py -q`
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit verification agent**
+- [x] **Step 5: Commit verification agent**
 
 ```bash
 git add agents/ai_fact_verification_agent.py tests/test_ai_fact_verification_agent.py
@@ -374,7 +374,7 @@ git commit -m "feat: verify celebrity facts with independent ai pass"
 - Modify: `tests/test_content_agent.py`
 - Modify: `tests/test_pipeline_local_render.py`
 
-- [ ] **Step 1: Write failing content-format and pipeline-order tests**
+- [x] **Step 1: Write failing content-format and pipeline-order tests**
 
 Add a ContentAgent test that passes a selected `timeline` topic and asserts top-level multi-format fields plus every scene fact field are preserved.
 
@@ -399,13 +399,13 @@ assert events == ["fact", "image", "render"]
 
 Add a rejection test where FakeFactAgent raises `FactVerificationError`; assert image and render fakes are never called.
 
-- [ ] **Step 2: Run focused tests and verify RED**
+- [x] **Step 2: Run focused tests and verify RED**
 
 Run: `python3 -m pytest tests/test_content_agent.py tests/test_pipeline_local_render.py -q`
 
 Expected: FAIL because ContentAgent omits fact fields and Pipeline has no fact step.
 
-- [ ] **Step 3: Generate structured facts and insert gate before images**
+- [x] **Step 3: Generate structured facts and insert gate before images**
 
 Update the ContentAgent prompt/normalizer to require selected topic format/scope/time and scene fact fields. Legacy seeded fallback remains ranking-compatible.
 
@@ -428,7 +428,7 @@ image_verification_contract = await RealImageAgent().run_for_content_contract(
 
 Return the fact contract in the pipeline result. Do not catch `FactVerificationError`; batch replacement already handles production failures.
 
-- [ ] **Step 4: Run focused pipeline tests**
+- [x] **Step 4: Run focused pipeline tests**
 
 Run: `python3 -m pytest tests/test_content_agent.py tests/test_pipeline_local_render.py tests/test_batch_produce_celebrity_videos.py -q`
 

@@ -169,6 +169,8 @@ Hard rules:
 8. image_prompt must ask for a real editorial/photo-source image, not AI art.
 9. Put lower ranks first and #1 last so the video builds suspense.
 10. Use individual people only. Do not use bands, groups, teams, brands, couples, or families.
+11. Follow content_format, metric_scope, and time_scope from the topic exactly.
+12. For factual formats include factClaim, factValue, factUnit, factAsOf, and factContext in every scene.
 
 Return JSON only with this shape:
 {{
@@ -249,6 +251,17 @@ Return JSON only with this shape:
                     "sourceRequirement": str(
                         scene.get("sourceRequirement", "public source required")
                     ).strip(),
+                    **(
+                        {
+                            "factClaim": str(scene.get("factClaim", "")).strip(),
+                            "factValue": str(scene.get("factValue", metric_value)).strip(),
+                            "factUnit": str(scene.get("factUnit", "")).strip(),
+                            "factAsOf": str(scene.get("factAsOf", "")).strip(),
+                            "factContext": str(scene.get("factContext", "")).strip(),
+                        }
+                        if topic.get("content_format")
+                        else {}
+                    ),
                 }
             )
 
@@ -277,6 +290,11 @@ Return JSON only with this shape:
             youtube_tags=youtube_tags,
             duration_target=60,
             cardLayout=card_layout,
+            contentFormat=(
+                str(topic["content_format"]) if topic.get("content_format") else None
+            ),
+            metricScope=str(topic.get("metric_scope", "")),
+            timeScope=str(topic.get("time_scope", "")),
         )
 
     @staticmethod

@@ -72,6 +72,45 @@ async def test_content_agent_uses_selected_topic_without_regenerating_it(monkeyp
 
 
 @pytest.mark.asyncio
+async def test_content_agent_preserves_selected_factual_format(monkeypatch):
+    agent = ContentAgent()
+    selected = {
+        "title": "Celebrity Career Start Milestones",
+        "angle": "career_start_age",
+        "metric_label": "START YEAR",
+        "content_format": "timeline",
+        "metric_scope": "public debut years",
+        "time_scope": "through 2026",
+    }
+    payload = awards_contract_payload()
+    payload["scenes"] = [
+        {
+            **payload["scenes"][0],
+            "factClaim": "Taylor Swift released her debut album in 2006",
+            "factValue": "2006",
+            "factUnit": "year",
+            "factAsOf": "2026",
+            "factContext": "official debut album release year",
+        }
+    ]
+
+    async def fake_ai_json(prompt, system=None, **kwargs):
+        return payload
+
+    monkeypatch.setattr(agent, "ai_json", fake_ai_json)
+
+    contract = await agent.run(
+        niche="celebrity",
+        language="en",
+        selected_topic=selected,
+    )
+
+    assert contract["contentFormat"] == "timeline"
+    assert contract["metricScope"] == "public debut years"
+    assert contract["scenes"][0]["factValue"] == "2006"
+
+
+@pytest.mark.asyncio
 async def test_content_agent_builds_seeded_celebrity_mvp_contract(monkeypatch):
     agent = ContentAgent()
 
