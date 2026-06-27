@@ -39,6 +39,7 @@ class ContentAgent(BaseAgent):
         language: str = "vi",
         subject: str = "người nổi tiếng",
         card_layout: str = "flag_hero",
+        selected_topic: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Return a complete content contract for the requested niche."""
         normalized_niche = niche.strip().lower() or "celebrity"
@@ -59,6 +60,7 @@ class ContentAgent(BaseAgent):
             language=language,
             subject=subject,
             card_layout=card_layout,
+            selected_topic=selected_topic,
         )
         validate_content_contract_v2(contract)
         return contract
@@ -69,9 +71,13 @@ class ContentAgent(BaseAgent):
         language: str,
         subject: str,
         card_layout: str,
+        selected_topic: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         try:
-            topic = await self._generate_celebrity_topic(language=language, subject=subject)
+            topic = selected_topic or await self._generate_celebrity_topic(
+                language=language,
+                subject=subject,
+            )
             contract = await self._generate_celebrity_contract_from_topic(
                 language=language,
                 subject=subject,
@@ -81,6 +87,8 @@ class ContentAgent(BaseAgent):
             validate_content_contract_v2(contract)
             return contract
         except Exception as exc:
+            if selected_topic is not None:
+                raise
             self.logger.warning("Falling back to seeded celebrity contract: %s", exc)
             return self._build_celebrity_contract(
                 language=language,
