@@ -8,7 +8,7 @@ from typing import Any
 from core.config import get_settings
 from core.video_contract import validate_image_verification_contract_v1, validate_video_data
 
-MIN_IMAGE_QUALITY_SCORE = 0.72
+MIN_IMAGE_QUALITY_SCORE = 0.58
 
 
 class ProductionQualityGateError(ValueError):

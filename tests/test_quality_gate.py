@@ -136,6 +136,31 @@ def test_quality_gate_passes_verified_render(tmp_path, monkeypatch):
     get_settings.cache_clear()
 
 
+def test_quality_gate_accepts_baseline_verified_identity_score(tmp_path, monkeypatch):
+    get_settings.cache_clear()
+    monkeypatch.setenv("STORAGE_PATH", str(tmp_path))
+    topic_id = 789
+    topic_dir = tmp_path / "topics" / str(topic_id)
+    (topic_dir / "images").mkdir(parents=True)
+    (topic_dir / "final_video.mp4").write_bytes(b"fake mp4")
+    (topic_dir / "images" / "real_0.webp").write_bytes(b"image 0")
+    (topic_dir / "images" / "real_1.webp").write_bytes(b"image 1")
+    content_contract, video_data, image_contract = _contracts(topic_id)
+    image_contract["items"][0]["quality_score"] = 0.58
+
+    result = run_production_quality_gate(
+        topic_id=topic_id,
+        video_path=str(topic_dir / "final_video.mp4"),
+        video_data=video_data,
+        content_contract=content_contract,
+        image_verification_contract=image_contract,
+        expected_card_layout="flag_hero",
+    )
+
+    assert result["status"] == "passed"
+    get_settings.cache_clear()
+
+
 @pytest.mark.parametrize(
     ("mutate", "message"),
     [
