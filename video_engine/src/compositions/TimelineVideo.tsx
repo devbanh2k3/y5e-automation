@@ -67,10 +67,13 @@ export const TimelineVideo: React.FC<VideoData> = (props) => {
   const mainFrame = Math.max(0, frame - morphEnd);
   const mainDuration = outroStart - morphEnd;
 
-  // Total scroll = enough to scroll all cards through
-  // Start position: cards at x=0 (left edge). End: last card visible.
-  const totalContentWidth = cards.length * CARD_SLOT_WIDTH;
-  const totalScrollDistance = Math.max(0, totalContentWidth - width + CARD_GAP);
+  // Total scroll = enough to bring the final card to the viewport center before outro.
+  // Start position: cards at x=0 (left edge). End: last card centered.
+  const finalCardCenteredScrollDistance = Math.max(
+    0,
+    (cards.length - 1) * CARD_SLOT_WIDTH - (width - CARD_WIDTH) / 2
+  );
+  const totalScrollDistance = finalCardCenteredScrollDistance;
 
   const scrollOffset = continuousScroll(mainFrame, mainDuration, totalScrollDistance);
 
