@@ -28,6 +28,31 @@ CONTENT_FORMATS = {
     "binary_comparison",
 }
 
+RENDER_FPS = 30
+RENDER_INTRO_DURATION_FRAMES = 90
+RENDER_OUTRO_DURATION_FRAMES = 150
+DEFAULT_HOLD_DURATION_FRAMES = 120
+DEFAULT_TRANSITION_DURATION_FRAMES = 15
+MIN_HOLD_DURATION_FRAMES = 30
+
+
+def calculate_hold_duration_frames(
+    *,
+    duration_target: int,
+    card_count: int,
+    transition_duration_frames: int = DEFAULT_TRANSITION_DURATION_FRAMES,
+) -> int:
+    """Return per-card hold frames needed to approach the requested duration."""
+    if card_count < 1:
+        raise VideoContractError("card_count must be at least 1")
+    available_frames = (
+        duration_target * RENDER_FPS
+        - RENDER_INTRO_DURATION_FRAMES
+        - RENDER_OUTRO_DURATION_FRAMES
+        - max(0, card_count - 1) * transition_duration_frames
+    )
+    return max(MIN_HOLD_DURATION_FRAMES, round(available_frames / card_count))
+
 
 def build_content_contract_v2(
     *,
@@ -243,6 +268,13 @@ def build_video_data_from_content_contract(payload: dict[str, Any]) -> dict[str,
             }
         )
 
+    transition_duration_frames = DEFAULT_TRANSITION_DURATION_FRAMES
+    hold_duration_frames = calculate_hold_duration_frames(
+        duration_target=int(payload["duration_target"]),
+        card_count=len(cards),
+        transition_duration_frames=transition_duration_frames,
+    )
+
     return {
         "template": "timeline",
         "cardLayout": str(payload.get("cardLayout", "classic") or "classic"),
@@ -260,8 +292,8 @@ def build_video_data_from_content_contract(payload: dict[str, Any]) -> dict[str,
             "reveal": "",
         },
         "logoPath": "images/local-logo.svg",
-        "holdDurationFrames": 120,
-        "transitionDurationFrames": 15,
+        "holdDurationFrames": hold_duration_frames,
+        "transitionDurationFrames": transition_duration_frames,
         "content_contract": payload,
     }
 
