@@ -101,6 +101,9 @@ def produced_result(index, selected):
         "topic_id": f"topic-{index}",
         "video_path": f"/tmp/topic-{index}/final_video.mp4",
         "card_layout": "flag_hero",
+        "duration_profile": "standard",
+        "target_duration": 60,
+        "actual_duration_sec": 61,
         "youtube_title": selected["title"],
         "quality_gate": {"status": "passed"},
         "next_commands": {
@@ -123,7 +126,8 @@ async def test_produce_batch_reserves_distinct_slate_and_returns_strategy_summar
     strategy = FakeStrategy([slate])
     calls = []
 
-    async def fake_produce(*, language, card_layout, write_files, selected_topic):
+    async def fake_produce(**kwargs):
+        selected_topic = kwargs["selected_topic"]
         calls.append(selected_topic)
         return produced_result(len(calls), selected_topic)
 
@@ -152,6 +156,115 @@ async def test_produce_batch_reserves_distinct_slate_and_returns_strategy_summar
 
 
 @pytest.mark.asyncio
+async def test_produce_batch_v2_fills_requested_count_with_replacements(monkeypatch):
+    from scripts import batch_produce_celebrity_videos as batch_script
+
+    failed = selected_topic(1)
+    second = selected_topic(2)
+    replacement = selected_topic(3)
+    strategy = FakeStrategy([[failed, second], [replacement]])
+    attempts = []
+
+    async def fake_produce(**kwargs):
+        selected_topic = kwargs["selected_topic"]
+        attempts.append(selected_topic["reservation_id"])
+        if selected_topic["reservation_id"] == "reservation-1":
+            raise FactVerificationError("all facts must be AI verified with confidence >= 0.80")
+        return produced_result(len(attempts), selected_topic)
+
+    monkeypatch.setattr(batch_script, "produce", fake_produce)
+
+    summary = await batch_script.produce_batch(
+        count=2,
+        language="en",
+        card_layout="flag_hero",
+        write_files=True,
+        stop_on_error=False,
+        strategy=strategy,
+        max_attempts=4,
+        duration_profile="standard",
+        target_duration=60,
+    )
+
+    assert summary["success_count"] == 2
+    assert summary["requested_count"] == 2
+    assert summary["replacement_count"] == 1
+    assert summary["unfilled_count"] == 0
+    assert summary["status"] == "completed_with_recoveries"
+    assert attempts == ["reservation-1", "reservation-2", "reservation-3"]
+    assert summary["failures"][0]["classification"] == "fact_rejected"
+    assert summary["failures"][0]["recovery_action"] == "request_replacement"
+
+
+@pytest.mark.asyncio
+async def test_produce_batch_v2_retries_repairable_contract_once(monkeypatch):
+    from scripts import batch_produce_celebrity_videos as batch_script
+
+    topic = selected_topic(1)
+    strategy = FakeStrategy([[topic]])
+    attempts = []
+
+    async def fake_produce(**kwargs):
+        selected_topic = kwargs["selected_topic"]
+        attempts.append(selected_topic["reservation_id"])
+        if len(attempts) == 1:
+            raise VideoContractError("scenes[0].factClaim is required")
+        return produced_result(len(attempts), selected_topic)
+
+    monkeypatch.setattr(batch_script, "produce", fake_produce)
+
+    summary = await batch_script.produce_batch(
+        count=1,
+        language="en",
+        card_layout="flag_hero",
+        write_files=True,
+        stop_on_error=False,
+        strategy=strategy,
+        max_attempts=3,
+        duration_profile="standard",
+        target_duration=60,
+    )
+
+    assert summary["success_count"] == 1
+    assert summary["retry_count"] == 1
+    assert summary["replacement_count"] == 0
+    assert attempts == ["reservation-1", "reservation-1"]
+    assert summary["failures"][0]["classification"] == "repairable_contract"
+    assert summary["failures"][0]["recovery_action"] == "retry_same_topic"
+
+
+@pytest.mark.asyncio
+async def test_produce_batch_v2_stops_at_max_attempts(monkeypatch):
+    from scripts import batch_produce_celebrity_videos as batch_script
+
+    topics = [selected_topic(index) for index in range(1, 6)]
+    strategy = FakeStrategy([[topics[0]], [topics[1]], [topics[2]], [topics[3]]])
+
+    async def fake_produce(**kwargs):
+        raise FactVerificationError("all facts must be AI verified with confidence >= 0.80")
+
+    monkeypatch.setattr(batch_script, "produce", fake_produce)
+
+    summary = await batch_script.produce_batch(
+        count=2,
+        language="en",
+        card_layout="flag_hero",
+        write_files=True,
+        stop_on_error=False,
+        strategy=strategy,
+        max_attempts=3,
+        duration_profile="standard",
+        target_duration=60,
+    )
+
+    assert summary["attempted_count"] == 3
+    assert summary["success_count"] == 0
+    assert summary["unfilled_count"] == 2
+    assert summary["status"] == "incomplete"
+    assert summary["failures"][-1]["recovery_action"] == "attempt_budget_exhausted"
+
+
+@pytest.mark.asyncio
 async def test_produce_batch_marks_failure_and_produces_one_replacement(monkeypatch):
     from scripts import batch_produce_celebrity_videos as batch_script
 
@@ -159,7 +272,8 @@ async def test_produce_batch_marks_failure_and_produces_one_replacement(monkeypa
     strategy = FakeStrategy([[first, failed], [replacement]])
     attempts = []
 
-    async def fake_produce(*, language, card_layout, write_files, selected_topic):
+    async def fake_produce(**kwargs):
+        selected_topic = kwargs["selected_topic"]
         attempts.append(selected_topic["reservation_id"])
         if selected_topic["reservation_id"] == "reservation-2":
             raise RuntimeError("render failed")
@@ -177,10 +291,14 @@ async def test_produce_batch_marks_failure_and_produces_one_replacement(monkeypa
     )
 
     assert summary["success_count"] == 2
-    assert summary["failure_count"] == 1
-    assert summary["attempted_count"] == 3
-    assert attempts == ["reservation-1", "reservation-2", "reservation-3"]
-    assert strategy.repository.failed == [("reservation-2", "render failed")]
+    assert summary["failure_count"] == 2
+    assert summary["attempted_count"] == 4
+    assert summary["retry_count"] == 1
+    assert attempts == ["reservation-1", "reservation-2", "reservation-2", "reservation-3"]
+    assert strategy.repository.failed == [
+        ("reservation-2", "render failed"),
+        ("reservation-2", "render failed"),
+    ]
     assert len(strategy.calls) == 2
 
 
@@ -193,7 +311,7 @@ async def test_produce_batch_reports_exhausted_replacement(monkeypatch):
         [[failed], TopicSelectionError("no diverse replacement available")]
     )
 
-    async def fake_produce(*, language, card_layout, write_files, selected_topic):
+    async def fake_produce(**kwargs):
         raise RuntimeError("content failed")
 
     monkeypatch.setattr(batch_script, "produce", fake_produce)
@@ -246,7 +364,7 @@ async def test_produce_batch_stop_on_error(monkeypatch):
 
     strategy = FakeStrategy([[selected_topic(1), selected_topic(2)]])
 
-    async def fake_produce(*, language, card_layout, write_files, selected_topic):
+    async def fake_produce(**kwargs):
         raise RuntimeError("first render failed")
 
     monkeypatch.setattr(batch_script, "produce", fake_produce)

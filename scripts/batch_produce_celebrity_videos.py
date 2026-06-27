@@ -87,14 +87,21 @@ def summarize_success(
     batch_index: int,
     result: dict[str, Any],
     selected_topic: dict[str, Any],
+    attempt_type: str = "initial",
+    duration_profile: str = "standard",
+    target_duration: int = 60,
 ) -> dict[str, Any]:
     return {
         "batch_index": batch_index,
+        "attempt_type": attempt_type,
         "status": result.get("status", ""),
         "review_id": result.get("review_id", ""),
         "topic_id": result.get("topic_id", ""),
         "video_path": result.get("video_path", ""),
         "card_layout": result.get("card_layout", ""),
+        "duration_profile": result.get("duration_profile", duration_profile),
+        "target_duration": result.get("target_duration", target_duration),
+        "actual_duration_sec": result.get("actual_duration_sec", result.get("duration_sec", 0)),
         "youtube_title": result.get("youtube_title", ""),
         "quality_gate": result.get("quality_gate", {}),
         "artifacts": result.get("artifacts", {}),
@@ -120,13 +127,22 @@ async def produce_batch(
     write_files: bool,
     stop_on_error: bool,
     strategy: TopicStrategyAgent | None = None,
+    max_attempts: int | None = None,
+    duration_profile: str = "standard",
+    target_duration: int | None = None,
 ) -> dict[str, Any]:
     if count < 1:
         raise ValueError("--count must be at least 1")
+    resolved_target_duration = resolve_duration_target(duration_profile, target_duration)
+    attempt_budget = max_attempts if max_attempts is not None else count * 3
+    if attempt_budget < count:
+        raise ValueError("--max-attempts must be at least --count")
 
     items: list[dict[str, Any]] = []
     failures: list[dict[str, Any]] = []
     stopped_on_error = False
+    replacement_count = 0
+    retry_count = 0
     batch_id = str(uuid4())
     topic_strategy = strategy or TopicStrategyAgent()
     try:
@@ -138,18 +154,32 @@ async def produce_batch(
     except Exception as exc:  # noqa: BLE001 - return structured selection failures.
         failures.append(
             {
+                "attempt_index": 0,
                 "batch_index": 0,
+                "batch_slot": 0,
                 "reservation_id": "",
                 "error": str(exc),
                 "error_type": exc.__class__.__name__,
+                "classification": classify_batch_failure(exc),
+                "recovery_action": "no_replacement_available",
+                "final_status": "failed",
             }
         )
         slate = []
-    queue = [(selected_topic, True) for selected_topic in slate]
+    queue = [
+        {
+            "topic": selected_topic,
+            "retry_available": True,
+            "batch_slot": index + 1,
+            "attempt_type": "initial",
+        }
+        for index, selected_topic in enumerate(slate)
+    ]
     attempt_index = 0
 
-    while queue:
-        selected_topic, can_replace = queue.pop(0)
+    while len(items) < count and attempt_index < attempt_budget and queue:
+        attempt = queue.pop(0)
+        selected_topic = attempt["topic"]
         attempt_index += 1
         reservation_id = str(selected_topic["reservation_id"])
         try:
@@ -158,29 +188,57 @@ async def produce_batch(
                 card_layout=card_layout,
                 write_files=write_files,
                 selected_topic=selected_topic,
+                duration_profile=duration_profile,
+                target_duration=resolved_target_duration,
             )
         except Exception as exc:  # noqa: BLE001 - batch summaries must preserve per-item failures.
+            classification = classify_batch_failure(exc)
+            action = recovery_action_for(
+                classification,
+                retry_available=bool(attempt["retry_available"]),
+                stop_on_error=stop_on_error,
+            )
+            if action == "request_replacement" and attempt_index >= attempt_budget:
+                action = "attempt_budget_exhausted"
             topic_strategy.repository.mark_failed(
                 reservation_id,
                 reason=str(exc),
             )
             failures.append(
                 {
+                    "attempt_index": attempt_index,
                     "batch_index": attempt_index,
+                    "batch_slot": attempt["batch_slot"],
                     "reservation_id": reservation_id,
+                    "title": selected_topic.get("title", ""),
                     "error": str(exc),
                     "error_type": exc.__class__.__name__,
+                    "classification": classification,
+                    "recovery_action": action,
+                    "final_status": "failed",
                 }
             )
-            if stop_on_error:
+            if action == "stop_on_error":
                 stopped_on_error = True
-                for pending_topic, _ in queue:
+                for pending in queue:
+                    pending_topic = pending["topic"]
                     topic_strategy.repository.mark_failed(
                         str(pending_topic["reservation_id"]),
                         reason="batch stopped after production failure",
                     )
                 break
-            if can_replace:
+            if action == "retry_same_topic":
+                retry_count += 1
+                queue.insert(
+                    0,
+                    {
+                        "topic": selected_topic,
+                        "retry_available": False,
+                        "batch_slot": attempt["batch_slot"],
+                        "attempt_type": "retry_same_topic",
+                    },
+                )
+            elif action == "request_replacement":
                 try:
                     replacement = await topic_strategy.run(
                         count=1,
@@ -190,14 +248,27 @@ async def produce_batch(
                 except Exception as replacement_exc:  # noqa: BLE001 - preserve selection failure.
                     failures.append(
                         {
+                            "attempt_index": attempt_index,
                             "batch_index": attempt_index,
+                            "batch_slot": attempt["batch_slot"],
                             "reservation_id": "",
                             "error": str(replacement_exc),
                             "error_type": replacement_exc.__class__.__name__,
+                            "classification": classify_batch_failure(replacement_exc),
+                            "recovery_action": "no_replacement_available",
+                            "final_status": "failed",
                         }
                     )
                 else:
-                    queue.append((replacement[0], False))
+                    replacement_count += 1
+                    queue.append(
+                        {
+                            "topic": replacement[0],
+                            "retry_available": True,
+                            "batch_slot": attempt["batch_slot"],
+                            "attempt_type": "replacement",
+                        }
+                    )
             continue
 
         topic_strategy.repository.mark_produced(
@@ -209,18 +280,37 @@ async def produce_batch(
                 batch_index=attempt_index,
                 result=result,
                 selected_topic=selected_topic,
+                attempt_type=str(attempt["attempt_type"]),
+                duration_profile=duration_profile,
+                target_duration=resolved_target_duration,
             )
         )
 
+    unfilled_count = max(0, count - len(items))
+    if stopped_on_error:
+        status = "stopped_on_error"
+    elif len(items) == count and not failures:
+        status = "completed"
+    elif len(items) == count:
+        status = "completed_with_recoveries"
+    else:
+        status = "incomplete"
+
     return {
-        "status": "completed_with_errors" if failures else "completed",
+        "status": status,
         "requested_count": count,
         "attempted_count": attempt_index,
+        "max_attempts": attempt_budget,
         "success_count": len(items),
         "failure_count": len(failures),
+        "replacement_count": replacement_count,
+        "retry_count": retry_count,
+        "unfilled_count": unfilled_count,
         "stopped_on_error": stopped_on_error,
         "language": language,
         "card_layout": card_layout,
+        "duration_profile": duration_profile,
+        "target_duration": resolved_target_duration,
         "batch_id": batch_id,
         "items": items,
         "failures": failures,
