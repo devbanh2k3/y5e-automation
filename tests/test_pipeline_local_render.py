@@ -103,8 +103,17 @@ async def test_run_local_render_uses_content_agent_for_celebrity(monkeypatch, tm
             }
 
     class FakeContentAgent:
-        async def run(self, *, niche, language, subject, card_layout="flag_hero"):
+        async def run(
+            self,
+            *,
+            niche,
+            language,
+            subject,
+            card_layout="flag_hero",
+            selected_topic=None,
+        ):
             captured["content_agent_card_layout"] = card_layout
+            captured["selected_topic"] = selected_topic
             return build_content_contract_v2(
                 niche="celebrity",
                 title="Top 10 người nổi tiếng test",
@@ -170,11 +179,19 @@ async def test_run_local_render_uses_content_agent_for_celebrity(monkeypatch, tm
     monkeypatch.setattr("agents.pipeline.RealImageAgent", FakeRealImageAgent)
     monkeypatch.setattr("agents.content_agent.ContentAgent", FakeContentAgent)
 
+    selected_topic = {
+        "reservation_id": "reservation-1",
+        "title": "Top 10 Most-Awarded Living Musicians",
+        "angle": "living_musician_awards",
+        "metric_label": "AWARDS",
+        "score_total": 91.5,
+    }
     pipeline = Pipeline()
     result = await pipeline.run_local_render(
         category="Celebrity",
         language="vi",
         card_layout="flag_hero",
+        selected_topic=selected_topic,
     )
 
     video_data = captured["video_data"]
@@ -191,6 +208,8 @@ async def test_run_local_render_uses_content_agent_for_celebrity(monkeypatch, tm
     assert result["content_contract"]["niche"] == "celebrity"
     assert result["content_contract"]["cardLayout"] == "flag_hero"
     assert captured["content_agent_card_layout"] == "flag_hero"
+    assert captured["selected_topic"] == selected_topic
+    assert result["selected_topic"] == selected_topic
     assert result["youtube_title"] == content_contract["youtube_title"]
     assert "người nổi tiếng" in result["youtube_title"].lower()
     assert captured["image_agent_topic_id"] == result["topic_id"]

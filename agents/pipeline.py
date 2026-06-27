@@ -260,6 +260,7 @@ class Pipeline:
         category: str,
         language: str = "vi",
         card_layout: str = "flag_hero",
+        selected_topic: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Create a local render artifact using explicit fallback content."""
         resolved_category = category.strip() or "Local"
@@ -276,6 +277,7 @@ class Pipeline:
                 language=language,
                 subject="người nổi tiếng",
                 card_layout=card_layout,
+                selected_topic=selected_topic,
             )
             video_data = build_video_data_from_content_contract(content_contract)
             image_verification_contract = await RealImageAgent().run_for_content_contract(
@@ -347,6 +349,7 @@ class Pipeline:
             "thumbnail_prompt": content_contract["thumbnail_prompt"] if content_contract else "",
             "image_verification_contract": image_verification_contract,
             "quality_gate": quality_gate,
+            "selected_topic": selected_topic,
         }
 
     @staticmethod
