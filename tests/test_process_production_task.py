@@ -27,6 +27,21 @@ async def test_process_one_task_claims_fair_task_and_marks_pending_review(monkey
     async def fake_mark_task_pending_review(**kwargs):
         calls["pending"] = kwargs
 
+    class FakeRepository:
+        def mark_produced(self, reservation_id, *, topic_id):
+            calls["topic_produced"] = {"reservation_id": reservation_id, "topic_id": topic_id}
+
+        def mark_failed(self, reservation_id, *, reason):
+            calls["topic_failed"] = {"reservation_id": reservation_id, "reason": reason}
+
+    class FakeTopicStrategyAgent:
+        def __init__(self):
+            self.repository = FakeRepository()
+
+        async def run(self, *, count, language, batch_id):
+            calls["topic_run"] = {"count": count, "language": language, "batch_id": batch_id}
+            return [{"reservation_id": "reservation-1", "title": "Distinct topic"}]
+
     async def fake_get_notification_chat_id(user_id):
         assert user_id == 111
         return 999
@@ -36,6 +51,7 @@ async def test_process_one_task_claims_fair_task_and_marks_pending_review(monkey
         return True
 
     monkeypatch.setattr(process_production_task.production_tasks, "claim_next_fair_task", fake_claim_next_fair_task)
+    monkeypatch.setattr(process_production_task, "TopicStrategyAgent", FakeTopicStrategyAgent)
     monkeypatch.setattr(process_production_task, "produce", fake_produce)
     monkeypatch.setattr(
         process_production_task.production_tasks,
@@ -54,12 +70,19 @@ async def test_process_one_task_claims_fair_task_and_marks_pending_review(monkey
     assert result["status"] == "pending_review"
     assert calls["produce"]["language"] == "en"
     assert calls["produce"]["card_layout"] == "flag_hero"
+    assert calls["produce"]["selected_topic"]["reservation_id"] == "reservation-1"
     assert calls["produce"]["target_duration"] == 90
+    assert calls["topic_run"]["count"] == 1
+    assert calls["topic_produced"] == {"reservation_id": "reservation-1", "topic_id": "topic-1"}
     assert calls["pending"]["task_id"] == "task-1"
     assert calls["pending"]["review_id"] == "review-1"
     assert calls["notification"]["chat_id"] == 999
     assert "ready for review" in calls["notification"]["text"].lower()
-    assert calls["notification"]["reply_markup"]["inline_keyboard"][1][0]["text"] == "Approve"
+    assert any(
+        button.get("text") == "Approve"
+        for row in calls["notification"]["reply_markup"]["inline_keyboard"]
+        for button in row
+    )
 
 
 @pytest.mark.asyncio
@@ -82,6 +105,17 @@ async def test_process_one_task_marks_failure(monkeypatch):
     async def fake_mark_task_failed(**kwargs):
         calls["failed"] = kwargs
 
+    class FakeRepository:
+        def mark_failed(self, reservation_id, *, reason):
+            calls["topic_failed"] = {"reservation_id": reservation_id, "reason": reason}
+
+    class FakeTopicStrategyAgent:
+        def __init__(self):
+            self.repository = FakeRepository()
+
+        async def run(self, *, count, language, batch_id):
+            return [{"reservation_id": "reservation-1", "title": "Distinct topic"}]
+
     async def fake_get_notification_chat_id(user_id):
         assert user_id == 111
         return 999
@@ -91,6 +125,7 @@ async def test_process_one_task_marks_failure(monkeypatch):
         return True
 
     monkeypatch.setattr(process_production_task.production_tasks, "claim_next_fair_task", fake_claim_next_fair_task)
+    monkeypatch.setattr(process_production_task, "TopicStrategyAgent", FakeTopicStrategyAgent)
     monkeypatch.setattr(process_production_task, "produce", fake_produce)
     monkeypatch.setattr(process_production_task.production_tasks, "mark_task_failed", fake_mark_task_failed)
     monkeypatch.setattr(
@@ -105,6 +140,7 @@ async def test_process_one_task_marks_failure(monkeypatch):
     assert result["status"] == "failed"
     assert calls["failed"]["task_id"] == "task-1"
     assert "render failed" in calls["failed"]["error"]
+    assert calls["topic_failed"]["reservation_id"] == "reservation-1"
     assert calls["notification"]["chat_id"] == 999
     assert "failed" in calls["notification"]["text"].lower()
 

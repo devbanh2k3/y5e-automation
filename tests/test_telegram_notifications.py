@@ -77,6 +77,23 @@ def test_build_review_keyboard_contains_video_and_review_actions(monkeypatch):
     assert keyboard["inline_keyboard"][2][0]["callback_data"] == "rv:rej:wrong_image:review-1"
 
 
+def test_build_review_keyboard_omits_invalid_localhost_url(monkeypatch):
+    from services import telegram_notifications
+
+    class FakeSettings:
+        public_base_url = "http://localhost:8000"
+
+    monkeypatch.setattr(telegram_notifications, "get_settings", lambda: FakeSettings())
+
+    keyboard = telegram_notifications.build_review_keyboard("review-1")
+
+    assert keyboard["inline_keyboard"][0][0] == {
+        "text": "Approve",
+        "callback_data": "rv:ok:review-1",
+    }
+    assert all("url" not in button for row in keyboard["inline_keyboard"] for button in row)
+
+
 @pytest.mark.asyncio
 async def test_answer_callback_query_posts_ack(monkeypatch):
     from services import telegram_notifications

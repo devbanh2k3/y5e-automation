@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import logging
 import sys
 from pathlib import Path
 from typing import Any
@@ -15,8 +16,11 @@ if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
 from core import production_tasks
+from agents.topic_strategy_agent import TopicStrategyAgent
 from services.telegram_notifications import build_review_keyboard, send_telegram_message
 from scripts.produce_celebrity_video import produce
+
+logger = logging.getLogger(__name__)
 
 
 def print_json(payload: Any) -> None:
@@ -32,12 +36,22 @@ async def process_one_task() -> dict[str, Any]:
     task_id = str(task["task_id"])
     batch_id = str(task["batch_id"])
     owner_telegram_user_id = int(task["owner_telegram_user_id"])
+    selected_topic: dict[str, Any] | None = None
+    topic_agent: TopicStrategyAgent | None = None
     try:
+        topic_agent = TopicStrategyAgent()
+        selected_topic = (
+            await topic_agent.run(
+                count=1,
+                language=str(task.get("language") or "en"),
+                batch_id=f"{batch_id}-{task_id}",
+            )
+        )[0]
         result = await produce(
             language=str(task.get("language") or "en"),
             card_layout=str(task.get("card_layout") or "flag_hero"),
             write_files=True,
-            selected_topic=None,
+            selected_topic=selected_topic,
             duration_profile="standard",
             target_duration=int(task.get("target_duration") or 60),
         )
@@ -47,6 +61,7 @@ async def process_one_task() -> dict[str, Any]:
             batch_id=batch_id,
             error=str(exc),
         )
+        _mark_reserved_topic_failed(topic_agent=topic_agent, selected_topic=selected_topic, reason=str(exc))
         await _notify_owner(
             owner_telegram_user_id=owner_telegram_user_id,
             text=(
@@ -63,6 +78,11 @@ async def process_one_task() -> dict[str, Any]:
             "error": str(exc),
         }
 
+    _mark_reserved_topic_produced(
+        topic_agent=topic_agent,
+        selected_topic=selected_topic,
+        topic_id=str(result.get("topic_id", "")),
+    )
     await production_tasks.mark_task_pending_review(
         task_id=task_id,
         batch_id=batch_id,
@@ -95,7 +115,8 @@ async def _notify_owner(*, owner_telegram_user_id: int, text: str) -> bool:
     chat_id = await production_tasks.get_notification_chat_id(owner_telegram_user_id)
     try:
         return await send_telegram_message(chat_id=chat_id, text=text)
-    except Exception:
+    except Exception as exc:
+        logger.warning("Telegram notification failed: %s", exc)
         return False
 
 
@@ -105,8 +126,43 @@ async def _notify_owner_with_keyboard(*, owner_telegram_user_id: int, review_id:
     keyboard = build_review_keyboard(review_id) if review_id else None
     try:
         return await send_telegram_message(chat_id=chat_id, text=text, reply_markup=keyboard)
-    except Exception:
+    except Exception as exc:
+        logger.warning("Telegram review notification failed: %s", exc)
         return False
+
+
+def _mark_reserved_topic_produced(
+    *,
+    topic_agent: TopicStrategyAgent | None,
+    selected_topic: dict[str, Any] | None,
+    topic_id: str,
+) -> None:
+    if not topic_agent or not selected_topic:
+        return
+    try:
+        topic_agent.repository.mark_produced(
+            str(selected_topic.get("reservation_id", "")),
+            topic_id=topic_id,
+        )
+    except Exception as exc:
+        logger.warning("Could not mark topic as produced: %s", exc)
+
+
+def _mark_reserved_topic_failed(
+    *,
+    topic_agent: TopicStrategyAgent | None,
+    selected_topic: dict[str, Any] | None,
+    reason: str,
+) -> None:
+    if not topic_agent or not selected_topic:
+        return
+    try:
+        topic_agent.repository.mark_failed(
+            str(selected_topic.get("reservation_id", "")),
+            reason=reason[:1000],
+        )
+    except Exception as exc:
+        logger.warning("Could not mark topic as failed: %s", exc)
 
 
 async def process_forever(*, idle_sleep: float) -> None:
