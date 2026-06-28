@@ -50,6 +50,13 @@ class Settings(BaseSettings):
 
     # ── YouTube Data API ──────────────────────────────────────
     youtube_api_key: str = ""
+    youtube_upload_enabled: bool = False
+    youtube_oauth_client_id: str = ""
+    youtube_oauth_client_secret: str = ""
+    youtube_oauth_callback_path: str = "/api/youtube/oauth/callback"
+    youtube_token_encryption_key: str = ""
+    youtube_upload_max_attempts: int = 5
+    youtube_upload_poll_seconds: float = 5.0
 
     # ── Storage ───────────────────────────────────────────────
     storage_path: str = "./output"
@@ -89,6 +96,16 @@ class Settings(BaseSettings):
         for field_name, value in required_values.items():
             if self._is_missing_or_placeholder(value):
                 errors[field_name] = "must be set to a real value"
+
+        if self.youtube_upload_enabled:
+            upload_values = {
+                "youtube_oauth_client_id": self.youtube_oauth_client_id,
+                "youtube_oauth_client_secret": self.youtube_oauth_client_secret,
+                "youtube_token_encryption_key": self.youtube_token_encryption_key,
+            }
+            for field_name, value in upload_values.items():
+                if self._is_missing_or_placeholder(value):
+                    errors[field_name] = "must be set to a real value"
 
         return ConfigValidationResult(ok=not errors, errors=errors)
 

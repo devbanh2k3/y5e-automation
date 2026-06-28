@@ -41,3 +41,21 @@ def test_production_accepts_required_real_values():
 
     assert result.ok is True
     assert result.errors == {}
+
+
+def test_upload_config_requires_oauth_and_encryption_when_enabled():
+    settings = Settings(
+        app_env="production",
+        primary_api_key="sk-real-production-key",
+        youtube_api_key="AIza-real-youtube-key",
+        youtube_upload_enabled=True,
+        youtube_oauth_client_id="",
+        youtube_oauth_client_secret="",
+        youtube_token_encryption_key="",
+    )
+
+    result = settings.validate_production_config()
+
+    assert result.errors["youtube_oauth_client_id"] == "must be set to a real value"
+    assert result.errors["youtube_oauth_client_secret"] == "must be set to a real value"
+    assert result.errors["youtube_token_encryption_key"] == "must be set to a real value"

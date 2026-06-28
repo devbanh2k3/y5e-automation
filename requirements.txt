@@ -12,6 +12,7 @@ pydantic>=2.10.0,<3.0
 pydantic-settings>=2.7.0,<3.0
 python-dotenv>=1.1.0,<2.0
 pycountry>=24.6.1,<25.0
+cryptography>=44.0.0,<46.0
 
 # --- Media Processing ---
 Pillow>=10.4.0,<12.0
