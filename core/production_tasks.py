@@ -61,12 +61,27 @@ async def create_production_batch(
     card_layout: str = DEFAULT_CARD_LAYOUT,
     category: str = DEFAULT_CATEGORY,
     target_duration: int = DEFAULT_TARGET_DURATION,
+    youtube_channel_id: str,
 ) -> dict[str, Any]:
     """Create a production batch and one queued task per requested video."""
     if requested_count < 1:
         raise ValueError("requested_count must be at least 1")
     if target_duration < 15:
         raise ValueError("target_duration must be at least 15 seconds")
+
+    channel = await fetchrow(
+        """
+        SELECT youtube_channel_id::text, title
+        FROM youtube_channels
+        WHERE youtube_channel_id = $1::uuid
+          AND owner_telegram_user_id = $2
+          AND status = 'active'
+        """,
+        youtube_channel_id,
+        owner_telegram_user_id,
+    )
+    if not channel:
+        raise PermissionError("YouTube channel is unavailable")
 
     batch_id = await fetchval(
         """
@@ -76,9 +91,10 @@ async def create_production_batch(
             language,
             card_layout,
             category,
-            target_duration
+            target_duration,
+            youtube_channel_id
         )
-        VALUES ($1, $2, $3, $4, $5, $6)
+        VALUES ($1, $2, $3, $4, $5, $6, $7::uuid)
         RETURNING batch_id::text
         """,
         owner_telegram_user_id,
@@ -87,6 +103,7 @@ async def create_production_batch(
         card_layout,
         category,
         target_duration,
+        youtube_channel_id,
     )
 
     await execute(
@@ -122,6 +139,8 @@ async def create_production_batch(
         "card_layout": card_layout,
         "category": category,
         "target_duration": target_duration,
+        "youtube_channel_id": youtube_channel_id,
+        "youtube_channel_title": channel["title"],
         "status": "queued",
     }
 
@@ -170,9 +189,11 @@ async def claim_next_fair_task() -> dict[str, Any] | None:
 
     batch = await fetchrow(
         """
-        SELECT category, language, card_layout, target_duration
-        FROM production_batches
-        WHERE batch_id = $1::uuid
+        SELECT b.category, b.language, b.card_layout, b.target_duration,
+               b.youtube_channel_id::text, c.title AS youtube_channel_title
+        FROM production_batches b
+        LEFT JOIN youtube_channels c ON c.youtube_channel_id = b.youtube_channel_id
+        WHERE b.batch_id = $1::uuid
         """,
         str(task["batch_id"]),
     )

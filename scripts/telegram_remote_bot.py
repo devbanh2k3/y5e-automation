@@ -17,12 +17,19 @@ from core import production_tasks
 from core.config import get_settings
 from services.telegram_notifications import TELEGRAM_API, answer_callback_query, send_telegram_message
 from services.telegram_remote import handle_telegram_command
+from services.telegram_channels import TelegramResponse, handle_channel_callback
 from services.telegram_review_actions import handle_review_callback
 
 
-async def send_message(*, chat_id: int, text: str) -> bool:
+async def send_message(
+    *, chat_id: int, text: str, reply_markup: dict[str, Any] | None = None
+) -> bool:
     """Send one Telegram message to the chat that issued a command."""
-    return await send_telegram_message(chat_id=chat_id, text=text)
+    return await send_telegram_message(
+        chat_id=chat_id,
+        text=text,
+        reply_markup=reply_markup,
+    )
 
 
 async def handle_update(update: dict[str, Any]) -> bool:
@@ -54,7 +61,14 @@ async def handle_update(update: dict[str, Any]) -> bool:
         username=username,
         text=text,
     )
-    await send_message(chat_id=chat_id, text=response)
+    if isinstance(response, TelegramResponse):
+        await send_message(
+            chat_id=chat_id,
+            text=response.text,
+            reply_markup=response.reply_markup,
+        )
+    else:
+        await send_message(chat_id=chat_id, text=response)
     return True
 
 
@@ -70,9 +84,24 @@ async def handle_callback_query(callback_query: dict[str, Any]) -> bool:
     if not chat_id or not telegram_user_id or not data:
         return False
 
-    response = await handle_review_callback(telegram_user_id=telegram_user_id, data=data)
-    await answer_callback_query(callback_query_id=callback_query_id, text=response[:180])
-    await send_message(chat_id=chat_id, text=response)
+    if data.startswith("yt:"):
+        channel_response = await handle_channel_callback(
+            telegram_user_id=telegram_user_id,
+            data=data,
+        )
+        response_text = channel_response.text
+        reply_markup = channel_response.reply_markup
+    else:
+        response_text = await handle_review_callback(
+            telegram_user_id=telegram_user_id,
+            data=data,
+        )
+        reply_markup = None
+    await answer_callback_query(callback_query_id=callback_query_id, text=response_text[:180])
+    if reply_markup:
+        await send_message(chat_id=chat_id, text=response_text, reply_markup=reply_markup)
+    else:
+        await send_message(chat_id=chat_id, text=response_text)
     return True
 
 

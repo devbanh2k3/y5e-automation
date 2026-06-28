@@ -181,6 +181,27 @@ async def get_selected_channel(owner_telegram_user_id: int) -> dict[str, Any] | 
     )
 
 
+async def consume_selected_channel(owner_telegram_user_id: int) -> dict[str, Any] | None:
+    """Atomically consume the channel selected for the user's next batch."""
+    return await fetchrow(
+        """
+        WITH selected AS (
+            UPDATE telegram_users
+            SET selected_youtube_channel_id = NULL, updated_at = NOW()
+            WHERE telegram_user_id = $1
+              AND is_active = TRUE
+              AND selected_youtube_channel_id IS NOT NULL
+            RETURNING selected_youtube_channel_id
+        )
+        SELECT c.youtube_channel_id::text, c.external_channel_id, c.title, c.status
+        FROM selected s
+        JOIN youtube_channels c ON c.youtube_channel_id = s.selected_youtube_channel_id
+        WHERE c.owner_telegram_user_id = $1 AND c.status = 'active'
+        """,
+        owner_telegram_user_id,
+    )
+
+
 async def mark_auth_required(*, owner_telegram_user_id: int, channel_id: str) -> None:
     """Disable uploads for an owned channel until OAuth is renewed."""
     result = await execute(

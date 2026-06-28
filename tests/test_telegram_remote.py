@@ -1,3 +1,5 @@
+from unittest.mock import AsyncMock
+
 import pytest
 
 
@@ -39,8 +41,12 @@ async def test_create_command_creates_batch_without_quota(monkeypatch):
             "target_duration": kwargs["target_duration"],
         }
 
+    async def fake_get_selected_channel(user_id):
+        return {"youtube_channel_id": "channel-1", "title": "Alice Channel"}
+
     monkeypatch.setattr(telegram_remote.production_tasks, "get_authorized_user", fake_get_authorized_user)
     monkeypatch.setattr(telegram_remote.production_tasks, "create_production_batch", fake_create_production_batch)
+    monkeypatch.setattr(telegram_remote.youtube_channels, "consume_selected_channel", fake_get_selected_channel)
 
     response = await telegram_remote.handle_telegram_command(
         telegram_user_id=111,
@@ -55,6 +61,7 @@ async def test_create_command_creates_batch_without_quota(monkeypatch):
         "language": "en",
         "card_layout": "flag_hero",
         "target_duration": 60,
+        "youtube_channel_id": "channel-1",
     }
     assert "batch-1" in response
     assert "10 tasks queued" in response
@@ -82,8 +89,12 @@ async def test_create_command_accepts_duration_option(monkeypatch):
             "target_duration": kwargs["target_duration"],
         }
 
+    async def fake_get_selected_channel(user_id):
+        return {"youtube_channel_id": "channel-1", "title": "Alice Channel"}
+
     monkeypatch.setattr(telegram_remote.production_tasks, "get_authorized_user", fake_get_authorized_user)
     monkeypatch.setattr(telegram_remote.production_tasks, "create_production_batch", fake_create_production_batch)
+    monkeypatch.setattr(telegram_remote.youtube_channels, "consume_selected_channel", fake_get_selected_channel)
 
     response = await telegram_remote.handle_telegram_command(
         telegram_user_id=111,
@@ -115,6 +126,34 @@ async def test_create_command_rejects_invalid_duration(monkeypatch):
     )
 
     assert "between 15 and 180 seconds" in response.lower()
+
+
+@pytest.mark.asyncio
+async def test_create_requires_explicit_owned_channel(monkeypatch):
+    from services import telegram_remote
+
+    monkeypatch.setattr(
+        telegram_remote.production_tasks,
+        "get_authorized_user",
+        AsyncMock(return_value={"telegram_user_id": 111, "is_active": True}),
+    )
+    monkeypatch.setattr(
+        telegram_remote.youtube_channels,
+        "consume_selected_channel",
+        AsyncMock(return_value=None),
+    )
+    monkeypatch.setattr(
+        telegram_remote.youtube_channels,
+        "list_owned_channels",
+        AsyncMock(return_value=[]),
+    )
+
+    response = await telegram_remote.handle_telegram_command(
+        telegram_user_id=111,
+        text="/create 1",
+    )
+
+    assert "select a youtube channel" in response.text.lower()
 
 
 @pytest.mark.asyncio

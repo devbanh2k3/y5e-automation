@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from core import production_tasks
+from core import production_tasks, youtube_channels
+from services.telegram_channels import TelegramResponse, channel_list_response
 
 MAX_CREATE_COUNT = 20
 DEFAULT_CREATE_COUNT = 10
@@ -20,7 +21,7 @@ async def handle_telegram_command(
     telegram_user_id: int,
     username: str = "",
     text: str,
-) -> str:
+) -> str | TelegramResponse:
     """Handle one Telegram text command and return a response message."""
     user = await production_tasks.get_authorized_user(telegram_user_id)
     if not user:
@@ -38,6 +39,8 @@ async def handle_telegram_command(
         return _help_message(user)
     if command == "/create":
         return await _handle_create(telegram_user_id=telegram_user_id, args=parts[1:])
+    if command == "/channels":
+        return await channel_list_response(telegram_user_id)
     if command in {"/status", "/batches"}:
         return await _handle_status(telegram_user_id=telegram_user_id)
 
@@ -53,11 +56,12 @@ def _help_message(user: dict) -> str:
         "/create <count> [category] [language] [layout] [--duration seconds]\n"
         "/status\n"
         "/batches\n"
+        "/channels\n"
         "No daily quota is enforced. Max per command is 20."
     )
 
 
-async def _handle_create(*, telegram_user_id: int, args: list[str]) -> str:
+async def _handle_create(*, telegram_user_id: int, args: list[str]) -> str | TelegramResponse:
     duration_result = _parse_duration(args)
     if isinstance(duration_result, str):
         return duration_result
@@ -73,6 +77,13 @@ async def _handle_create(*, telegram_user_id: int, args: list[str]) -> str:
     if category not in SUPPORTED_CATEGORIES:
         return "Only category 'celebrity' is supported in v1."
 
+    selected_channel = await youtube_channels.consume_selected_channel(telegram_user_id)
+    if not selected_channel:
+        return await channel_list_response(
+            telegram_user_id,
+            prompt="Select a YouTube channel, then send /create again.",
+        )
+
     batch = await production_tasks.create_production_batch(
         owner_telegram_user_id=telegram_user_id,
         requested_count=count,
@@ -80,11 +91,13 @@ async def _handle_create(*, telegram_user_id: int, args: list[str]) -> str:
         language=language,
         card_layout=card_layout,
         target_duration=target_duration,
+        youtube_channel_id=str(selected_channel["youtube_channel_id"]),
     )
     return (
         f"Batch created: {batch['batch_id']}\n"
         f"{batch['requested_count']} tasks queued.\n"
         f"Target duration: {batch['target_duration']}s.\n"
+        f"YouTube channel: {selected_channel['title']}.\n"
         "Fair queue enabled. Your videos will be interleaved with other users."
     )
 

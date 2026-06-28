@@ -15,8 +15,12 @@ async def test_create_batch_creates_one_task_per_requested_video(monkeypatch):
         calls["execute"].append((query, args))
         return "INSERT 0 1"
 
+    async def fake_fetchrow(query, *args):
+        return {"youtube_channel_id": "channel-1", "title": "Alice Channel"}
+
     monkeypatch.setattr(production_tasks, "fetchval", fake_fetchval)
     monkeypatch.setattr(production_tasks, "execute", fake_execute)
+    monkeypatch.setattr(production_tasks, "fetchrow", fake_fetchrow)
 
     batch = await production_tasks.create_production_batch(
         owner_telegram_user_id=111,
@@ -25,16 +29,35 @@ async def test_create_batch_creates_one_task_per_requested_video(monkeypatch):
         card_layout="flag_hero",
         category="celebrity",
         target_duration=90,
+        youtube_channel_id="channel-1",
     )
 
     assert batch["batch_id"] == "batch-1"
     assert batch["requested_count"] == 3
     assert batch["target_duration"] == 90
+    assert batch["youtube_channel_id"] == "channel-1"
     assert calls["fetchval"] == 1
     task_inserts = [call for call in calls["execute"] if "production_tasks" in call[0]]
     assert len(task_inserts) == 3
     assert all(call[1][0] == "batch-1" for call in task_inserts)
     assert all(call[1][1] == 111 for call in task_inserts)
+
+
+@pytest.mark.asyncio
+async def test_create_batch_rejects_channel_owned_by_another_user(monkeypatch):
+    from core import production_tasks
+
+    async def fake_fetchrow(query, *args):
+        return None
+
+    monkeypatch.setattr(production_tasks, "fetchrow", fake_fetchrow)
+
+    with pytest.raises(PermissionError):
+        await production_tasks.create_production_batch(
+            owner_telegram_user_id=111,
+            youtube_channel_id="channel-of-user-222",
+            requested_count=1,
+        )
 
 
 @pytest.mark.asyncio
