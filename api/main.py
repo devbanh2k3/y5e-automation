@@ -38,12 +38,14 @@ from core.reviews import (
 from core.cost_tracker import get_usage_summary
 from core.storage import get_storage_usage
 from core.youtube_channels import OAuthStateError
+from core import production_tasks
 from scripts.regenerate_scene import regenerate_wrong_image_scene
 from services.youtube_oauth import (
     YouTubeOAuthError,
     complete_oauth as complete_youtube_oauth,
     start_oauth as start_youtube_oauth,
 )
+from services.telegram_notifications import send_telegram_message
 
 logger = logging.getLogger(__name__)
 
@@ -219,6 +221,15 @@ async def youtube_oauth_callback(code: str, state: str) -> HTMLResponse:
     except YouTubeOAuthError as exc:
         return HTMLResponse(escape(str(exc)), status_code=400)
     title = escape(str(channel.get("title") or "YouTube channel"))
+    try:
+        owner_id = int(channel["owner_telegram_user_id"])
+        chat_id = await production_tasks.get_notification_chat_id(owner_id)
+        await send_telegram_message(
+            chat_id=chat_id,
+            text=f"YouTube channel connected: {channel.get('title', 'YouTube')}",
+        )
+    except Exception:
+        logger.warning("YouTube channel connected but Telegram notification failed")
     return HTMLResponse(f"<h1>Channel connected</h1><p>{title}</p>")
 
 

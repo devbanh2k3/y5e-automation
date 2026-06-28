@@ -57,3 +57,22 @@ async def test_add_callback_returns_oauth_button(monkeypatch) -> None:
 
     button = response.reply_markup["inline_keyboard"][0][0]
     assert button["url"].endswith("/api/youtube/oauth/start?ticket=ticket-1")
+
+
+@pytest.mark.asyncio
+async def test_disconnect_callback_cannot_disconnect_another_users_channel(monkeypatch) -> None:
+    from core.youtube_channels import ChannelAccessError
+    from services import telegram_channels
+
+    monkeypatch.setattr(
+        telegram_channels.youtube_channels,
+        "get_owned_channel",
+        AsyncMock(side_effect=ChannelAccessError("unavailable")),
+    )
+
+    response = await telegram_channels.handle_channel_callback(
+        telegram_user_id=111,
+        data="yt:disconnect:channel-user-222",
+    )
+
+    assert "unavailable" in response.text.lower()

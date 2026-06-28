@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from core import production_tasks, youtube_channels
+from core import production_tasks, youtube_channels, youtube_upload_jobs
 from services.telegram_channels import TelegramResponse, channel_list_response
 
 MAX_CREATE_COUNT = 20
@@ -41,6 +41,8 @@ async def handle_telegram_command(
         return await _handle_create(telegram_user_id=telegram_user_id, args=parts[1:])
     if command == "/channels":
         return await channel_list_response(telegram_user_id)
+    if command == "/uploads":
+        return await _handle_uploads(telegram_user_id=telegram_user_id)
     if command in {"/status", "/batches"}:
         return await _handle_status(telegram_user_id=telegram_user_id)
 
@@ -57,6 +59,7 @@ def _help_message(user: dict) -> str:
         "/status\n"
         "/batches\n"
         "/channels\n"
+        "/uploads\n"
         "No daily quota is enforced. Max per command is 20."
     )
 
@@ -127,6 +130,21 @@ async def _handle_status(*, telegram_user_id: int) -> str:
                 f"status={batch.get('status', '')}"
             )
         )
+    return "\n".join(lines)
+
+
+async def _handle_uploads(*, telegram_user_id: int) -> str:
+    jobs = await youtube_upload_jobs.list_owner_jobs(telegram_user_id, limit=10)
+    if not jobs:
+        return "No YouTube upload jobs yet."
+    lines = ["Your YouTube uploads:"]
+    for job in jobs:
+        status = str(job.get("status") or "unknown").replace("_", " ").title()
+        channel = str(job.get("channel_title") or "YouTube")
+        url = str(job.get("youtube_url") or "")
+        error_code = str(job.get("error_code") or "")
+        suffix = f" - {url}" if url else (f" - {error_code}" if error_code else "")
+        lines.append(f"{status} | {channel}{suffix}")
     return "\n".join(lines)
 
 

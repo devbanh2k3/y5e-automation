@@ -9,10 +9,12 @@ import httpx
 
 from core import youtube_channels
 from core.config import get_settings
+from core.token_crypto import decrypt_secret
 
 GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
 YOUTUBE_CHANNELS_URL = "https://www.googleapis.com/youtube/v3/channels"
+GOOGLE_REVOKE_URL = "https://oauth2.googleapis.com/revoke"
 YOUTUBE_SCOPES = (
     "https://www.googleapis.com/auth/youtube.upload",
     "https://www.googleapis.com/auth/youtube.readonly",
@@ -118,3 +120,19 @@ async def complete_oauth(*, code: str, state: str) -> dict[str, Any]:
         scopes=scopes,
     )
     return {"owner_telegram_user_id": owner_id, **channel}
+
+
+async def revoke_refresh_token(encrypted_refresh_token: str) -> bool:
+    """Best-effort Google token revocation for an explicit disconnect."""
+    if not encrypted_refresh_token:
+        return True
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            response = await client.post(
+                GOOGLE_REVOKE_URL,
+                data={"token": decrypt_secret(encrypted_refresh_token)},
+                headers={"Content-Type": "application/x-www-form-urlencoded"},
+            )
+        return response.status_code in {200, 400}
+    except (httpx.HTTPError, ValueError):
+        return False

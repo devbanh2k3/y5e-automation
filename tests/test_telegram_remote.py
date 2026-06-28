@@ -233,3 +233,36 @@ async def test_status_returns_user_queue_summary(monkeypatch):
     assert "approved: 2" in response.lower()
     assert "rejected: 1" in response.lower()
     assert "batch-1" in response
+
+
+@pytest.mark.asyncio
+async def test_upload_status_lists_only_owner_jobs(monkeypatch):
+    from services import telegram_remote
+
+    monkeypatch.setattr(
+        telegram_remote.production_tasks,
+        "get_authorized_user",
+        AsyncMock(return_value={"telegram_user_id": 111, "is_active": True}),
+    )
+    monkeypatch.setattr(
+        telegram_remote.youtube_upload_jobs,
+        "list_owner_jobs",
+        AsyncMock(
+            return_value=[
+                {
+                    "status": "published",
+                    "channel_title": "Alice Channel",
+                    "youtube_url": "https://youtube.com/watch?v=yt-1",
+                    "error_code": "",
+                }
+            ]
+        ),
+    )
+
+    response = await telegram_remote.handle_telegram_command(
+        telegram_user_id=111,
+        text="/uploads",
+    )
+
+    assert "Published" in response
+    assert "Alice Channel" in response

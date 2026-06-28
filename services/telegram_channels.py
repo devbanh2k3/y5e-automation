@@ -8,6 +8,7 @@ from urllib.parse import quote
 
 from core import youtube_channels
 from core.config import get_settings
+from services.youtube_oauth import revoke_refresh_token
 
 
 @dataclass(frozen=True)
@@ -25,7 +26,11 @@ def build_channel_keyboard(channels: list[dict[str, Any]]) -> dict[str, Any]:
             {
                 "text": str(channel["title"]),
                 "callback_data": f"yt:select:{channel['youtube_channel_id']}",
-            }
+            },
+            {
+                "text": "Disconnect",
+                "callback_data": f"yt:disconnect:{channel['youtube_channel_id']}",
+            },
         ]
         for channel in channels
         if channel.get("status") == "active"
@@ -67,4 +72,41 @@ async def handle_channel_callback(*, telegram_user_id: int, data: str) -> Telegr
         except youtube_channels.ChannelAccessError:
             return TelegramResponse("YouTube channel is unavailable.")
         return TelegramResponse(f"Selected channel: {channel['title']}")
+    if data.startswith("yt:disconnect_confirm:"):
+        channel_id = data.removeprefix("yt:disconnect_confirm:")
+        try:
+            channel = await youtube_channels.get_owned_channel(
+                channel_id,
+                owner_telegram_user_id=telegram_user_id,
+            )
+            await revoke_refresh_token(str(channel.get("encrypted_refresh_token") or ""))
+            await youtube_channels.disconnect_owned_channel(
+                owner_telegram_user_id=telegram_user_id,
+                channel_id=channel_id,
+            )
+        except youtube_channels.ChannelAccessError:
+            return TelegramResponse("YouTube channel is unavailable.")
+        return TelegramResponse(f"Disconnected channel: {channel['title']}")
+    if data.startswith("yt:disconnect:"):
+        channel_id = data.removeprefix("yt:disconnect:")
+        try:
+            channel = await youtube_channels.get_owned_channel(
+                channel_id,
+                owner_telegram_user_id=telegram_user_id,
+            )
+        except youtube_channels.ChannelAccessError:
+            return TelegramResponse("YouTube channel is unavailable.")
+        return TelegramResponse(
+            f"Disconnect {channel['title']}?",
+            {
+                "inline_keyboard": [
+                    [
+                        {
+                            "text": "Confirm disconnect",
+                            "callback_data": f"yt:disconnect_confirm:{channel_id}",
+                        }
+                    ]
+                ]
+            },
+        )
     return TelegramResponse("Unsupported YouTube channel action.")
