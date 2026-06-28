@@ -62,7 +62,9 @@ async def process_one_task() -> dict[str, Any]:
                     target_duration=int(task.get("target_duration") or 60),
                 )
                 break
-            except FactVerificationError as exc:
+            except Exception as exc:
+                if not _should_replace_topic(exc):
+                    raise
                 last_error = exc
                 _mark_reserved_topic_failed(
                     topic_agent=topic_agent,
@@ -188,6 +190,18 @@ def _mark_reserved_topic_failed(
         )
     except Exception as exc:
         logger.warning("Could not mark topic as failed: %s", exc)
+
+
+def _should_replace_topic(exc: Exception) -> bool:
+    """Return true for topic-specific data failures that a new topic can solve."""
+    if isinstance(exc, FactVerificationError):
+        return True
+    message = str(exc).lower()
+    return (
+        "missing verified real images" in message
+        or "image verification status must be verified" in message
+        or "verified_count and required_count must match card count" in message
+    )
 
 
 async def process_forever(*, idle_sleep: float) -> None:
