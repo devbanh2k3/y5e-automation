@@ -9,6 +9,7 @@ from core.database import execute, fetch, fetchrow, fetchval
 DEFAULT_CATEGORY = "celebrity"
 DEFAULT_LANGUAGE = "en"
 DEFAULT_CARD_LAYOUT = "flag_hero"
+DEFAULT_TARGET_DURATION = 60
 
 
 async def get_authorized_user(telegram_user_id: int) -> dict[str, Any] | None:
@@ -59,10 +60,13 @@ async def create_production_batch(
     language: str = DEFAULT_LANGUAGE,
     card_layout: str = DEFAULT_CARD_LAYOUT,
     category: str = DEFAULT_CATEGORY,
+    target_duration: int = DEFAULT_TARGET_DURATION,
 ) -> dict[str, Any]:
     """Create a production batch and one queued task per requested video."""
     if requested_count < 1:
         raise ValueError("requested_count must be at least 1")
+    if target_duration < 15:
+        raise ValueError("target_duration must be at least 15 seconds")
 
     batch_id = await fetchval(
         """
@@ -71,9 +75,10 @@ async def create_production_batch(
             requested_count,
             language,
             card_layout,
-            category
+            category,
+            target_duration
         )
-        VALUES ($1, $2, $3, $4, $5)
+        VALUES ($1, $2, $3, $4, $5, $6)
         RETURNING batch_id::text
         """,
         owner_telegram_user_id,
@@ -81,6 +86,7 @@ async def create_production_batch(
         language,
         card_layout,
         category,
+        target_duration,
     )
 
     await execute(
@@ -115,6 +121,7 @@ async def create_production_batch(
         "language": language,
         "card_layout": card_layout,
         "category": category,
+        "target_duration": target_duration,
         "status": "queued",
     }
 
@@ -163,7 +170,7 @@ async def claim_next_fair_task() -> dict[str, Any] | None:
 
     batch = await fetchrow(
         """
-        SELECT category, language, card_layout
+        SELECT category, language, card_layout, target_duration
         FROM production_batches
         WHERE batch_id = $1::uuid
         """,
@@ -198,6 +205,7 @@ async def list_user_batches(telegram_user_id: int, *, limit: int = 10) -> list[d
             language,
             card_layout,
             category,
+            target_duration,
             created_at
         FROM production_batches
         WHERE owner_telegram_user_id = $1

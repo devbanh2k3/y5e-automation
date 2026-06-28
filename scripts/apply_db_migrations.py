@@ -20,10 +20,12 @@ MIGRATIONS_DIR = ROOT_DIR / "db" / "migrations"
 
 
 def migration_sort_key(path: Path) -> tuple[int, str]:
-    """Keep additive chat routing after the base Telegram production migration."""
+    """Keep additive Telegram migrations after the base production migration."""
+    if "telegram-remote-production" in path.name:
+        return (0, path.name)
     if "chat-routing" in path.name:
-        return (1, path.name)
-    return (0, path.name)
+        return (2, path.name)
+    return (1, path.name)
 
 
 def migration_files() -> list[Path]:

@@ -39,7 +39,7 @@ async def process_one_task() -> dict[str, Any]:
             write_files=True,
             selected_topic=None,
             duration_profile="standard",
-            target_duration=60,
+            target_duration=int(task.get("target_duration") or 60),
         )
     except Exception as exc:  # noqa: BLE001 - worker must preserve task failure.
         await production_tasks.mark_task_failed(

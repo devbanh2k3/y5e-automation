@@ -13,6 +13,7 @@ async def test_process_one_task_claims_fair_task_and_marks_pending_review(monkey
             "batch_id": "batch-1",
             "owner_telegram_user_id": 111,
             "slot_index": 1,
+            "target_duration": 90,
         }
 
     async def fake_produce(**kwargs):
@@ -53,6 +54,7 @@ async def test_process_one_task_claims_fair_task_and_marks_pending_review(monkey
     assert result["status"] == "pending_review"
     assert calls["produce"]["language"] == "en"
     assert calls["produce"]["card_layout"] == "flag_hero"
+    assert calls["produce"]["target_duration"] == 90
     assert calls["pending"]["task_id"] == "task-1"
     assert calls["pending"]["review_id"] == "review-1"
     assert calls["notification"]["chat_id"] == 999

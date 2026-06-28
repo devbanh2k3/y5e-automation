@@ -36,6 +36,7 @@ async def test_create_command_creates_batch_without_quota(monkeypatch):
             "language": kwargs["language"],
             "card_layout": kwargs["card_layout"],
             "category": kwargs["category"],
+            "target_duration": kwargs["target_duration"],
         }
 
     monkeypatch.setattr(telegram_remote.production_tasks, "get_authorized_user", fake_get_authorized_user)
@@ -53,10 +54,67 @@ async def test_create_command_creates_batch_without_quota(monkeypatch):
         "category": "celebrity",
         "language": "en",
         "card_layout": "flag_hero",
+        "target_duration": 60,
     }
     assert "batch-1" in response
     assert "10 tasks queued" in response
+    assert "target duration: 60s" in response.lower()
     assert "fair queue" in response.lower()
+
+
+@pytest.mark.asyncio
+async def test_create_command_accepts_duration_option(monkeypatch):
+    from services import telegram_remote
+
+    captured = {}
+
+    async def fake_get_authorized_user(user_id):
+        return {"telegram_user_id": user_id, "username": "alice", "role": "producer", "is_active": True}
+
+    async def fake_create_production_batch(**kwargs):
+        captured.update(kwargs)
+        return {
+            "batch_id": "batch-1",
+            "requested_count": kwargs["requested_count"],
+            "language": kwargs["language"],
+            "card_layout": kwargs["card_layout"],
+            "category": kwargs["category"],
+            "target_duration": kwargs["target_duration"],
+        }
+
+    monkeypatch.setattr(telegram_remote.production_tasks, "get_authorized_user", fake_get_authorized_user)
+    monkeypatch.setattr(telegram_remote.production_tasks, "create_production_batch", fake_create_production_batch)
+
+    response = await telegram_remote.handle_telegram_command(
+        telegram_user_id=111,
+        username="alice",
+        text="/create 2 celebrity en flag_hero --duration 90",
+    )
+
+    assert captured["target_duration"] == 90
+    assert "target duration: 90s" in response.lower()
+
+
+@pytest.mark.asyncio
+async def test_create_command_rejects_invalid_duration(monkeypatch):
+    from services import telegram_remote
+
+    async def fake_get_authorized_user(user_id):
+        return {"telegram_user_id": user_id, "username": "alice", "role": "producer", "is_active": True}
+
+    async def fake_create_production_batch(**kwargs):
+        raise AssertionError("invalid duration must not create batches")
+
+    monkeypatch.setattr(telegram_remote.production_tasks, "get_authorized_user", fake_get_authorized_user)
+    monkeypatch.setattr(telegram_remote.production_tasks, "create_production_batch", fake_create_production_batch)
+
+    response = await telegram_remote.handle_telegram_command(
+        telegram_user_id=111,
+        username="alice",
+        text="/create 2 celebrity en flag_hero --duration 300",
+    )
+
+    assert "between 15 and 180 seconds" in response.lower()
 
 
 @pytest.mark.asyncio

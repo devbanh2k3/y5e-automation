@@ -9,6 +9,9 @@ DEFAULT_CREATE_COUNT = 10
 DEFAULT_CATEGORY = "celebrity"
 DEFAULT_LANGUAGE = "en"
 DEFAULT_CARD_LAYOUT = "flag_hero"
+DEFAULT_TARGET_DURATION = 60
+MIN_TARGET_DURATION = 15
+MAX_TARGET_DURATION = 180
 SUPPORTED_CATEGORIES = {"celebrity"}
 
 
@@ -47,7 +50,7 @@ def _help_message(user: dict) -> str:
         "Y5E Production Bot\n"
         f"Role: {role}\n"
         "Commands:\n"
-        "/create <count> [category] [language] [layout]\n"
+        "/create <count> [category] [language] [layout] [--duration seconds]\n"
         "/status\n"
         "/batches\n"
         "No daily quota is enforced. Max per command is 20."
@@ -55,13 +58,18 @@ def _help_message(user: dict) -> str:
 
 
 async def _handle_create(*, telegram_user_id: int, args: list[str]) -> str:
-    count = _parse_count(args[0] if args else "")
+    duration_result = _parse_duration(args)
+    if isinstance(duration_result, str):
+        return duration_result
+    positional_args, target_duration = duration_result
+
+    count = _parse_count(positional_args[0] if positional_args else "")
     if count > MAX_CREATE_COUNT:
         return f"Max per command is {MAX_CREATE_COUNT}. Send multiple /create commands for larger runs."
 
-    category = args[1].strip().lower() if len(args) >= 2 else DEFAULT_CATEGORY
-    language = args[2].strip().lower() if len(args) >= 3 else DEFAULT_LANGUAGE
-    card_layout = args[3].strip() if len(args) >= 4 else DEFAULT_CARD_LAYOUT
+    category = positional_args[1].strip().lower() if len(positional_args) >= 2 else DEFAULT_CATEGORY
+    language = positional_args[2].strip().lower() if len(positional_args) >= 3 else DEFAULT_LANGUAGE
+    card_layout = positional_args[3].strip() if len(positional_args) >= 4 else DEFAULT_CARD_LAYOUT
     if category not in SUPPORTED_CATEGORIES:
         return "Only category 'celebrity' is supported in v1."
 
@@ -71,10 +79,12 @@ async def _handle_create(*, telegram_user_id: int, args: list[str]) -> str:
         category=category,
         language=language,
         card_layout=card_layout,
+        target_duration=target_duration,
     )
     return (
         f"Batch created: {batch['batch_id']}\n"
         f"{batch['requested_count']} tasks queued.\n"
+        f"Target duration: {batch['target_duration']}s.\n"
         "Fair queue enabled. Your videos will be interleaved with other users."
     )
 
@@ -113,3 +123,40 @@ def _parse_count(value: str) -> int:
     except ValueError:
         return DEFAULT_CREATE_COUNT
     return max(1, count)
+
+
+def _parse_duration(args: list[str]) -> tuple[list[str], int] | str:
+    positional_args: list[str] = []
+    target_duration = DEFAULT_TARGET_DURATION
+    index = 0
+    while index < len(args):
+        token = args[index].strip()
+        if token == "--duration":
+            if index + 1 >= len(args):
+                return "Usage: /create <count> [category] [language] [layout] --duration <seconds>"
+            parsed = _parse_duration_value(args[index + 1])
+            if isinstance(parsed, str):
+                return parsed
+            target_duration = parsed
+            index += 2
+            continue
+        if token.startswith("--duration="):
+            parsed = _parse_duration_value(token.split("=", 1)[1])
+            if isinstance(parsed, str):
+                return parsed
+            target_duration = parsed
+            index += 1
+            continue
+        positional_args.append(token)
+        index += 1
+    return positional_args, target_duration
+
+
+def _parse_duration_value(value: str) -> int | str:
+    try:
+        duration = int(value)
+    except ValueError:
+        return "Duration must be a whole number of seconds."
+    if duration < MIN_TARGET_DURATION or duration > MAX_TARGET_DURATION:
+        return f"Duration must be between {MIN_TARGET_DURATION} and {MAX_TARGET_DURATION} seconds."
+    return duration

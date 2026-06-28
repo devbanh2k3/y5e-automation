@@ -6,6 +6,7 @@ def test_migration_files_keep_chat_routing_after_telegram_base() -> None:
 
     paths = [
         Path("2026-06-28-telegram-chat-routing.sql"),
+        Path("2026-06-28-production-target-duration.sql"),
         Path("2026-06-28-telegram-remote-production.sql"),
     ]
 
@@ -13,6 +14,7 @@ def test_migration_files_keep_chat_routing_after_telegram_base() -> None:
 
     assert [path.name for path in ordered] == [
         "2026-06-28-telegram-remote-production.sql",
+        "2026-06-28-production-target-duration.sql",
         "2026-06-28-telegram-chat-routing.sql",
     ]
 

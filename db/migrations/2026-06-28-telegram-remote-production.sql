@@ -20,6 +20,7 @@ CREATE TABLE IF NOT EXISTS production_batches (
     category                 TEXT NOT NULL DEFAULT 'celebrity',
     language                 TEXT NOT NULL DEFAULT 'en',
     card_layout              TEXT NOT NULL DEFAULT 'flag_hero',
+    target_duration          INTEGER NOT NULL DEFAULT 60,
     requested_count          INTEGER NOT NULL,
     completed_count          INTEGER NOT NULL DEFAULT 0,
     failed_count             INTEGER NOT NULL DEFAULT 0,

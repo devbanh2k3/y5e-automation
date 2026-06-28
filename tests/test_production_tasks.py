@@ -24,10 +24,13 @@ async def test_create_batch_creates_one_task_per_requested_video(monkeypatch):
         language="en",
         card_layout="flag_hero",
         category="celebrity",
+        target_duration=90,
     )
 
     assert batch["batch_id"] == "batch-1"
     assert batch["requested_count"] == 3
+    assert batch["target_duration"] == 90
+    assert calls["fetchval"] == 1
     task_inserts = [call for call in calls["execute"] if "production_tasks" in call[0]]
     assert len(task_inserts) == 3
     assert all(call[1][0] == "batch-1" for call in task_inserts)
@@ -59,7 +62,12 @@ async def test_claim_next_fair_task_uses_least_recently_served_user(monkeypatch)
         fetchrow_calls.append(args)
         if "FROM production_batches" in query:
             assert args[0] == "batch-b"
-            return {"category": "celebrity", "language": "en", "card_layout": "flag_hero"}
+            return {
+                "category": "celebrity",
+                "language": "en",
+                "card_layout": "flag_hero",
+                "target_duration": 90,
+            }
         assert args[0] == 222
         return {
             "task_id": "task-b1",
@@ -80,6 +88,7 @@ async def test_claim_next_fair_task_uses_least_recently_served_user(monkeypatch)
     assert task["task_id"] == "task-b1"
     assert task["owner_telegram_user_id"] == 222
     assert task["language"] == "en"
+    assert task["target_duration"] == 90
 
 
 @pytest.mark.asyncio

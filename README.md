@@ -466,9 +466,15 @@ Supported Telegram commands in v1:
 ```text
 /start
 /help
-/create <count> [category] [language] [layout]
+/create <count> [category] [language] [layout] [--duration seconds]
 /status
 /batches
+```
+
+Example:
+
+```text
+/create 1 celebrity en flag_hero --duration 90
 ```
 
 V1 deliberately keeps YouTube upload out of Telegram. The remote flow is:
