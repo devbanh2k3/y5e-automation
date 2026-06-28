@@ -210,6 +210,40 @@ async def test_run_local_render_uses_content_agent_for_celebrity(monkeypatch, tm
                 ],
             }
 
+    class FakeMetadataOptimizerAgent:
+        async def run(self, *, content_contract, selected_topic=None):
+            captured.setdefault("events", []).append("metadata")
+            captured["metadata_content_contract"] = content_contract
+            captured["metadata_selected_topic"] = selected_topic
+            return {
+                "schema_version": "metadata_variants_v1",
+                "trend_angle": "award gap curiosity",
+                "title_variants": [
+                    {
+                        "title": "Celebrity Award Numbers That Feel Unreal",
+                        "format": "data_shock",
+                        "score_total": 91,
+                        "score_breakdown": {
+                            "search": 86,
+                            "curiosity": 94,
+                            "trend": 84,
+                            "specificity": 90,
+                            "safety": 96,
+                        },
+                    }
+                ],
+                "description_variants": ["Optimized description."],
+                "tags": ["celebrity", "awards", "data comparison"],
+                "thumbnail_text_suggestions": ["AWARDS?!"],
+                "search_keywords": ["celebrity awards"],
+                "selected_metadata": {
+                    "title": "Celebrity Award Numbers That Feel Unreal",
+                    "description": "Optimized description.",
+                    "tags": ["celebrity", "awards", "data comparison"],
+                    "thumbnail_text": "AWARDS?!",
+                },
+            }
+
     async def fake_render(self, *, topic_id, video_data):
         captured.setdefault("events", []).append("render")
         captured["video_data"] = video_data
@@ -237,6 +271,7 @@ async def test_run_local_render_uses_content_agent_for_celebrity(monkeypatch, tm
     monkeypatch.setattr("agents.pipeline.create_review", fake_create_review)
     monkeypatch.setattr("agents.pipeline.RealImageAgent", FakeRealImageAgent)
     monkeypatch.setattr("agents.pipeline.AIFactVerificationAgent", FakeFactAgent)
+    monkeypatch.setattr("agents.pipeline.MetadataOptimizerAgent", FakeMetadataOptimizerAgent)
     monkeypatch.setattr("agents.content_agent.ContentAgent", FakeContentAgent)
 
     selected_topic = {
@@ -260,7 +295,7 @@ async def test_run_local_render_uses_content_agent_for_celebrity(monkeypatch, tm
     image_contract = video_data["image_verification_contract"]
     fact_contract = video_data["fact_verification_contract"]
 
-    assert captured["events"] == ["fact", "image", "render"]
+    assert captured["events"] == ["fact", "image", "render", "metadata"]
     assert result["mode"] == "local_render"
     assert result["category"] == "Celebrity"
     assert result["fallback_used"] is False
@@ -272,8 +307,9 @@ async def test_run_local_render_uses_content_agent_for_celebrity(monkeypatch, tm
     assert captured["content_agent_card_layout"] == "flag_hero"
     assert captured["selected_topic"] == selected_topic
     assert result["selected_topic"] == selected_topic
-    assert result["youtube_title"] == content_contract["youtube_title"]
-    assert "người nổi tiếng" in result["youtube_title"].lower()
+    assert result["youtube_title"] == "Celebrity Award Numbers That Feel Unreal"
+    assert result["youtube_description"] == "Optimized description."
+    assert result["youtube_tags"] == ["celebrity", "awards", "data comparison"]
     assert captured["image_agent_topic_id"] == result["topic_id"]
     assert captured["image_agent_content_contract"] == content_contract
     assert captured["image_agent_strict"] is True
@@ -284,6 +320,14 @@ async def test_run_local_render_uses_content_agent_for_celebrity(monkeypatch, tm
     assert review_kwargs["image_verification_contract"] == image_contract
     assert review_kwargs["fact_verification_contract"] == fact_contract
     assert review_kwargs["quality_gate"]["status"] == "passed"
+    assert review_kwargs["metadata_variants"]["selected_metadata"]["title"] == (
+        "Celebrity Award Numbers That Feel Unreal"
+    )
+    assert review_kwargs["selected_metadata"]["thumbnail_text"] == "AWARDS?!"
+    assert captured["metadata_content_contract"] == content_contract
+    assert captured["metadata_selected_topic"] == selected_topic
+    assert result["metadata_variants"]["trend_angle"] == "award gap curiosity"
+    assert result["selected_metadata"]["title"] == "Celebrity Award Numbers That Feel Unreal"
     assert result["image_verification_contract"] == image_contract
     assert result["fact_verification_contract"] == fact_contract
     assert result["content_contract"]["scenes"][1]["factValue"] == "1.6B USD"

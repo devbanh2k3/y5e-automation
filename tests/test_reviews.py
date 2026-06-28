@@ -66,6 +66,50 @@ async def test_create_review_persists_quality_gate(review_storage):
 
 
 @pytest.mark.asyncio
+async def test_create_review_persists_metadata_variants(review_storage):
+    metadata_variants = {
+        "schema_version": "metadata_variants_v1",
+        "title_variants": [
+            {
+                "title": "Celebrity Numbers That Feel Unreal",
+                "score_total": 92,
+                "score_breakdown": {"search": 90},
+            }
+        ],
+        "description_variants": ["Optimized description."],
+        "tags": ["celebrity", "data comparison"],
+        "thumbnail_text_suggestions": ["THE GAP"],
+        "search_keywords": ["celebrity data"],
+        "trend_angle": "celebrity data gap",
+        "selected_metadata": {
+            "title": "Celebrity Numbers That Feel Unreal",
+            "description": "Optimized description.",
+            "tags": ["celebrity", "data comparison"],
+            "thumbnail_text": "THE GAP",
+        },
+    }
+
+    review = await create_review(
+        job_id="job-123",
+        topic_id=1,
+        video_id=2,
+        file_path="/tmp/final_video.mp4",
+        content_contract={"schema_version": "content_contract_v2", "title": "Video"},
+        metadata_variants=metadata_variants,
+        selected_metadata=metadata_variants["selected_metadata"],
+        youtube_title="Celebrity Numbers That Feel Unreal",
+        youtube_description="Optimized description.",
+        youtube_tags=["celebrity", "data comparison"],
+        thumbnail_prompt="thumbnail prompt",
+    )
+
+    loaded = await get_review(review["review_id"])
+
+    assert loaded["metadata_variants"] == metadata_variants
+    assert loaded["selected_metadata"]["title"] == "Celebrity Numbers That Feel Unreal"
+
+
+@pytest.mark.asyncio
 async def test_list_reviews_filters_by_status(review_storage):
     first = await create_review(
         job_id="job-1",

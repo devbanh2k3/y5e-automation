@@ -59,6 +59,8 @@ async def create_review(
     fact_verification_contract: dict[str, Any] | None = None,
     image_verification_contract: dict[str, Any] | None = None,
     quality_gate: dict[str, Any] | None = None,
+    metadata_variants: dict[str, Any] | None = None,
+    selected_metadata: dict[str, Any] | None = None,
     youtube_title: str,
     youtube_description: str,
     youtube_tags: list[str],
@@ -80,6 +82,14 @@ async def create_review(
         "fact_verification_contract": fact_verification_contract or {},
         "image_verification_contract": image_verification_contract or {},
         "quality_gate": quality_gate or {},
+        "metadata_variants": metadata_variants or {},
+        "selected_metadata": selected_metadata
+        or {
+            "title": youtube_title,
+            "description": youtube_description,
+            "tags": youtube_tags,
+            "thumbnail_text": "",
+        },
         "youtube": {
             "title": youtube_title,
             "description": youtube_description,

@@ -153,6 +153,7 @@ async def test_review_ui_page_is_served():
     assert response.status_code == 200
     assert "text/html" in response.headers["content-type"]
     assert 'id="review-app"' in response.text
+    assert 'id="selectedMetadata"' in response.text
 
 
 @pytest.mark.asyncio
@@ -162,6 +163,7 @@ async def test_review_ui_static_javascript_is_served():
 
     assert response.status_code == 200
     assert "loadReviews" in response.text
+    assert "renderMetadata" in response.text
 
 
 @pytest.mark.asyncio

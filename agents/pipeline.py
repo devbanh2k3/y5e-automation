@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Any
 
 from agents.ai_fact_verification_agent import AIFactVerificationAgent
+from agents.metadata_optimizer_agent import MetadataOptimizerAgent
 from agents.real_image_agent import RealImageAgent
 from core import database as db
 from core.config import get_settings
@@ -320,6 +321,8 @@ class Pipeline:
         )
         review: dict[str, Any] | None = None
         quality_gate: dict[str, Any] | None = None
+        metadata_variants: dict[str, Any] = {}
+        selected_metadata: dict[str, Any] = {}
         if content_contract:
             quality_gate = run_production_quality_gate(
                 topic_id=topic_id,
@@ -330,6 +333,16 @@ class Pipeline:
                 image_verification_contract=image_verification_contract,
                 expected_card_layout=card_layout,
             )
+            metadata_variants = await MetadataOptimizerAgent().run(
+                content_contract=content_contract,
+                selected_topic=selected_topic,
+            )
+            selected_metadata = metadata_variants.get("selected_metadata", {})
+            youtube_title = str(selected_metadata.get("title") or content_contract["youtube_title"])
+            youtube_description = str(
+                selected_metadata.get("description") or content_contract["youtube_description"]
+            )
+            youtube_tags = selected_metadata.get("tags") or content_contract["youtube_tags"]
             review = await create_review(
                 job_id="",
                 topic_id=topic_id,
@@ -339,9 +352,11 @@ class Pipeline:
                 fact_verification_contract=fact_verification_contract,
                 image_verification_contract=image_verification_contract,
                 quality_gate=quality_gate,
-                youtube_title=content_contract["youtube_title"],
-                youtube_description=content_contract["youtube_description"],
-                youtube_tags=content_contract["youtube_tags"],
+                metadata_variants=metadata_variants,
+                selected_metadata=selected_metadata,
+                youtube_title=youtube_title,
+                youtube_description=youtube_description,
+                youtube_tags=youtube_tags,
                 thumbnail_prompt=content_contract["thumbnail_prompt"],
             )
 
@@ -359,14 +374,26 @@ class Pipeline:
             "review_status": review["status"] if review else "",
             "content_contract": content_contract,
             "fact_verification_contract": fact_verification_contract,
-            "youtube_title": content_contract["youtube_title"] if content_contract else "",
-            "youtube_description": (
-                content_contract["youtube_description"] if content_contract else ""
+            "youtube_title": (
+                selected_metadata.get("title") or content_contract["youtube_title"]
+                if content_contract
+                else ""
             ),
-            "youtube_tags": content_contract["youtube_tags"] if content_contract else [],
+            "youtube_description": (
+                selected_metadata.get("description") or content_contract["youtube_description"]
+                if content_contract
+                else ""
+            ),
+            "youtube_tags": (
+                selected_metadata.get("tags") or content_contract["youtube_tags"]
+                if content_contract
+                else []
+            ),
             "thumbnail_prompt": content_contract["thumbnail_prompt"] if content_contract else "",
             "image_verification_contract": image_verification_contract,
             "quality_gate": quality_gate,
+            "metadata_variants": metadata_variants,
+            "selected_metadata": selected_metadata,
             "selected_topic": selected_topic,
         }
 

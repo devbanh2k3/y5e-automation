@@ -140,6 +140,7 @@ h3 {
 
 .hero,
 .video-panel,
+.metadata-panel,
 .review-form,
 .grid,
 section {
@@ -210,6 +211,68 @@ video {
   font-size: 13px;
 }
 
+.metadata-panel {
+  border: 1px solid #292929;
+  border-radius: 8px;
+  padding: 14px;
+  background: #171717;
+}
+
+h4 {
+  margin: 0 0 10px;
+  color: #cfcfcf;
+  font-size: 13px;
+  text-transform: uppercase;
+}
+
+.selected-metadata,
+.metadata-list {
+  display: grid;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.selected-metadata {
+  margin-bottom: 14px;
+  color: #e8e8e8;
+}
+
+.metadata-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  margin-top: 14px;
+}
+
+.metadata-item {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  border: 1px solid #292929;
+  border-radius: 6px;
+  padding: 10px;
+  background: #111;
+}
+
+.metadata-item strong {
+  color: #5bc0eb;
+}
+
+.tag-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.tag {
+  border: 1px solid #3a3a3a;
+  border-radius: 999px;
+  padding: 5px 9px;
+  background: #111;
+  color: #e8e8e8;
+  font-size: 12px;
+}
+
 pre {
   margin: 0;
   white-space: pre-wrap;
@@ -263,6 +326,13 @@ pre {
     border-right: 0;
     border-bottom: 1px solid #292929;
     max-height: 42vh;
+  }
+
+  .hero,
+  .metadata-grid,
+  .review-form,
+  .grid {
+    grid-template-columns: 1fr;
   }
 
   .hero,

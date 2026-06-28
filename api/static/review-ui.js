@@ -18,6 +18,11 @@ const els = {
   notesInput: document.querySelector("#notesInput"),
   reasonInput: document.querySelector("#reasonInput"),
   scenesInput: document.querySelector("#scenesInput"),
+  selectedMetadata: document.querySelector("#selectedMetadata"),
+  titleVariants: document.querySelector("#titleVariants"),
+  descriptionVariants: document.querySelector("#descriptionVariants"),
+  metadataTags: document.querySelector("#metadataTags"),
+  thumbnailTextSuggestions: document.querySelector("#thumbnailTextSuggestions"),
   qualityGate: document.querySelector("#qualityGate"),
   regenerateCommand: document.querySelector("#regenerateCommand"),
   sceneList: document.querySelector("#sceneList"),
@@ -82,6 +87,57 @@ function renderQualityGate(review) {
   }
 }
 
+function renderTags(container, values) {
+  container.innerHTML = "";
+  if (!Array.isArray(values) || !values.length) {
+    container.innerHTML = '<p class="meta">No values.</p>';
+    return;
+  }
+  for (const value of values) {
+    const item = document.createElement("span");
+    item.className = "tag";
+    item.textContent = text(value);
+    container.appendChild(item);
+  }
+}
+
+function renderMetadata(review) {
+  const variants = review.metadata_variants || {};
+  const selected = review.selected_metadata || variants.selected_metadata || {};
+  const titleVariants = Array.isArray(variants.title_variants) ? variants.title_variants : [];
+  const descriptionVariants = Array.isArray(variants.description_variants)
+    ? variants.description_variants
+    : [];
+
+  els.selectedMetadata.innerHTML = `
+    <div><strong>Selected title:</strong> ${text(selected.title || review.youtube?.title, "n/a")}</div>
+    <div><strong>Description:</strong> ${text(selected.description || review.youtube?.description, "n/a")}</div>
+    <div><strong>Trend angle:</strong> ${text(variants.trend_angle, "n/a")}</div>
+  `;
+
+  els.titleVariants.innerHTML = titleVariants.length
+    ? titleVariants
+        .map(
+          (item, index) => `
+            <div class="metadata-item">
+              <span>${index + 1}. ${text(item.title)}</span>
+              <strong>${text(item.score_total, "n/a")}</strong>
+            </div>
+          `,
+        )
+        .join("")
+    : '<p class="meta">No title variants.</p>';
+
+  els.descriptionVariants.innerHTML = descriptionVariants.length
+    ? descriptionVariants
+        .map((item, index) => `<div class="metadata-item">${index + 1}. ${text(item)}</div>`)
+        .join("")
+    : '<p class="meta">No description variants.</p>';
+
+  renderTags(els.metadataTags, variants.tags || selected.tags || review.youtube?.tags || []);
+  renderTags(els.thumbnailTextSuggestions, variants.thumbnail_text_suggestions || []);
+}
+
 function renderScenes(review) {
   const scenes = review.content_contract?.scenes || [];
   els.sceneList.innerHTML = "";
@@ -120,6 +176,7 @@ function renderReview(review) {
   els.scenesInput.value = "";
   els.regenerateCommand.textContent =
     `python3 scripts/regenerate_scene.py ${review.review_id} --scene <scene_index> --reason wrong_image`;
+  renderMetadata(review);
   renderQualityGate(review);
   renderScenes(review);
   renderReviewList();
