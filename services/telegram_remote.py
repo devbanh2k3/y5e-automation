@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
-from core import production_tasks, youtube_channels, youtube_upload_jobs
+from core import production_tasks, youtube_upload_jobs
+from core.config import get_settings
+from core.reviews import get_review
 from services.telegram_channels import TelegramResponse, channel_list_response
+from services.telegram_notifications import _is_public_http_url
 
 MAX_CREATE_COUNT = 20
 DEFAULT_CREATE_COUNT = 10
@@ -41,6 +44,8 @@ async def handle_telegram_command(
         return await _handle_create(telegram_user_id=telegram_user_id, args=parts[1:])
     if command == "/channels":
         return await channel_list_response(telegram_user_id)
+    if command == "/reviews":
+        return await _handle_reviews(telegram_user_id=telegram_user_id)
     if command == "/uploads":
         return await _handle_uploads(telegram_user_id=telegram_user_id)
     if command in {"/status", "/batches"}:
@@ -59,6 +64,7 @@ def _help_message(user: dict) -> str:
         "/status\n"
         "/batches\n"
         "/channels\n"
+        "/reviews\n"
         "/uploads\n"
         "No daily quota is enforced. Max per command is 20."
     )
@@ -80,13 +86,6 @@ async def _handle_create(*, telegram_user_id: int, args: list[str]) -> str | Tel
     if category not in SUPPORTED_CATEGORIES:
         return "Only category 'celebrity' is supported in v1."
 
-    selected_channel = await youtube_channels.consume_selected_channel(telegram_user_id)
-    if not selected_channel:
-        return await channel_list_response(
-            telegram_user_id,
-            prompt="Select a YouTube channel, then send /create again.",
-        )
-
     batch = await production_tasks.create_production_batch(
         owner_telegram_user_id=telegram_user_id,
         requested_count=count,
@@ -94,14 +93,14 @@ async def _handle_create(*, telegram_user_id: int, args: list[str]) -> str | Tel
         language=language,
         card_layout=card_layout,
         target_duration=target_duration,
-        youtube_channel_id=str(selected_channel["youtube_channel_id"]),
     )
     return (
-        f"Batch created: {batch['batch_id']}\n"
-        f"{batch['requested_count']} tasks queued.\n"
-        f"Target duration: {batch['target_duration']}s.\n"
-        f"YouTube channel: {selected_channel['title']}.\n"
-        "Fair queue enabled. Your videos will be interleaved with other users."
+        "Đã nhận yêu cầu sản xuất\n"
+        f"Số lượng: {batch['requested_count']} video\n"
+        f"Thời lượng mục tiêu: {batch['target_duration']} giây/video\n"
+        f"Nội dung: {category} | {language} | {card_layout}\n"
+        "Kênh YouTube: chọn khi approve từng video\n"
+        "Queue công bằng: video của các user sẽ được xử lý xen kẽ."
     )
 
 
@@ -109,42 +108,90 @@ async def _handle_status(*, telegram_user_id: int) -> str:
     summary = await production_tasks.user_queue_summary(telegram_user_id)
     batches = await production_tasks.list_user_batches(telegram_user_id, limit=5)
     lines = [
-        "Your production status:",
-        f"Queued: {summary.get('queued', 0)}",
-        f"Running: {summary.get('running', 0)}",
-        f"Pending review: {summary.get('pending_review', 0)}",
-        f"Approved: {summary.get('approved', 0)}",
-        f"Rejected: {summary.get('rejected', 0)}",
-        f"Failed: {summary.get('failed', 0)}",
+        "Tình trạng sản xuất",
+        f"Đang chờ: {summary.get('queued', 0)}",
+        f"Đang render: {summary.get('running', 0)}",
+        f"Chờ duyệt: {summary.get('pending_review', 0)}",
+        f"Đã approve: {summary.get('approved', 0)}",
+        f"Đã reject: {summary.get('rejected', 0)}",
+        f"Lỗi: {summary.get('failed', 0)}",
         "",
-        "Recent batches:",
+        "Các batch gần đây:",
     ]
     if not batches:
-        lines.append("No batches yet.")
-    for batch in batches:
+        lines.append("Chưa có batch nào.")
+    for index, batch in enumerate(batches, start=1):
         lines.append(
             (
-                f"{batch.get('batch_id', '')}: "
-                f"{batch.get('completed_count', 0)}/{batch.get('requested_count', 0)} done, "
-                f"{batch.get('failed_count', 0)} failed, "
-                f"status={batch.get('status', '')}"
+                f"{index}. {batch.get('completed_count', 0)}/{batch.get('requested_count', 0)} hoàn tất, "
+                f"{batch.get('failed_count', 0)} lỗi, "
+                f"trạng thái: {batch.get('status', '')}"
             )
         )
     return "\n".join(lines)
 
 
+async def _handle_reviews(*, telegram_user_id: int) -> TelegramResponse:
+    tasks = await production_tasks.list_pending_review_tasks(telegram_user_id, limit=10)
+    if not tasks:
+        return TelegramResponse("Hiện không có video nào chờ duyệt.")
+
+    lines = ["Video chờ duyệt"]
+    keyboard_rows: list[list[dict[str, str]]] = []
+    base_url = str(get_settings().public_base_url).rstrip("/")
+    can_open_video = _is_public_http_url(base_url)
+    for index, task in enumerate(tasks, start=1):
+        review_id = str(task.get("review_id") or "")
+        title = str(task.get("title") or task.get("youtube_title") or task.get("topic_title") or "").strip()
+        if not title and review_id:
+            title = await _review_display_title(review_id)
+        label = title or f"Video #{index}"
+        lines.append(f"{index}. {label}")
+        row: list[dict[str, str]] = []
+        if can_open_video:
+            row.append({"text": f"Preview {index}", "url": f"{base_url}/api/reviews/{review_id}/video"})
+        row.append({"text": f"Approve {index}", "callback_data": f"rv:ok:{review_id}"})
+        keyboard_rows.append(row)
+    return TelegramResponse("\n".join(lines), {"inline_keyboard": keyboard_rows})
+
+
+async def _review_display_title(review_id: str) -> str:
+    try:
+        review = await get_review(review_id)
+    except (KeyError, OSError, ValueError):
+        return ""
+    youtube = review.get("youtube") if isinstance(review, dict) else {}
+    selected = review.get("selected_metadata") if isinstance(review, dict) else {}
+    content = review.get("content_contract") if isinstance(review, dict) else {}
+    title = str(
+        (youtube or {}).get("title")
+        or (selected or {}).get("title")
+        or (content or {}).get("youtube_title")
+        or (content or {}).get("title")
+        or ""
+    ).strip()
+    return _shorten_line(title, limit=72)
+
+
+def _shorten_line(value: str, *, limit: int) -> str:
+    text = " ".join(str(value or "").split())
+    if len(text) <= limit:
+        return text
+    return f"{text[: max(0, limit - 3)].rstrip()}..."
+
+
 async def _handle_uploads(*, telegram_user_id: int) -> str:
     jobs = await youtube_upload_jobs.list_owner_jobs(telegram_user_id, limit=10)
     if not jobs:
-        return "No YouTube upload jobs yet."
-    lines = ["Your YouTube uploads:"]
-    for job in jobs:
+        return "Chưa có upload YouTube nào."
+    lines = ["YouTube uploads"]
+    for index, job in enumerate(jobs, start=1):
         status = str(job.get("status") or "unknown").replace("_", " ").title()
         channel = str(job.get("channel_title") or "YouTube")
         url = str(job.get("youtube_url") or "")
         error_code = str(job.get("error_code") or "")
-        suffix = f" - {url}" if url else (f" - {error_code}" if error_code else "")
-        lines.append(f"{status} | {channel}{suffix}")
+        suffix = f"\n   Link: {url}" if url else (f"\n   Cần xử lý: {error_code}" if error_code else "")
+        lines.append(f"{index}. {status} | {channel}{suffix}")
     return "\n".join(lines)
 
 

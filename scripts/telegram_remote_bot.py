@@ -92,11 +92,16 @@ async def handle_callback_query(callback_query: dict[str, Any]) -> bool:
         response_text = channel_response.text
         reply_markup = channel_response.reply_markup
     else:
-        response_text = await handle_review_callback(
+        review_response = await handle_review_callback(
             telegram_user_id=telegram_user_id,
             data=data,
         )
-        reply_markup = None
+        if isinstance(review_response, TelegramResponse):
+            response_text = review_response.text
+            reply_markup = review_response.reply_markup
+        else:
+            response_text = review_response
+            reply_markup = None
     await answer_callback_query(callback_query_id=callback_query_id, text=response_text[:180])
     if reply_markup:
         await send_message(chat_id=chat_id, text=response_text, reply_markup=reply_markup)

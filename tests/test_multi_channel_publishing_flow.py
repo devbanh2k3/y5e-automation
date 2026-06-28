@@ -5,7 +5,7 @@ import pytest
 
 
 @pytest.mark.asyncio
-async def test_selected_owner_channel_survives_approval_and_publish(monkeypatch, tmp_path: Path) -> None:
+async def test_approval_requires_explicit_channel_then_publish(monkeypatch, tmp_path: Path) -> None:
     from scripts import process_youtube_upload_job as worker
     from services import telegram_channels, telegram_review_actions
     from services.youtube_upload_client import UploadResult
@@ -26,6 +26,15 @@ async def test_selected_owner_channel_survives_approval_and_publish(monkeypatch,
         "get_authorized_user",
         AsyncMock(return_value={"telegram_user_id": 111, "is_active": True}),
     )
+    monkeypatch.setattr(
+        telegram_review_actions.youtube_channels,
+        "list_owned_channels",
+        AsyncMock(
+            return_value=[
+                {"youtube_channel_id": "channel-alice", "title": "Alice Channel", "status": "active"}
+            ]
+        ),
+    )
     enqueue = AsyncMock(return_value={"upload_job_id": "upload-1", "status": "queued"})
     monkeypatch.setattr(
         telegram_review_actions.youtube_upload_jobs,
@@ -36,8 +45,17 @@ async def test_selected_owner_channel_survives_approval_and_publish(monkeypatch,
         telegram_user_id=111,
         data="rv:ok:review-1",
     )
-    assert "upload-1" in approval
+    assert approval.reply_markup["inline_keyboard"][0][0]["callback_data"] == "rv:ch:1:review-1"
+    enqueue.assert_not_awaited()
+
+    approval = await telegram_review_actions.handle_review_callback(
+        telegram_user_id=111,
+        data="rv:ch:1:review-1",
+    )
+    assert "upload-1" not in approval
+    assert "alice channel" in approval.lower()
     assert enqueue.await_args.kwargs["owner_telegram_user_id"] == 111
+    assert enqueue.await_args.kwargs["youtube_channel_id"] == "channel-alice"
 
     video = tmp_path / "video.mp4"
     video.write_bytes(b"video")

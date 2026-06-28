@@ -61,7 +61,7 @@ async def create_production_batch(
     card_layout: str = DEFAULT_CARD_LAYOUT,
     category: str = DEFAULT_CATEGORY,
     target_duration: int = DEFAULT_TARGET_DURATION,
-    youtube_channel_id: str,
+    youtube_channel_id: str | None = None,
 ) -> dict[str, Any]:
     """Create a production batch and one queued task per requested video."""
     if requested_count < 1:
@@ -69,19 +69,21 @@ async def create_production_batch(
     if target_duration < 15:
         raise ValueError("target_duration must be at least 15 seconds")
 
-    channel = await fetchrow(
-        """
-        SELECT youtube_channel_id::text, title
-        FROM youtube_channels
-        WHERE youtube_channel_id = $1::uuid
-          AND owner_telegram_user_id = $2
-          AND status = 'active'
-        """,
-        youtube_channel_id,
-        owner_telegram_user_id,
-    )
-    if not channel:
-        raise PermissionError("YouTube channel is unavailable")
+    channel = None
+    if youtube_channel_id:
+        channel = await fetchrow(
+            """
+            SELECT youtube_channel_id::text, title
+            FROM youtube_channels
+            WHERE youtube_channel_id = $1::uuid
+              AND owner_telegram_user_id = $2
+              AND status = 'active'
+            """,
+            youtube_channel_id,
+            owner_telegram_user_id,
+        )
+        if not channel:
+            raise PermissionError("YouTube channel is unavailable")
 
     batch_id = await fetchval(
         """
@@ -139,8 +141,8 @@ async def create_production_batch(
         "card_layout": card_layout,
         "category": category,
         "target_duration": target_duration,
-        "youtube_channel_id": youtube_channel_id,
-        "youtube_channel_title": channel["title"],
+        "youtube_channel_id": youtube_channel_id or "",
+        "youtube_channel_title": channel["title"] if channel else "",
         "status": "queued",
     }
 
@@ -235,6 +237,30 @@ async def list_user_batches(telegram_user_id: int, *, limit: int = 10) -> list[d
         """,
         telegram_user_id,
         max(1, limit),
+    )
+
+
+async def list_pending_review_tasks(telegram_user_id: int, *, limit: int = 10) -> list[dict[str, Any]]:
+    """Return recent pending review tasks for one Telegram user."""
+    return await fetch(
+        """
+        SELECT
+            t.task_id::text,
+            t.batch_id::text,
+            t.review_id,
+            t.topic_id,
+            t.video_path,
+            t.completed_at,
+            t.updated_at
+        FROM production_tasks t
+        WHERE t.owner_telegram_user_id = $1
+          AND t.status = 'pending_review'
+          AND t.review_id IS NOT NULL
+        ORDER BY COALESCE(t.completed_at, t.updated_at, t.created_at) DESC
+        LIMIT $2
+        """,
+        telegram_user_id,
+        max(1, min(limit, 20)),
     )
 
 
@@ -344,3 +370,19 @@ async def mark_task_review_decision(*, review_id: str, status: str) -> None:
         review_id,
         status,
     )
+
+
+async def assert_review_owner(*, review_id: str, owner_telegram_user_id: int) -> None:
+    """Raise when a review is not owned by the Telegram user."""
+    row = await fetchrow(
+        """
+        SELECT task_id::text
+        FROM production_tasks
+        WHERE review_id = $1
+          AND owner_telegram_user_id = $2
+        """,
+        review_id,
+        owner_telegram_user_id,
+    )
+    if not row:
+        raise PermissionError("Review is unavailable")

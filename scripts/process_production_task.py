@@ -65,10 +65,9 @@ async def process_one_task() -> dict[str, Any]:
         await _notify_owner(
             owner_telegram_user_id=owner_telegram_user_id,
             text=(
-                "Production task failed.\n"
-                f"Batch: {batch_id}\n"
-                f"Task: {task_id}\n"
-                f"Error: {str(exc)[:500]}"
+                "Sản xuất video thất bại\n"
+                f"Lý do: {str(exc)[:500]}\n"
+                "Mở /status để kiểm tra queue hiện tại."
             ),
         )
         return {
@@ -94,11 +93,11 @@ async def process_one_task() -> dict[str, Any]:
         owner_telegram_user_id=owner_telegram_user_id,
         review_id=str(result.get("review_id", "")),
         text=(
-            "Video ready for review.\n"
-            f"Batch: {batch_id}\n"
-            f"Task: {task_id}\n"
-            f"Review: {str(result.get('review_id', ''))}\n"
-            f"Video: {str(result.get('video_path', ''))}"
+            "Video đã sẵn sàng duyệt\n"
+            f"Tiêu đề: {str(result.get('youtube_title') or 'Celebrity data video')}\n"
+            f"Layout: {str(result.get('card_layout') or '')}\n"
+            f"Thời lượng mục tiêu: {int(result.get('target_duration') or 0)} giây\n"
+            "Xem preview trước, sau đó approve để chọn kênh upload."
         ),
     )
     return {

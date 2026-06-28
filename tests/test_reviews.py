@@ -148,11 +148,14 @@ async def test_select_review_metadata_updates_youtube_fields(review_storage):
     )
 
     assert updated["selected_metadata"]["title"] == "Better Curiosity Title"
-    assert updated["selected_metadata"]["description"] == "Better description."
+    assert updated["selected_metadata"]["description"].startswith("Better description.")
+    assert "#Celebrity" in updated["selected_metadata"]["description"]
+    assert "#DataComparison" in updated["selected_metadata"]["description"]
     assert updated["selected_metadata"]["thumbnail_text"] == "UNREAL"
     assert updated["selected_metadata"]["tags"] == ["celebrity", "data comparison"]
     assert updated["youtube"]["title"] == "Better Curiosity Title"
-    assert updated["youtube"]["description"] == "Better description."
+    assert updated["youtube"]["description"].startswith("Better description.")
+    assert "#Celebrity" in updated["youtube"]["description"]
     assert updated["youtube"]["tags"] == ["celebrity", "data comparison"]
     assert updated["review_events"][-1]["event"] == "metadata_selected"
 

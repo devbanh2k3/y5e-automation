@@ -121,6 +121,8 @@ services:
     environment:
       DATABASE_URL: postgresql://ytbot:ytbot@postgres:5432/youtube_automation
       REDIS_URL: redis://redis:6379/0
+    volumes:
+      - ./output:/app/output
     depends_on:
       db-migrate:
         condition: service_completed_successfully

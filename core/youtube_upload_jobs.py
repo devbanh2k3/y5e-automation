@@ -13,15 +13,16 @@ async def approve_and_enqueue(
     *,
     review_id: str,
     owner_telegram_user_id: int,
+    youtube_channel_id: str,
 ) -> dict[str, Any]:
-    """Approve one owned review and idempotently queue its assigned upload."""
+    """Approve one owned review and idempotently queue upload to an explicit channel."""
     async with transaction() as connection:
         task = await connection.fetchrow(
             """
-            SELECT t.task_id, t.status, b.youtube_channel_id
+            SELECT t.task_id, t.status, c.youtube_channel_id
             FROM production_tasks t
             JOIN production_batches b ON b.batch_id = t.batch_id
-            JOIN youtube_channels c ON c.youtube_channel_id = b.youtube_channel_id
+            JOIN youtube_channels c ON c.youtube_channel_id = $3::uuid
             WHERE t.review_id = $1
               AND t.owner_telegram_user_id = $2
               AND c.owner_telegram_user_id = $2
@@ -30,6 +31,7 @@ async def approve_and_enqueue(
             """,
             review_id,
             owner_telegram_user_id,
+            youtube_channel_id,
         )
         if not task:
             raise PermissionError("Review is unavailable")
@@ -193,6 +195,7 @@ async def mark_published(
             """
             UPDATE youtube_upload_jobs
             SET status = 'published', youtube_video_id = $2, youtube_url = $3,
+                error_code = '', error_message = '',
                 published_at = NOW(), updated_at = NOW()
             WHERE upload_job_id = $1::uuid
             """,

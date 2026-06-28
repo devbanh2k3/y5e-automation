@@ -77,9 +77,10 @@ async def test_process_one_task_claims_fair_task_and_marks_pending_review(monkey
     assert calls["pending"]["task_id"] == "task-1"
     assert calls["pending"]["review_id"] == "review-1"
     assert calls["notification"]["chat_id"] == 999
-    assert "ready for review" in calls["notification"]["text"].lower()
+    assert "sẵn sàng duyệt" in calls["notification"]["text"].lower()
+    assert "review-1" not in calls["notification"]["text"]
     assert any(
-        button.get("text") == "Approve"
+            button.get("text") == "Approve and choose channel"
         for row in calls["notification"]["reply_markup"]["inline_keyboard"]
         for button in row
     )

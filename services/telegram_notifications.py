@@ -31,22 +31,22 @@ def build_review_keyboard(review_id: str) -> dict[str, Any]:
     if _is_public_http_url(base_url):
         rows.append(
             [
-                {"text": "Open video", "url": f"{base_url}/api/reviews/{review_id}/video"},
+                {"text": "Preview video", "url": f"{base_url}/api/reviews/{review_id}/video"},
                 {"text": "Review UI", "url": f"{base_url}/review-ui"},
             ]
         )
     rows.extend(
         [
-            [{"text": "Approve", "callback_data": f"rv:ok:{review_id}"}],
+            [{"text": "Approve and choose channel", "callback_data": f"rv:ok:{review_id}"}],
             [
-                {"text": "Reject image", "callback_data": f"rv:rej:wrong_image:{review_id}"},
-                {"text": "Reject fact", "callback_data": f"rv:rej:bad_fact:{review_id}"},
+                {"text": "Reject: image", "callback_data": f"rv:rej:wrong_image:{review_id}"},
+                {"text": "Reject: fact", "callback_data": f"rv:rej:bad_fact:{review_id}"},
             ],
             [
-                {"text": "Reject video", "callback_data": f"rv:rej:bad_video:{review_id}"},
-                {"text": "Reject layout", "callback_data": f"rv:rej:bad_layout:{review_id}"},
+                {"text": "Reject: video", "callback_data": f"rv:rej:bad_video:{review_id}"},
+                {"text": "Reject: layout", "callback_data": f"rv:rej:bad_layout:{review_id}"},
             ],
-            [{"text": "Reject other", "callback_data": f"rv:rej:other:{review_id}"}],
+            [{"text": "Reject: other", "callback_data": f"rv:rej:other:{review_id}"}],
         ]
     )
     return {"inline_keyboard": rows}
@@ -88,7 +88,10 @@ async def send_telegram_message(
         if reply_markup:
             payload["reply_markup"] = reply_markup
         response = await client.post(url, json=payload)
-        response.raise_for_status()
+        try:
+            response.raise_for_status()
+        except httpx.HTTPStatusError:
+            return False
     return True
 
 

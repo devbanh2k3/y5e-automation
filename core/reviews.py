@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from core.config import get_settings
+from core.seo_metadata import ensure_description_hashtags
 
 
 class ReviewStatus(str, Enum):
@@ -65,10 +66,19 @@ async def create_review(
     youtube_description: str,
     youtube_tags: list[str],
     thumbnail_prompt: str,
+    thumbnail: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Create a pending review artifact for a rendered video."""
     timestamp = utc_now()
     review_id = str(uuid.uuid4())
+    clean_tags = _clean_tags(youtube_tags)
+    seo_description = ensure_description_hashtags(youtube_description, clean_tags)
+    if selected_metadata:
+        selected_metadata = dict(selected_metadata)
+        selected_metadata["description"] = ensure_description_hashtags(
+            str(selected_metadata.get("description") or seo_description),
+            _clean_tags(selected_metadata.get("tags") or clean_tags),
+        )
     review = {
         "review_id": review_id,
         "status": ReviewStatus.PENDING.value,
@@ -86,15 +96,16 @@ async def create_review(
         "selected_metadata": selected_metadata
         or {
             "title": youtube_title,
-            "description": youtube_description,
-            "tags": youtube_tags,
+            "description": seo_description,
+            "tags": clean_tags,
             "thumbnail_text": "",
         },
         "youtube": {
             "title": youtube_title,
-            "description": youtube_description,
-            "tags": youtube_tags,
+            "description": selected_metadata.get("description") if selected_metadata else seo_description,
+            "tags": _clean_tags(selected_metadata.get("tags") if selected_metadata else clean_tags),
         },
+        "thumbnail": thumbnail or {"status": "missing", "file_path": ""},
         "thumbnail_prompt": thumbnail_prompt,
         "review_notes": "",
         "reject_reason": "",
@@ -213,8 +224,12 @@ async def select_review_metadata(
 
     youtube = dict(review.get("youtube") or {})
     youtube["title"] = str(selected.get("title") or youtube.get("title") or "")
-    youtube["description"] = str(selected.get("description") or youtube.get("description") or "")
+    youtube["description"] = ensure_description_hashtags(
+        str(selected.get("description") or youtube.get("description") or ""),
+        _clean_tags(selected.get("tags") or youtube.get("tags") or []),
+    )
     youtube["tags"] = _clean_tags(selected.get("tags") or youtube.get("tags") or [])
+    selected["description"] = youtube["description"]
 
     review["selected_metadata"] = selected
     review["youtube"] = youtube

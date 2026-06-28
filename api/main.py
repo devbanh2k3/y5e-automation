@@ -377,7 +377,12 @@ async def get_review_video(review_id: str) -> FileResponse:
     video_path = Path(str((review.get("video") or {}).get("file_path", ""))).expanduser()
     if not video_path.is_file():
         raise HTTPException(status_code=404, detail="Review video file not found.")
-    return FileResponse(video_path, media_type="video/mp4", filename=video_path.name)
+    return FileResponse(
+        video_path,
+        media_type="video/mp4",
+        filename=video_path.name,
+        content_disposition_type="inline",
+    )
 
 
 @app.get("/api/reviews/{review_id}/images/{scene_index}", tags=["Reviews"])

@@ -284,6 +284,7 @@ async def test_review_video_endpoint_streams_review_file(monkeypatch, tmp_path):
     assert response.status_code == 200
     assert response.content == b"mp4-bytes"
     assert response.headers["content-type"] == "video/mp4"
+    assert response.headers["content-disposition"].startswith("inline;")
 
 
 @pytest.mark.asyncio

@@ -56,6 +56,7 @@ async def test_approve_and_enqueue_uses_unique_review_job(monkeypatch) -> None:
     result = await youtube_upload_jobs.approve_and_enqueue(
         review_id="review-1",
         owner_telegram_user_id=111,
+        youtube_channel_id="channel-1",
     )
 
     assert result == {"upload_job_id": "upload-1", "status": "queued"}
@@ -77,6 +78,7 @@ async def test_approve_cannot_enqueue_another_users_review(monkeypatch) -> None:
         await youtube_upload_jobs.approve_and_enqueue(
             review_id="review-user-222",
             owner_telegram_user_id=111,
+            youtube_channel_id="channel-user-222",
         )
 
 

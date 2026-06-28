@@ -84,6 +84,15 @@ async def process_job(
             youtube_video_id=result.youtube_video_id,
             youtube_url=result.youtube_url,
         )
+        thumbnail = review.get("thumbnail") or {}
+        thumbnail_path = Path(str(thumbnail.get("file_path") or ""))
+        upload_thumbnail = getattr(upload_client, "upload_thumbnail", None)
+        if callable(upload_thumbnail) and thumbnail_path.is_file():
+            await upload_thumbnail(
+                access_token=access_token,
+                youtube_video_id=result.youtube_video_id,
+                thumbnail_path=thumbnail_path,
+            )
         await youtube_upload_jobs.mark_published(
             upload_job_id=upload_job_id,
             video_id=_optional_int(video.get("video_id")),
@@ -92,7 +101,11 @@ async def process_job(
         )
         await notify_owner(
             owner_telegram_user_id=owner_id,
-            text=f"Published on {context.get('channel_title', 'YouTube')}: {result.youtube_url}",
+            text=(
+                "Video đã public\n"
+                f"Kênh: {context.get('channel_title', 'YouTube')}\n"
+                f"Link: {result.youtube_url}"
+            ),
         )
     except YouTubeAuthRequired as exc:
         await youtube_channels.mark_auth_required(
@@ -105,7 +118,11 @@ async def process_job(
         )
         await notify_owner(
             owner_telegram_user_id=owner_id,
-            text=f"YouTube authorization expired for {context.get('channel_title', 'channel')}. Reconnect it with /channels.",
+            text=(
+                "Cần kết nối lại YouTube\n"
+                f"Kênh: {context.get('channel_title', 'channel')}\n"
+                "Mở /channels để kết nối lại rồi retry upload."
+            ),
         )
     except YouTubeRetryableError as exc:
         await youtube_upload_jobs.reschedule_job(
@@ -121,7 +138,11 @@ async def process_job(
         )
         await notify_owner(
             owner_telegram_user_id=owner_id,
-            text=f"YouTube upload failed permanently: {exc}",
+            text=(
+                "Upload YouTube thất bại\n"
+                f"Lý do: {exc}\n"
+                "Video vẫn được giữ trong hệ thống để kiểm tra lại."
+            ),
         )
     except Exception:
         logger.exception("Unexpected upload worker failure for job %s", upload_job_id)
@@ -134,9 +155,14 @@ async def process_job(
 
 def _optional_int(value: Any) -> int | None:
     try:
-        return int(value) if value is not None else None
+        parsed = int(value) if value is not None else None
     except (TypeError, ValueError):
         return None
+    if parsed is None:
+        return None
+    if parsed < -(2**31) or parsed > 2**31 - 1:
+        return None
+    return parsed
 
 
 async def run(*, loop: bool, idle_sleep: float) -> None:

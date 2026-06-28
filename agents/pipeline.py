@@ -33,6 +33,7 @@ from core.video_contract import (
     build_video_data_from_content_contract,
     validate_video_data,
 )
+from services.thumbnail_collage import build_review_thumbnail
 
 logger = logging.getLogger(__name__)
 
@@ -323,6 +324,7 @@ class Pipeline:
         quality_gate: dict[str, Any] | None = None
         metadata_variants: dict[str, Any] = {}
         selected_metadata: dict[str, Any] = {}
+        thumbnail: dict[str, Any] = {}
         if content_contract:
             quality_gate = run_production_quality_gate(
                 topic_id=topic_id,
@@ -343,6 +345,13 @@ class Pipeline:
                 selected_metadata.get("description") or content_contract["youtube_description"]
             )
             youtube_tags = selected_metadata.get("tags") or content_contract["youtube_tags"]
+            thumbnail = build_review_thumbnail(
+                review_id="",
+                topic_dir=get_settings().storage_dir / "topics" / str(topic_id),
+                content_contract=content_contract,
+                image_verification_contract=image_verification_contract,
+                selected_metadata=selected_metadata,
+            )
             review = await create_review(
                 job_id="",
                 topic_id=topic_id,
@@ -358,6 +367,7 @@ class Pipeline:
                 youtube_description=youtube_description,
                 youtube_tags=youtube_tags,
                 thumbnail_prompt=content_contract["thumbnail_prompt"],
+                thumbnail=thumbnail,
             )
 
         return {
@@ -390,6 +400,7 @@ class Pipeline:
                 else []
             ),
             "thumbnail_prompt": content_contract["thumbnail_prompt"] if content_contract else "",
+            "thumbnail": thumbnail,
             "image_verification_contract": image_verification_contract,
             "quality_gate": quality_gate,
             "metadata_variants": metadata_variants,
