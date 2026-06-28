@@ -260,6 +260,21 @@ Return JSON only with this shape:
             country_label = canonical_country_label(country_code)
             if not country_label:
                 country_label = str(scene.get("countryLabel", "")).strip().upper()
+            fact_value = str(scene.get("factValue") or metric_value).strip()
+            fact_unit = str(scene.get("factUnit") or metric_label).strip().upper()
+            fact_as_of = str(scene.get("factAsOf") or topic.get("time_scope") or "2026").strip()
+            fact_context = str(
+                scene.get("factContext")
+                or scene.get("sourceRequirement")
+                or topic.get("metric_scope")
+                or "public estimate"
+            ).strip()
+            fact_claim = str(scene.get("factClaim") or "").strip()
+            if not fact_claim and topic.get("content_format"):
+                fact_claim = (
+                    f"{person_name} has a public {metric_label.lower()} estimate "
+                    f"of {fact_value} as of {fact_as_of}."
+                )
             normalized_scenes.append(
                 {
                     "title": title,
@@ -276,11 +291,11 @@ Return JSON only with this shape:
                     ).strip(),
                     **(
                         {
-                            "factClaim": str(scene.get("factClaim", "")).strip(),
-                            "factValue": str(scene.get("factValue", metric_value)).strip(),
-                            "factUnit": str(scene.get("factUnit", "")).strip(),
-                            "factAsOf": str(scene.get("factAsOf", "")).strip(),
-                            "factContext": str(scene.get("factContext", "")).strip(),
+                            "factClaim": fact_claim,
+                            "factValue": fact_value,
+                            "factUnit": fact_unit,
+                            "factAsOf": fact_as_of,
+                            "factContext": fact_context,
                         }
                         if topic.get("content_format")
                         else {}

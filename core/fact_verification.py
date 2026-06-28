@@ -120,6 +120,42 @@ def apply_fact_corrections(
     return corrected
 
 
+def align_fact_verification_to_content_contract(
+    verification_contract: dict[str, Any],
+    content_contract: dict[str, Any],
+) -> dict[str, Any]:
+    """Return fact evidence in the same scene order as a corrected contract."""
+    validate_fact_verification_contract_v1(
+        verification_contract,
+        require_ai_verified=True,
+    )
+    scenes = content_contract.get("scenes")
+    if not isinstance(scenes, list) or not scenes:
+        raise FactVerificationError("content contract scenes are required")
+
+    remaining = [copy.deepcopy(item) for item in verification_contract["items"]]
+    aligned_items: list[dict[str, Any]] = []
+    for scene_index, scene in enumerate(scenes):
+        scene_person = _person_name(str(scene.get("title", "")))
+        scene_value = str(scene.get("factValue", scene.get("metricValue", ""))).strip()
+        match_index = _find_fact_item_index(
+            remaining,
+            person_name=scene_person,
+            verified_value=scene_value,
+        )
+        if match_index is None:
+            raise FactVerificationError(
+                f"fact evidence is missing for corrected scene {scene_index}"
+            )
+        item = remaining.pop(match_index)
+        item["scene_index"] = scene_index
+        aligned_items.append(item)
+
+    if remaining:
+        raise FactVerificationError("fact evidence has extra items after alignment")
+    return build_fact_verification_contract_v1(aligned_items)
+
+
 def _numeric_value(value: str) -> float:
     match = re.search(r"-?\d+(?:[.,]\d+)?", value.replace(",", ""))
     if match is None:
@@ -133,3 +169,23 @@ def _numeric_value(value: str) -> float:
     elif "K" in upper:
         number *= 1_000
     return number
+
+
+def _person_name(title: str) -> str:
+    return re.sub(r"^#\s*\d+\s*", "", title).strip().lower()
+
+
+def _find_fact_item_index(
+    items: list[dict[str, Any]],
+    *,
+    person_name: str,
+    verified_value: str,
+) -> int | None:
+    normalized_person = person_name.lower()
+    for index, item in enumerate(items):
+        if str(item.get("person_name", "")).strip().lower() == normalized_person:
+            return index
+    for index, item in enumerate(items):
+        if str(item.get("verified_value", "")).strip() == verified_value:
+            return index
+    return None

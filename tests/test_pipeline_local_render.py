@@ -332,6 +332,8 @@ async def test_run_local_render_uses_content_agent_for_celebrity(monkeypatch, tm
     assert result["fact_verification_contract"] == fact_contract
     assert result["content_contract"]["scenes"][1]["factValue"] == "1.6B USD"
     assert result["content_contract"]["scenes"][0]["factValue"] == "560M USD"
+    assert fact_contract["items"][0]["verified_value"] == "560M USD"
+    assert fact_contract["items"][1]["verified_value"] == "1.6B USD"
     assert video_data["template"] == "timeline"
     assert video_data["cards"][0]["header"] == "TOP 2"
     assert video_data["cards"][0]["imagePath"] == "images/real_0.webp"

@@ -2,6 +2,7 @@ import pytest
 
 from core.fact_verification import (
     FactVerificationError,
+    align_fact_verification_to_content_contract,
     apply_fact_corrections,
     build_fact_verification_contract_v1,
     validate_fact_verification_contract_v1,
@@ -80,3 +81,19 @@ def test_corrections_update_values_and_rerank_numeric_ranking():
     assert corrected["scenes"][0]["factValue"] == "20"
     assert corrected["scenes"][1]["factValue"] == "30"
     assert corrected["scenes"][1]["title"].startswith("#1 ")
+
+
+def test_align_fact_verification_matches_corrected_scene_order():
+    verification = build_fact_verification_contract_v1(
+        [
+            item(0, status="corrected", original="10", verified="30"),
+            item(1, status="verified", original="20", verified="20"),
+        ]
+    )
+    corrected = apply_fact_corrections(content_contract(), verification)
+
+    aligned = align_fact_verification_to_content_contract(verification, corrected)
+
+    assert [item["verified_value"] for item in aligned["items"]] == ["20", "30"]
+    assert [item["scene_index"] for item in aligned["items"]] == [0, 1]
+    validate_fact_verification_contract_v1(aligned, require_ai_verified=True)

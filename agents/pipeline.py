@@ -24,6 +24,7 @@ from agents.real_image_agent import RealImageAgent
 from core import database as db
 from core.config import get_settings
 from core.fact_verification import apply_fact_corrections
+from core.fact_verification import align_fact_verification_to_content_contract
 from core.notifier import notify, notify_error
 from core.quality_gate import run_production_quality_gate
 from core.reviews import create_review
@@ -293,6 +294,10 @@ class Pipeline:
                 content_contract = apply_fact_corrections(
                     content_contract,
                     fact_verification_contract,
+                )
+                fact_verification_contract = align_fact_verification_to_content_contract(
+                    fact_verification_contract,
+                    content_contract,
                 )
             video_data = build_video_data_from_content_contract(content_contract)
             image_verification_contract = await RealImageAgent().run_for_content_contract(

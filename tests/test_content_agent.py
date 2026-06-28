@@ -162,6 +162,30 @@ def test_normalize_ai_celebrity_contract_rejects_too_few_duration_scenes():
         )
 
 
+def test_normalize_ai_celebrity_contract_repairs_missing_fact_fields():
+    contract = ContentAgent._normalize_ai_celebrity_contract(
+        raw_contract=awards_contract_payload(count=6),
+        language="en",
+        topic={
+            "title": "Awards",
+            "metric_label": "AWARDS",
+            "content_format": "ranking",
+            "metric_scope": "public award estimates",
+            "time_scope": "through 2026",
+        },
+        card_layout="flag_hero",
+        duration_target=40,
+    )
+
+    validate_content_contract_v2(contract)
+    first = contract["scenes"][0]
+    assert first["factClaim"]
+    assert first["factValue"] == first["metricValue"]
+    assert first["factUnit"] == "AWARDS"
+    assert first["factAsOf"] == "through 2026"
+    assert first["factContext"]
+
+
 @pytest.mark.asyncio
 async def test_content_agent_builds_seeded_celebrity_mvp_contract(monkeypatch):
     agent = ContentAgent()
