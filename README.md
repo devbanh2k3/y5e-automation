@@ -412,6 +412,7 @@ All configuration is via environment variables (or `.env` file):
 | `FALLBACK_MODEL` | `gpt-4o-mini` | Fallback AI model name |
 | `TELEGRAM_BOT_TOKEN` | — | Telegram bot token |
 | `TELEGRAM_CHAT_ID` | — | Telegram chat/group ID for legacy notifications |
+| `PUBLIC_BASE_URL` | `http://localhost:8000` | Public API URL used by Telegram review buttons |
 | `YOUTUBE_API_KEY` | — | YouTube Data API v3 key |
 | `STORAGE_PATH` | `./output` | Local storage directory |
 | `LOG_LEVEL` | `INFO` | Logging level |
@@ -448,6 +449,10 @@ python3 scripts/telegram_remote_bot.py
 The bot remembers the latest chat id for each whitelisted user when they send a
 command. Production completion/failure notifications are sent back to that chat;
 `TELEGRAM_CHAT_ID` is used as a fallback when no per-user chat id is known.
+When a video is ready, the bot sends inline buttons for opening the MP4,
+opening the Review UI, approving, or rejecting with common reasons. Set
+`PUBLIC_BASE_URL` to a URL reachable from the device where you open Telegram;
+`http://localhost:8000` is enough only on the same machine.
 
 Process one fair-scheduled production task:
 

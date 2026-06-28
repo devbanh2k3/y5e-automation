@@ -97,6 +97,8 @@ async def _handle_status(*, telegram_user_id: int) -> str:
         f"Queued: {summary.get('queued', 0)}",
         f"Running: {summary.get('running', 0)}",
         f"Pending review: {summary.get('pending_review', 0)}",
+        f"Approved: {summary.get('approved', 0)}",
+        f"Rejected: {summary.get('rejected', 0)}",
         f"Failed: {summary.get('failed', 0)}",
         "",
         "Recent batches:",

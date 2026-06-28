@@ -31,8 +31,8 @@ async def test_process_one_task_claims_fair_task_and_marks_pending_review(monkey
         assert user_id == 111
         return 999
 
-    async def fake_send_telegram_message(*, chat_id, text):
-        calls["notification"] = {"chat_id": chat_id, "text": text}
+    async def fake_send_telegram_message(*, chat_id, text, reply_markup=None):
+        calls["notification"] = {"chat_id": chat_id, "text": text, "reply_markup": reply_markup}
         return True
 
     monkeypatch.setattr(process_production_task.production_tasks, "claim_next_fair_task", fake_claim_next_fair_task)
@@ -59,6 +59,7 @@ async def test_process_one_task_claims_fair_task_and_marks_pending_review(monkey
     assert calls["pending"]["review_id"] == "review-1"
     assert calls["notification"]["chat_id"] == 999
     assert "ready for review" in calls["notification"]["text"].lower()
+    assert calls["notification"]["reply_markup"]["inline_keyboard"][1][0]["text"] == "Approve"
 
 
 @pytest.mark.asyncio
@@ -85,7 +86,7 @@ async def test_process_one_task_marks_failure(monkeypatch):
         assert user_id == 111
         return 999
 
-    async def fake_send_telegram_message(*, chat_id, text):
+    async def fake_send_telegram_message(*, chat_id, text, reply_markup=None):
         calls["notification"] = {"chat_id": chat_id, "text": text}
         return True
 

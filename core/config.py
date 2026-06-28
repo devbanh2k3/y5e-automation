@@ -46,6 +46,7 @@ class Settings(BaseSettings):
     # ── Telegram notifications ────────────────────────────────
     telegram_bot_token: str = ""
     telegram_chat_id: str = ""
+    public_base_url: str = "http://localhost:8000"
 
     # ── YouTube Data API ──────────────────────────────────────
     youtube_api_key: str = ""

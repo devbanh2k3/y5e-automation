@@ -53,4 +53,49 @@ async def test_handle_update_routes_message_to_command_handler(monkeypatch):
 async def test_handle_update_ignores_non_text_updates():
     from scripts import telegram_remote_bot
 
-    assert await telegram_remote_bot.handle_update({"callback_query": {}}) is False
+    assert await telegram_remote_bot.handle_update({"edited_message": {}}) is False
+
+
+@pytest.mark.asyncio
+async def test_handle_update_routes_callback_query(monkeypatch):
+    from scripts import telegram_remote_bot
+
+    sent = {}
+
+    async def fake_handle_review_callback(*, telegram_user_id, data):
+        assert telegram_user_id == 111
+        assert data == "rv:ok:review-1"
+        return "Approved review review-1."
+
+    async def fake_answer_callback_query(*, callback_query_id, text):
+        sent["callback_query_id"] = callback_query_id
+        sent["answer_text"] = text
+        return True
+
+    async def fake_send_message(*, chat_id, text):
+        sent["chat_id"] = chat_id
+        sent["message_text"] = text
+        return True
+
+    monkeypatch.setattr(telegram_remote_bot, "handle_review_callback", fake_handle_review_callback)
+    monkeypatch.setattr(telegram_remote_bot, "answer_callback_query", fake_answer_callback_query)
+    monkeypatch.setattr(telegram_remote_bot, "send_message", fake_send_message)
+
+    handled = await telegram_remote_bot.handle_update(
+        {
+            "callback_query": {
+                "id": "cb-1",
+                "from": {"id": 111},
+                "message": {"chat": {"id": 999}},
+                "data": "rv:ok:review-1",
+            }
+        }
+    )
+
+    assert handled is True
+    assert sent == {
+        "callback_query_id": "cb-1",
+        "answer_text": "Approved review review-1.",
+        "chat_id": 999,
+        "message_text": "Approved review review-1.",
+    }

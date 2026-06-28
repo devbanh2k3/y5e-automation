@@ -154,3 +154,20 @@ async def test_fail_task_records_error_and_updates_batch(monkeypatch):
 
     assert any("failed" in call[0] for call in calls)
     assert any("failed_count" in call[0] for call in calls)
+
+
+@pytest.mark.asyncio
+async def test_mark_task_review_decision_updates_task_status(monkeypatch):
+    from core import production_tasks
+
+    calls = []
+
+    async def fake_execute(query, *args):
+        calls.append((query, args))
+        return "UPDATE 1"
+
+    monkeypatch.setattr(production_tasks, "execute", fake_execute)
+
+    await production_tasks.mark_task_review_decision(review_id="review-1", status="approved")
+
+    assert calls[0][1] == ("review-1", "approved")

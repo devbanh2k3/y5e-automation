@@ -15,8 +15,9 @@ if str(ROOT_DIR) not in sys.path:
 
 from core import production_tasks
 from core.config import get_settings
-from services.telegram_notifications import TELEGRAM_API, send_telegram_message
+from services.telegram_notifications import TELEGRAM_API, answer_callback_query, send_telegram_message
 from services.telegram_remote import handle_telegram_command
+from services.telegram_review_actions import handle_review_callback
 
 
 async def send_message(*, chat_id: int, text: str) -> bool:
@@ -26,6 +27,10 @@ async def send_message(*, chat_id: int, text: str) -> bool:
 
 async def handle_update(update: dict[str, Any]) -> bool:
     """Handle one Telegram update. Returns True when a text message was handled."""
+    callback_query = update.get("callback_query")
+    if isinstance(callback_query, dict):
+        return await handle_callback_query(callback_query)
+
     message = update.get("message")
     if not isinstance(message, dict):
         return False
@@ -53,6 +58,24 @@ async def handle_update(update: dict[str, Any]) -> bool:
     return True
 
 
+async def handle_callback_query(callback_query: dict[str, Any]) -> bool:
+    """Handle one inline button tap from Telegram."""
+    callback_query_id = str(callback_query.get("id", ""))
+    data = str(callback_query.get("data", ""))
+    message = callback_query.get("message") if isinstance(callback_query.get("message"), dict) else {}
+    chat = message.get("chat") if isinstance(message.get("chat"), dict) else {}
+    sender = callback_query.get("from") if isinstance(callback_query.get("from"), dict) else {}
+    chat_id = int(chat.get("id", 0))
+    telegram_user_id = int(sender.get("id", 0))
+    if not chat_id or not telegram_user_id or not data:
+        return False
+
+    response = await handle_review_callback(telegram_user_id=telegram_user_id, data=data)
+    await answer_callback_query(callback_query_id=callback_query_id, text=response[:180])
+    await send_message(chat_id=chat_id, text=response)
+    return True
+
+
 async def poll_forever(*, poll_interval: float = 1.0) -> None:
     """Poll Telegram updates forever."""
     settings = get_settings()
@@ -66,7 +89,7 @@ async def poll_forever(*, poll_interval: float = 1.0) -> None:
         while True:
             response = await client.get(
                 url,
-                params={"timeout": 30, "offset": offset, "allowed_updates": ["message"]},
+                params={"timeout": 30, "offset": offset, "allowed_updates": ["message", "callback_query"]},
             )
             response.raise_for_status()
             payload = response.json()

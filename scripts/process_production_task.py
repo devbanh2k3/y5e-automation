@@ -15,7 +15,7 @@ if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
 from core import production_tasks
-from services.telegram_notifications import send_telegram_message
+from services.telegram_notifications import build_review_keyboard, send_telegram_message
 from scripts.produce_celebrity_video import produce
 
 
@@ -70,8 +70,9 @@ async def process_one_task() -> dict[str, Any]:
         topic_id=str(result.get("topic_id", "")),
         video_path=str(result.get("video_path", "")),
     )
-    await _notify_owner(
+    await _notify_owner_with_keyboard(
         owner_telegram_user_id=owner_telegram_user_id,
+        review_id=str(result.get("review_id", "")),
         text=(
             "Video ready for review.\n"
             f"Batch: {batch_id}\n"
@@ -94,6 +95,16 @@ async def _notify_owner(*, owner_telegram_user_id: int, text: str) -> bool:
     chat_id = await production_tasks.get_notification_chat_id(owner_telegram_user_id)
     try:
         return await send_telegram_message(chat_id=chat_id, text=text)
+    except Exception:
+        return False
+
+
+async def _notify_owner_with_keyboard(*, owner_telegram_user_id: int, review_id: str, text: str) -> bool:
+    """Best-effort review notification with inline review buttons."""
+    chat_id = await production_tasks.get_notification_chat_id(owner_telegram_user_id)
+    keyboard = build_review_keyboard(review_id) if review_id else None
+    try:
+        return await send_telegram_message(chat_id=chat_id, text=text, reply_markup=keyboard)
     except Exception:
         return False
 

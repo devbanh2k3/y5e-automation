@@ -234,6 +234,8 @@ async def user_queue_summary(telegram_user_id: int) -> dict[str, Any]:
         "queued": counts.get("queued", 0),
         "running": counts.get("running", 0),
         "pending_review": counts.get("pending_review", 0),
+        "approved": counts.get("approved", 0),
+        "rejected": counts.get("rejected", 0),
         "failed": counts.get("failed", 0),
     }
 
@@ -304,4 +306,20 @@ async def mark_task_failed(*, task_id: str, batch_id: str, error: str) -> None:
         WHERE batch_id = $1::uuid
         """,
         batch_id,
+    )
+
+
+async def mark_task_review_decision(*, review_id: str, status: str) -> None:
+    """Mirror a review decision back onto the production task row."""
+    if status not in {"approved", "rejected"}:
+        raise ValueError("status must be approved or rejected")
+    await execute(
+        """
+        UPDATE production_tasks
+        SET status = $2,
+            updated_at = NOW()
+        WHERE review_id = $1
+        """,
+        review_id,
+        status,
     )

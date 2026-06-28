@@ -166,7 +166,7 @@ async def test_status_returns_user_queue_summary(monkeypatch):
         return {"telegram_user_id": user_id, "username": "alice", "role": "producer", "is_active": True}
 
     async def fake_user_queue_summary(user_id):
-        return {"queued": 6, "running": 1, "pending_review": 3, "failed": 0}
+        return {"queued": 6, "running": 1, "pending_review": 3, "approved": 2, "rejected": 1, "failed": 0}
 
     async def fake_list_user_batches(user_id, limit=5):
         return [
@@ -191,4 +191,6 @@ async def test_status_returns_user_queue_summary(monkeypatch):
 
     assert "queued: 6" in response.lower()
     assert "running: 1" in response.lower()
+    assert "approved: 2" in response.lower()
+    assert "rejected: 1" in response.lower()
     assert "batch-1" in response
