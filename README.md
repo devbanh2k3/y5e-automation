@@ -409,10 +409,59 @@ All configuration is via environment variables (or `.env` file):
 | `FALLBACK_API_KEY` | — | Fallback AI API key |
 | `FALLBACK_MODEL` | `gpt-4o-mini` | Fallback AI model name |
 | `TELEGRAM_BOT_TOKEN` | — | Telegram bot token |
-| `TELEGRAM_CHAT_ID` | — | Telegram chat/group ID |
+| `TELEGRAM_CHAT_ID` | — | Telegram chat/group ID for legacy notifications |
 | `YOUTUBE_API_KEY` | — | YouTube Data API v3 key |
 | `STORAGE_PATH` | `./output` | Local storage directory |
 | `LOG_LEVEL` | `INFO` | Logging level |
+
+---
+
+## Telegram Remote Production Control
+
+Telegram remote control uses a whitelist in Postgres, not daily quotas. Each
+`/create` command creates a batch and splits it into one task per video. The
+worker claims tasks with fair round-robin scheduling by Telegram user, so two
+users creating 10 videos each are interleaved instead of one user blocking the
+other.
+
+Allow users:
+
+```bash
+python3 scripts/telegram_user_admin.py allow 123456789 --username alice --role producer
+python3 scripts/telegram_user_admin.py allow 987654321 --username bob --role producer
+```
+
+Run the Telegram polling bot:
+
+```bash
+python3 scripts/telegram_remote_bot.py
+```
+
+Process one fair-scheduled production task:
+
+```bash
+python3 scripts/process_production_task.py --once
+```
+
+Supported Telegram commands in v1:
+
+```text
+/start
+/help
+/create <count> [category] [language] [layout]
+/status
+/batches
+```
+
+V1 deliberately keeps YouTube upload out of Telegram. The remote flow is:
+Telegram create -> fair task queue -> render -> pending review -> Review UI or
+Telegram status.
+
+For an existing database, apply the production-control migration first:
+
+```bash
+psql "$DATABASE_URL" -f db/migrations/2026-06-28-telegram-remote-production.sql
+```
 
 ---
 
