@@ -621,6 +621,47 @@ The n8n instance at `http://localhost:5678` can be configured to:
 
 Default n8n credentials: `admin` / `changeme`
 
+## Multi-Channel YouTube Publishing
+
+Each authorized Telegram user can connect multiple YouTube channels. Channel ownership is enforced in PostgreSQL, and the user must select a destination with `/channels` before every `/create` command. Approving a review queues a background resumable upload with the approved metadata and Public visibility.
+
+### Google OAuth Setup
+
+1. Enable YouTube Data API v3 in a Google Cloud project.
+2. Configure an External OAuth consent screen and add test users while the app remains in Testing.
+3. Create a Web application OAuth client.
+4. Start a Cloudflare Quick Tunnel for port `8000` and set `PUBLIC_BASE_URL` to its HTTPS URL.
+5. Register this exact redirect URI in Google Cloud: `<PUBLIC_BASE_URL>/api/youtube/oauth/callback`.
+6. Generate the encryption key:
+
+```bash
+python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+```
+
+Set these values in `.env`:
+
+```dotenv
+YOUTUBE_UPLOAD_ENABLED=false
+YOUTUBE_OAUTH_CLIENT_ID=...
+YOUTUBE_OAUTH_CLIENT_SECRET=...
+YOUTUBE_TOKEN_ENCRYPTION_KEY=...
+PUBLIC_BASE_URL=https://your-quick-tunnel.trycloudflare.com
+```
+
+Rebuild and start the services:
+
+```bash
+docker compose build api telegram-bot youtube-upload-worker
+docker compose up -d db-migrate api telegram-bot production-worker youtube-upload-worker
+docker compose logs -f youtube-upload-worker
+```
+
+Use `/channels` in Telegram, tap **Add channel**, complete Google consent, then select the channel before creating a batch. Keep `YOUTUBE_UPLOAD_ENABLED=false` until a disposable Private operator smoke confirms the exact destination channel. The approved production behavior is Public; enable it only after that check.
+
+Cloudflare Quick Tunnel URLs change after restart. Update both `PUBLIC_BASE_URL` and the authorized Google redirect URI when that happens. A stable deployment should use a Cloudflare Named Tunnel or a fixed HTTPS domain.
+
+The upload worker streams MP4 chunks directly from the shared output volume. n8n receives no OAuth token and does not transfer video binaries.
+
 ---
 
 ## Development

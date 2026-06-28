@@ -40,6 +40,17 @@ def test_compose_runs_remote_production_inside_docker() -> None:
     assert 'command: ["python", "scripts/apply_db_migrations.py"]' in source
 
 
+def test_compose_runs_youtube_upload_worker_with_shared_output() -> None:
+    source = (ROOT / "docker-compose.yml").read_text()
+
+    assert "youtube-upload-worker:" in source
+    assert (
+        'command: ["python", "scripts/process_youtube_upload_job.py", "--loop", "--idle-sleep", "5"]'
+        in source
+    )
+    assert "./output:/app/output" in source
+
+
 def test_dockerignore_excludes_runtime_and_generated_assets() -> None:
     source = (ROOT / ".dockerignore").read_text()
 
