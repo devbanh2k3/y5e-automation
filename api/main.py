@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import logging
+from html import escape
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -36,7 +37,13 @@ from core.reviews import (
 )
 from core.cost_tracker import get_usage_summary
 from core.storage import get_storage_usage
+from core.youtube_channels import OAuthStateError
 from scripts.regenerate_scene import regenerate_wrong_image_scene
+from services.youtube_oauth import (
+    YouTubeOAuthError,
+    complete_oauth as complete_youtube_oauth,
+    start_oauth as start_youtube_oauth,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -190,6 +197,29 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 async def review_ui() -> FileResponse:
     """Serve the local review gate UI."""
     return FileResponse(STATIC_DIR / "review-ui.html", media_type="text/html")
+
+
+@app.get("/api/youtube/oauth/start", tags=["YouTube"])
+async def youtube_oauth_start(ticket: str) -> RedirectResponse:
+    """Start a tenant-bound Google OAuth flow from a one-time Telegram ticket."""
+    try:
+        authorization_url = await start_youtube_oauth(ticket)
+    except OAuthStateError:
+        raise HTTPException(status_code=400, detail="OAuth link is invalid or expired") from None
+    return RedirectResponse(authorization_url)
+
+
+@app.get("/api/youtube/oauth/callback", tags=["YouTube"])
+async def youtube_oauth_callback(code: str, state: str) -> HTMLResponse:
+    """Complete Google OAuth and show a minimal browser result."""
+    try:
+        channel = await complete_youtube_oauth(code=code, state=state)
+    except OAuthStateError:
+        return HTMLResponse("OAuth link is invalid or already used.", status_code=400)
+    except YouTubeOAuthError as exc:
+        return HTMLResponse(escape(str(exc)), status_code=400)
+    title = escape(str(channel.get("title") or "YouTube channel"))
+    return HTMLResponse(f"<h1>Channel connected</h1><p>{title}</p>")
 
 
 @app.get("/api/health", response_model=HealthResponse, tags=["System"])
