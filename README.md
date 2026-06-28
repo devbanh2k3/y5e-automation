@@ -431,16 +431,32 @@ python3 scripts/telegram_user_admin.py allow 123456789 --username alice --role p
 python3 scripts/telegram_user_admin.py allow 987654321 --username bob --role producer
 ```
 
+Find the correct chat id after sending `/start` to the bot:
+
+```bash
+python3 scripts/telegram_chat_id.py --timeout 10
+```
+
 Run the Telegram polling bot:
 
 ```bash
 python3 scripts/telegram_remote_bot.py
 ```
 
+The bot remembers the latest chat id for each whitelisted user when they send a
+command. Production completion/failure notifications are sent back to that chat;
+`TELEGRAM_CHAT_ID` is used as a fallback when no per-user chat id is known.
+
 Process one fair-scheduled production task:
 
 ```bash
 python3 scripts/process_production_task.py --once
+```
+
+Run the production worker continuously:
+
+```bash
+python3 scripts/process_production_task.py --loop --idle-sleep 10
 ```
 
 Supported Telegram commands in v1:
@@ -461,6 +477,7 @@ For an existing database, apply the production-control migration first:
 
 ```bash
 psql "$DATABASE_URL" -f db/migrations/2026-06-28-telegram-remote-production.sql
+psql "$DATABASE_URL" -f db/migrations/2026-06-28-telegram-chat-routing.sql
 ```
 
 ---

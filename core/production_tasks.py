@@ -15,12 +15,41 @@ async def get_authorized_user(telegram_user_id: int) -> dict[str, Any] | None:
     """Return an active Telegram user record, or None when unauthorized."""
     return await fetchrow(
         """
-        SELECT telegram_user_id, username, role, is_active
+        SELECT telegram_user_id, chat_id, username, role, is_active
         FROM telegram_users
         WHERE telegram_user_id = $1 AND is_active = TRUE
         """,
         telegram_user_id,
     )
+
+
+async def update_user_chat_id(*, telegram_user_id: int, chat_id: int) -> None:
+    """Remember the latest chat id for an authorized Telegram user."""
+    await execute(
+        """
+        UPDATE telegram_users
+        SET chat_id = $2,
+            updated_at = NOW()
+        WHERE telegram_user_id = $1 AND is_active = TRUE
+        """,
+        telegram_user_id,
+        chat_id,
+    )
+
+
+async def get_notification_chat_id(telegram_user_id: int) -> int | None:
+    """Return the chat id used for production notifications."""
+    row = await fetchrow(
+        """
+        SELECT chat_id
+        FROM telegram_users
+        WHERE telegram_user_id = $1 AND is_active = TRUE
+        """,
+        telegram_user_id,
+    )
+    if not row or row.get("chat_id") is None:
+        return None
+    return int(row["chat_id"])
 
 
 async def create_production_batch(

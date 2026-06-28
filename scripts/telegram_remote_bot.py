@@ -9,35 +9,19 @@ import sys
 from pathlib import Path
 from typing import Any
 
-import httpx
-
 ROOT_DIR = Path(__file__).resolve().parents[1]
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
+from core import production_tasks
 from core.config import get_settings
+from services.telegram_notifications import TELEGRAM_API, send_telegram_message
 from services.telegram_remote import handle_telegram_command
-
-TELEGRAM_API = "https://api.telegram.org"
 
 
 async def send_message(*, chat_id: int, text: str) -> bool:
     """Send one Telegram message to the chat that issued a command."""
-    settings = get_settings()
-    if not settings.telegram_bot_token:
-        return False
-    url = f"{TELEGRAM_API}/bot{settings.telegram_bot_token}/sendMessage"
-    async with httpx.AsyncClient(timeout=15.0) as client:
-        response = await client.post(
-            url,
-            json={
-                "chat_id": chat_id,
-                "text": text,
-                "disable_web_page_preview": True,
-            },
-        )
-        response.raise_for_status()
-    return True
+    return await send_telegram_message(chat_id=chat_id, text=text)
 
 
 async def handle_update(update: dict[str, Any]) -> bool:
@@ -56,6 +40,10 @@ async def handle_update(update: dict[str, Any]) -> bool:
     if not chat_id or not telegram_user_id:
         return False
 
+    await production_tasks.update_user_chat_id(
+        telegram_user_id=telegram_user_id,
+        chat_id=chat_id,
+    )
     response = await handle_telegram_command(
         telegram_user_id=telegram_user_id,
         username=username,
@@ -72,6 +60,8 @@ async def poll_forever(*, poll_interval: float = 1.0) -> None:
         raise RuntimeError("TELEGRAM_BOT_TOKEN is required")
     offset = 0
     url = f"{TELEGRAM_API}/bot{settings.telegram_bot_token}/getUpdates"
+    import httpx
+
     async with httpx.AsyncClient(timeout=35.0) as client:
         while True:
             response = await client.get(
@@ -100,4 +90,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

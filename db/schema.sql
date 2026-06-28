@@ -248,6 +248,7 @@ CREATE INDEX idx_pipeline_logs_created_at ON pipeline_logs (created_at DESC);
 -- ============================================================
 CREATE TABLE IF NOT EXISTS telegram_users (
     telegram_user_id BIGINT PRIMARY KEY,
+    chat_id          BIGINT,
     username         TEXT DEFAULT '',
     role             TEXT NOT NULL DEFAULT 'producer',
     is_active        BOOLEAN NOT NULL DEFAULT TRUE,
@@ -256,6 +257,7 @@ CREATE TABLE IF NOT EXISTS telegram_users (
 );
 
 CREATE INDEX idx_telegram_users_active ON telegram_users (is_active);
+CREATE INDEX idx_telegram_users_chat_id ON telegram_users (chat_id);
 CREATE INDEX idx_telegram_users_role ON telegram_users (role);
 
 -- ============================================================

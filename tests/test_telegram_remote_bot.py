@@ -18,8 +18,17 @@ async def test_handle_update_routes_message_to_command_handler(monkeypatch):
         sent["text"] = text
         return True
 
+    async def fake_update_user_chat_id(*, telegram_user_id, chat_id):
+        sent["remembered_user_id"] = telegram_user_id
+        sent["remembered_chat_id"] = chat_id
+
     monkeypatch.setattr(telegram_remote_bot, "handle_telegram_command", fake_handle_telegram_command)
     monkeypatch.setattr(telegram_remote_bot, "send_message", fake_send_message)
+    monkeypatch.setattr(
+        telegram_remote_bot.production_tasks,
+        "update_user_chat_id",
+        fake_update_user_chat_id,
+    )
 
     handled = await telegram_remote_bot.handle_update(
         {
@@ -32,7 +41,12 @@ async def test_handle_update_routes_message_to_command_handler(monkeypatch):
     )
 
     assert handled is True
-    assert sent == {"chat_id": 999, "text": "status response"}
+    assert sent == {
+        "chat_id": 999,
+        "text": "status response",
+        "remembered_user_id": 111,
+        "remembered_chat_id": 999,
+    }
 
 
 @pytest.mark.asyncio
