@@ -110,6 +110,20 @@ class RealImageAgent(BaseAgent):
             )
         return list(dict.fromkeys(query for query in queries if query.strip()))
 
+    @staticmethod
+    def person_search_names(person_name: str) -> list[str]:
+        """Return canonical and fallback person names for image search."""
+        cleaned = person_name.strip()
+        names: list[str] = []
+        coen_match = re.match(r"^Coen Brothers\s+\((Joel|Ethan)\)$", cleaned, re.IGNORECASE)
+        if coen_match:
+            names.append(f"{coen_match.group(1).title()} Coen")
+        names.append(cleaned)
+        without_parenthetical = re.sub(r"\s+\([^)]*\)\s*$", "", cleaned).strip()
+        if without_parenthetical and without_parenthetical != cleaned:
+            names.append(without_parenthetical)
+        return list(dict.fromkeys(name for name in names if name))
+
     async def run_for_content_contract(
         self,
         *,
@@ -171,58 +185,245 @@ class RealImageAgent(BaseAgent):
         expected_title: str,
     ) -> dict[str, Any] | None:
         async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT, follow_redirects=True) as client:
-            for search_query in self.wikimedia_search_queries(person_name):
-                candidates: list[dict[str, Any]] = []
-                query = quote_plus(search_query)
-                url = (
-                    "https://commons.wikimedia.org/w/api.php"
-                    f"?action=query&generator=search"
-                    f"&gsrsearch={query}"
-                    f"&gsrnamespace=6"
-                    f"&gsrlimit=10"
-                    f"&prop=imageinfo"
-                    f"&iiprop=url|extmetadata|mime|thumbmime"
-                    f"&iiurlwidth=1200"
-                    f"&format=json"
+            for search_name in self.person_search_names(person_name):
+                result = await self._process_direct_candidates(
+                    candidates=await self._wikidata_p18_candidates(client, search_name),
+                    topic_id=topic_id,
+                    scene_index=scene_index,
+                    person_name=search_name,
+                    expected_title=expected_title,
                 )
-                response = await client.get(
-                    url,
-                    headers=self.wikimedia_headers(accept="application/json"),
+                if result is not None:
+                    return result
+                result = await self._process_direct_candidates(
+                    candidates=await self._wikipedia_pageimage_candidates(client, search_name),
+                    topic_id=topic_id,
+                    scene_index=scene_index,
+                    person_name=search_name,
+                    expected_title=expected_title,
                 )
-                response.raise_for_status()
-                data = response.json()
+                if result is not None:
+                    return result
 
-                pages = data.get("query", {}).get("pages", {})
-                for page in pages.values():
-                    candidate = self.extract_wikimedia_candidate(person_name, page)
-                    if candidate is None:
-                        continue
-                    candidates.append(candidate)
-
-                candidates.sort(
-                    key=lambda candidate: float(candidate.get("quality_score", 0.0)),
-                    reverse=True,
-                )
-                for candidate in candidates:
-                    try:
-                        return await self._process_verified_candidate(
-                            topic_id=topic_id,
-                            scene_index=scene_index,
-                            person_name=person_name,
-                            expected_title=expected_title,
-                            candidate=candidate,
-                        )
-                    except Exception:
-                        self.logger.exception(
-                            "Failed to process verified image candidate for %s",
-                            person_name,
-                        )
-                        continue
+            for search_name in self.person_search_names(person_name):
+                for search_query in self.wikimedia_search_queries(search_name):
+                    result = await self._find_commons_search_image(
+                        client=client,
+                        topic_id=topic_id,
+                        scene_index=scene_index,
+                        person_name=search_name,
+                        expected_title=expected_title,
+                        search_query=search_query,
+                    )
+                    if result is not None:
+                        return result
         return None
+
+    async def _process_direct_candidates(
+        self,
+        *,
+        candidates: list[dict[str, Any]],
+        topic_id: int,
+        scene_index: int,
+        person_name: str,
+        expected_title: str,
+    ) -> dict[str, Any] | None:
+        for candidate in candidates:
+            try:
+                return await self._process_verified_candidate(
+                    topic_id=topic_id,
+                    scene_index=scene_index,
+                    person_name=person_name,
+                    expected_title=expected_title,
+                    candidate=candidate,
+                )
+            except Exception:
+                self.logger.exception(
+                    "Failed to process direct image candidate for %s",
+                    person_name,
+                )
+                continue
+        return None
+
+    async def _find_commons_search_image(
+        self,
+        *,
+        client: httpx.AsyncClient,
+        topic_id: int,
+        scene_index: int,
+        person_name: str,
+        expected_title: str,
+        search_query: str,
+    ) -> dict[str, Any] | None:
+        candidates: list[dict[str, Any]] = []
+        query = quote_plus(search_query)
+        url = (
+            "https://commons.wikimedia.org/w/api.php"
+            f"?action=query&generator=search"
+            f"&gsrsearch={query}"
+            f"&gsrnamespace=6"
+            f"&gsrlimit=10"
+            f"&prop=imageinfo"
+            f"&iiprop=url|extmetadata|mime|thumbmime"
+            f"&iiurlwidth=1200"
+            f"&format=json"
+        )
+        response = await client.get(
+            url,
+            headers=self.wikimedia_headers(accept="application/json"),
+        )
+        response.raise_for_status()
+        data = response.json()
+
+        pages = data.get("query", {}).get("pages", {})
+        for page in pages.values():
+            candidate = self.extract_wikimedia_candidate(person_name, page)
+            if candidate is None:
+                continue
+            candidates.append(candidate)
+
+        candidates.sort(
+            key=lambda candidate: float(candidate.get("quality_score", 0.0)),
+            reverse=True,
+        )
+        for candidate in candidates:
+            try:
+                return await self._process_verified_candidate(
+                    topic_id=topic_id,
+                    scene_index=scene_index,
+                    person_name=person_name,
+                    expected_title=expected_title,
+                    candidate=candidate,
+                )
+            except Exception:
+                self.logger.exception(
+                    "Failed to process verified image candidate for %s",
+                    person_name,
+                )
+                continue
+        return None
+
+    async def _wikidata_p18_candidates(
+        self,
+        client: httpx.AsyncClient,
+        person_name: str,
+    ) -> list[dict[str, Any]]:
+        search_url = (
+            "https://www.wikidata.org/w/api.php"
+            "?action=wbsearchentities"
+            f"&search={quote_plus(person_name)}"
+            "&language=en&format=json&limit=3"
+        )
+        response = await client.get(search_url, headers=self.wikimedia_headers(accept="application/json"))
+        response.raise_for_status()
+        search_results = response.json().get("search", [])
+        candidates: list[dict[str, Any]] = []
+        for result in search_results:
+            entity_id = str(result.get("id", "")).strip()
+            label = str(result.get("label", "")).strip()
+            if not entity_id or self.evaluate_identity_match(person_name, label)["identity_check_status"] != "passed":
+                continue
+            entity_url = f"https://www.wikidata.org/wiki/Special:EntityData/{entity_id}.json"
+            entity_response = await client.get(
+                entity_url,
+                headers=self.wikimedia_headers(accept="application/json"),
+            )
+            entity_response.raise_for_status()
+            filename = self._extract_wikidata_p18_filename(entity_response.json(), entity_id)
+            if not filename:
+                continue
+            candidate = await self._commons_file_candidate(
+                client=client,
+                person_name=person_name,
+                filename=filename,
+                source_adapter="wikidata_p18",
+            )
+            if candidate is not None:
+                candidates.append(candidate)
+        return candidates
+
+    async def _wikipedia_pageimage_candidates(
+        self,
+        client: httpx.AsyncClient,
+        person_name: str,
+    ) -> list[dict[str, Any]]:
+        url = (
+            "https://en.wikipedia.org/w/api.php"
+            "?action=query&generator=search"
+            f"&gsrsearch={quote_plus(person_name)}"
+            "&gsrlimit=1&prop=pageimages"
+            "&piprop=name&pithumbsize=1200&format=json"
+        )
+        response = await client.get(url, headers=self.wikimedia_headers(accept="application/json"))
+        response.raise_for_status()
+        pages = response.json().get("query", {}).get("pages", {})
+        candidates: list[dict[str, Any]] = []
+        for page in pages.values():
+            title = str(page.get("title", "")).strip()
+            filename = str(page.get("pageimage", "")).strip()
+            if not filename:
+                continue
+            if self.evaluate_identity_match(person_name, title)["identity_check_status"] != "passed":
+                continue
+            candidate = await self._commons_file_candidate(
+                client=client,
+                person_name=person_name,
+                filename=filename,
+                source_adapter="wikipedia_pageimage",
+            )
+            if candidate is not None:
+                candidates.append(candidate)
+        return candidates
+
+    async def _commons_file_candidate(
+        self,
+        *,
+        client: httpx.AsyncClient,
+        person_name: str,
+        filename: str,
+        source_adapter: str,
+    ) -> dict[str, Any] | None:
+        title = f"File:{filename}"
+        url = (
+            "https://commons.wikimedia.org/w/api.php"
+            "?action=query"
+            f"&titles={quote_plus(title)}"
+            "&prop=imageinfo"
+            "&iiprop=url|extmetadata|mime|thumbmime"
+            "&iiurlwidth=1200"
+            "&format=json"
+        )
+        response = await client.get(url, headers=self.wikimedia_headers(accept="application/json"))
+        response.raise_for_status()
+        pages = response.json().get("query", {}).get("pages", {})
+        for page in pages.values():
+            candidate = self.extract_wikimedia_candidate(person_name, page)
+            if candidate is None:
+                continue
+            candidate["source_adapter"] = source_adapter
+            return candidate
+        return None
+
+    @staticmethod
+    def _extract_wikidata_p18_filename(payload: dict[str, Any], entity_id: str) -> str:
+        claims = payload.get("entities", {}).get(entity_id, {}).get("claims", {})
+        p18_claims = claims.get("P18")
+        if not isinstance(p18_claims, list) or not p18_claims:
+            return ""
+        value = (
+            p18_claims[0]
+            .get("mainsnak", {})
+            .get("datavalue", {})
+            .get("value", "")
+        )
+        return str(value).strip()
 
     @staticmethod
     def extract_person_name(scene_title: str) -> str:
         cleaned = re.sub(r"^#\d+\s+", "", scene_title.strip())
+        names = RealImageAgent.person_search_names(cleaned)
+        if names:
+            return names[0]
         return cleaned.strip()
 
     @staticmethod

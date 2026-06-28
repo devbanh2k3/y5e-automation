@@ -9,6 +9,8 @@ import pytest
 def test_extract_person_name_from_ranked_scene_title():
     assert RealImageAgent.extract_person_name("#10 Celine Dion") == "Celine Dion"
     assert RealImageAgent.extract_person_name("#1 Jay-Z") == "Jay-Z"
+    assert RealImageAgent.extract_person_name("#4 Coen Brothers (Joel)") == "Joel Coen"
+    assert RealImageAgent.extract_person_name("#3 Coen Brothers (Ethan)") == "Ethan Coen"
 
 
 def test_is_allowed_license_accepts_commons_friendly_licenses():
@@ -110,6 +112,14 @@ def test_wikimedia_search_queries_include_celebrity_disambiguation():
         "Khloe Kardashian musician",
         "Khloe Kardashian footballer",
         "Khloe Kardashian",
+    ]
+
+
+def test_person_search_names_include_canonical_variants():
+    assert RealImageAgent.person_search_names("Coen Brothers (Joel)") == [
+        "Joel Coen",
+        "Coen Brothers (Joel)",
+        "Coen Brothers",
     ]
 
 
@@ -770,9 +780,213 @@ async def test_find_verified_image_tries_disambiguated_search_when_first_query_i
         expected_title="#1 Jay-Z",
     )
 
-    assert len(api_urls) == 2
-    assert "Jay-Z+portrait" in api_urls[0]
-    assert "Jay-Z+rapper" in api_urls[1]
+    commons_urls = [url for url in api_urls if "commons.wikimedia.org/w/api.php" in url]
+    assert len(commons_urls) == 2
+    assert "Jay-Z+portrait" in commons_urls[0]
+    assert "Jay-Z+rapper" in commons_urls[1]
     assert downloads == ["https://upload.wikimedia.org/thumb/jay-z.jpg"]
     assert item["status"] == "verified"
     assert item["image_url"] == "https://upload.wikimedia.org/original/jay-z.jpg"
+
+
+@pytest.mark.asyncio
+async def test_find_verified_image_uses_wikidata_p18_before_commons_search(monkeypatch, tmp_path):
+    agent = RealImageAgent()
+    api_urls = []
+    downloads = []
+
+    class FakeResponse:
+        def __init__(self, payload):
+            self.payload = payload
+
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return self.payload
+
+    class FakeClient:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return None
+
+        async def get(self, url, **kwargs):
+            api_urls.append(url)
+            if "www.wikidata.org/w/api.php" in url:
+                return FakeResponse(
+                    {
+                        "search": [
+                            {
+                                "id": "Q41422",
+                                "label": "Joel Coen",
+                                "description": "American filmmaker",
+                            }
+                        ]
+                    }
+                )
+            if "Special:EntityData/Q41422.json" in url:
+                return FakeResponse(
+                    {
+                        "entities": {
+                            "Q41422": {
+                                "claims": {
+                                    "P18": [
+                                        {
+                                            "mainsnak": {
+                                                "datavalue": {
+                                                    "value": "Joel Coen Cannes 2015.jpg"
+                                                }
+                                            }
+                                        }
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                )
+            if "commons.wikimedia.org/w/api.php" in url and "titles=File%3AJoel+Coen+Cannes+2015.jpg" in url:
+                return FakeResponse(
+                    {
+                        "query": {
+                            "pages": {
+                                "1": {
+                                    "title": "File:Joel Coen Cannes 2015.jpg",
+                                    "imageinfo": [
+                                        {
+                                            "url": "https://upload.wikimedia.org/original/joel.jpg",
+                                            "thumburl": "https://upload.wikimedia.org/thumb/joel.jpg",
+                                            "mime": "image/jpeg",
+                                            "thumbmime": "image/jpeg",
+                                            "descriptionurl": "https://commons.wikimedia.org/wiki/File:Joel_Coen_Cannes_2015.jpg",
+                                            "extmetadata": {
+                                                "LicenseShortName": {"value": "CC BY-SA 4.0"},
+                                                "Artist": {"value": "A"},
+                                                "ImageDescription": {"value": "Joel Coen at Cannes portrait"},
+                                            },
+                                        }
+                                    ],
+                                }
+                            }
+                        }
+                    }
+                )
+            raise AssertionError(f"unexpected url {url}")
+
+    image = Image.new("RGB", (640, 400), color="orange")
+    buffer = BytesIO()
+    image.save(buffer, format="JPEG")
+
+    async def fake_download_image_bytes(url):
+        downloads.append(url)
+        return buffer.getvalue(), "image/jpeg"
+
+    monkeypatch.setenv("STORAGE_PATH", str(tmp_path))
+    monkeypatch.setattr("agents.real_image_agent.httpx.AsyncClient", lambda *args, **kwargs: FakeClient())
+    monkeypatch.setattr(agent, "_download_image_bytes", fake_download_image_bytes)
+
+    item = await agent._find_verified_image(
+        topic_id=1,
+        scene_index=0,
+        person_name="Joel Coen",
+        expected_title="#4 Coen Brothers (Joel)",
+    )
+
+    assert item["status"] == "verified"
+    assert item["source_adapter"] == "wikidata_p18"
+    assert downloads == ["https://upload.wikimedia.org/thumb/joel.jpg"]
+    assert not any("generator=search" in url for url in api_urls)
+
+
+@pytest.mark.asyncio
+async def test_find_verified_image_uses_wikipedia_pageimage_when_p18_missing(monkeypatch, tmp_path):
+    agent = RealImageAgent()
+    api_urls = []
+    downloads = []
+
+    class FakeResponse:
+        def __init__(self, payload):
+            self.payload = payload
+
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return self.payload
+
+    class FakeClient:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return None
+
+        async def get(self, url, **kwargs):
+            api_urls.append(url)
+            if "www.wikidata.org/w/api.php" in url:
+                return FakeResponse({"search": []})
+            if "en.wikipedia.org/w/api.php" in url and "generator=search" in url:
+                return FakeResponse(
+                    {
+                        "query": {
+                            "pages": {
+                                "22": {
+                                    "title": "Ariana Grande",
+                                    "pageimage": "Ariana Grande Grammys 2020.jpg",
+                                }
+                            }
+                        }
+                    }
+                )
+            if "commons.wikimedia.org/w/api.php" in url and "titles=File%3AAriana+Grande+Grammys+2020.jpg" in url:
+                return FakeResponse(
+                    {
+                        "query": {
+                            "pages": {
+                                "1": {
+                                    "title": "File:Ariana Grande Grammys 2020.jpg",
+                                    "imageinfo": [
+                                        {
+                                            "url": "https://upload.wikimedia.org/original/ariana.jpg",
+                                            "thumburl": "https://upload.wikimedia.org/thumb/ariana.jpg",
+                                            "mime": "image/jpeg",
+                                            "thumbmime": "image/jpeg",
+                                            "descriptionurl": "https://commons.wikimedia.org/wiki/File:Ariana_Grande_Grammys_2020.jpg",
+                                            "extmetadata": {
+                                                "LicenseShortName": {"value": "CC BY-SA 4.0"},
+                                                "Artist": {"value": "B"},
+                                                "ImageDescription": {"value": "Ariana Grande red carpet portrait"},
+                                            },
+                                        }
+                                    ],
+                                }
+                            }
+                        }
+                    }
+                )
+            raise AssertionError(f"unexpected url {url}")
+
+    image = Image.new("RGB", (640, 400), color="pink")
+    buffer = BytesIO()
+    image.save(buffer, format="JPEG")
+
+    async def fake_download_image_bytes(url):
+        downloads.append(url)
+        return buffer.getvalue(), "image/jpeg"
+
+    monkeypatch.setenv("STORAGE_PATH", str(tmp_path))
+    monkeypatch.setattr("agents.real_image_agent.httpx.AsyncClient", lambda *args, **kwargs: FakeClient())
+    monkeypatch.setattr(agent, "_download_image_bytes", fake_download_image_bytes)
+
+    item = await agent._find_verified_image(
+        topic_id=1,
+        scene_index=0,
+        person_name="Ariana Grande",
+        expected_title="#6 Ariana Grande",
+    )
+
+    assert item["status"] == "verified"
+    assert item["source_adapter"] == "wikipedia_pageimage"
+    assert downloads == ["https://upload.wikimedia.org/thumb/ariana.jpg"]
+    assert any("en.wikipedia.org/w/api.php" in url for url in api_urls)
