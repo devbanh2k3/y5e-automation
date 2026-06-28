@@ -81,3 +81,31 @@ async def test_invalid_grant_requires_reauthorization(monkeypatch) -> None:
         client = youtube_upload_client.YouTubeUploadClient(http_client=http, settings=settings)
         with pytest.raises(youtube_upload_client.YouTubeAuthRequired):
             await client.refresh_access_token(encrypted_refresh_token="ciphertext")
+
+
+@pytest.mark.asyncio
+async def test_resume_probes_server_offset_before_sending_next_chunk(tmp_path: Path) -> None:
+    from services.youtube_upload_client import YouTubeUploadClient
+
+    video_path = tmp_path / "video.mp4"
+    video_path.write_bytes(b"video-bytes")
+    ranges = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        ranges.append(request.headers["Content-Range"])
+        if len(ranges) == 1:
+            return httpx.Response(308, headers={"Range": "bytes=0-4"})
+        return httpx.Response(200, json={"id": "yt-resumed"})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+        client = YouTubeUploadClient(http_client=http)
+        result = await client.upload_video(
+            access_token="access-1",
+            video_path=video_path,
+            metadata={"title": "Approved", "description": "Body", "tags": []},
+            language="en",
+            resumable_session_url="https://upload.test/existing",
+        )
+
+    assert result.youtube_video_id == "yt-resumed"
+    assert ranges == ["bytes */11", "bytes 5-10/11"]
