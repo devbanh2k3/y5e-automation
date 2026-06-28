@@ -112,9 +112,14 @@ async def claim_next_upload_job() -> dict[str, Any] | None:
         WHERE upload_job_id = (
             SELECT upload_job_id
             FROM youtube_upload_jobs
-            WHERE status IN ('queued', 'failed_retryable')
-              AND next_attempt_at <= NOW()
-              AND attempt_count < max_attempts
+            WHERE (
+                status IN ('queued', 'failed_retryable')
+                AND next_attempt_at <= NOW()
+                AND attempt_count < max_attempts
+            ) OR (
+                status IN ('uploading', 'processing')
+                AND updated_at < NOW() - INTERVAL '15 minutes'
+            )
             ORDER BY created_at
             FOR UPDATE SKIP LOCKED
             LIMIT 1

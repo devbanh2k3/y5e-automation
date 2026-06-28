@@ -93,3 +93,5 @@ async def test_claim_next_upload_job_uses_skip_locked(monkeypatch) -> None:
     query = fetchrow.await_args.args[0]
     assert "FOR UPDATE SKIP LOCKED" in query
     assert "failed_retryable" in query
+    assert "status IN ('uploading', 'processing')" in query
+    assert "INTERVAL '15 minutes'" in query
