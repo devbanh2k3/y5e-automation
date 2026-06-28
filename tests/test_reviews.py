@@ -192,6 +192,61 @@ async def test_list_reviews_filters_by_status(review_storage):
 
 
 @pytest.mark.asyncio
+async def test_list_reviews_filters_quality_and_sorts_metadata_score(review_storage):
+    low = await create_review(
+        job_id="job-1",
+        topic_id=1,
+        video_id=1,
+        file_path="/tmp/low.mp4",
+        content_contract={},
+        quality_gate={"status": "passed"},
+        metadata_variants={"title_variants": [{"title": "Low", "score_total": 72}]},
+        youtube_title="Low",
+        youtube_description="",
+        youtube_tags=[],
+        thumbnail_prompt="",
+    )
+    failed = await create_review(
+        job_id="job-2",
+        topic_id=2,
+        video_id=2,
+        file_path="/tmp/failed.mp4",
+        content_contract={},
+        quality_gate={"status": "failed"},
+        metadata_variants={"title_variants": [{"title": "Failed", "score_total": 99}]},
+        youtube_title="Failed",
+        youtube_description="",
+        youtube_tags=[],
+        thumbnail_prompt="",
+    )
+    high = await create_review(
+        job_id="job-3",
+        topic_id=3,
+        video_id=3,
+        file_path="/tmp/high.mp4",
+        content_contract={},
+        quality_gate={"status": "passed"},
+        metadata_variants={"title_variants": [{"title": "High", "score_total": 94}]},
+        youtube_title="High",
+        youtube_description="",
+        youtube_tags=[],
+        thumbnail_prompt="",
+    )
+
+    reviews = await list_reviews(
+        status=ReviewStatus.PENDING.value,
+        quality_status="passed",
+        sort="metadata_score_desc",
+    )
+
+    assert [review["review_id"] for review in reviews] == [
+        high["review_id"],
+        low["review_id"],
+    ]
+    assert failed["review_id"] not in [review["review_id"] for review in reviews]
+
+
+@pytest.mark.asyncio
 async def test_reject_review_blocks_later_approval(review_storage):
     review = await create_review(
         job_id="job-1",

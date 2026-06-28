@@ -16,6 +16,7 @@ if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
 from agents.topic_strategy_agent import TopicSelectionError, TopicStrategyAgent
+from core.config import get_settings
 from core.fact_verification import FactVerificationError
 from core.video_contract import VideoContractError
 from scripts.produce_celebrity_video import produce
@@ -91,6 +92,9 @@ def summarize_success(
     duration_profile: str = "standard",
     target_duration: int = 60,
 ) -> dict[str, Any]:
+    quality_gate = result.get("quality_gate", {})
+    metadata_variants = result.get("metadata_variants", {})
+    selected_metadata = result.get("selected_metadata", {})
     return {
         "batch_index": batch_index,
         "attempt_type": attempt_type,
@@ -103,7 +107,10 @@ def summarize_success(
         "target_duration": result.get("target_duration", target_duration),
         "actual_duration_sec": result.get("actual_duration_sec", result.get("duration_sec", 0)),
         "youtube_title": result.get("youtube_title", ""),
-        "quality_gate": result.get("quality_gate", {}),
+        "quality_status": quality_gate.get("status", ""),
+        "quality_gate": quality_gate,
+        "metadata_score": best_metadata_score(metadata_variants),
+        "selected_metadata": selected_metadata,
         "artifacts": result.get("artifacts", {}),
         "next_commands": result.get("next_commands", {}),
         "topic_strategy": {
@@ -117,6 +124,35 @@ def summarize_success(
             "selection_reason": selected_topic.get("selection_reason", ""),
         },
     }
+
+
+def best_metadata_score(metadata_variants: dict[str, Any]) -> float:
+    title_variants = metadata_variants.get("title_variants")
+    if not isinstance(title_variants, list):
+        return 0.0
+    scores: list[float] = []
+    for item in title_variants:
+        if not isinstance(item, dict):
+            continue
+        try:
+            scores.append(float(item.get("score_total", 0)))
+        except (TypeError, ValueError):
+            continue
+    return max(scores, default=0.0)
+
+
+def batch_manifest_path(batch_id: str) -> Path:
+    batches_dir = get_settings().storage_dir / "batches"
+    batches_dir.mkdir(parents=True, exist_ok=True)
+    return batches_dir / f"{batch_id}.json"
+
+
+def write_batch_manifest(summary: dict[str, Any]) -> Path:
+    path = batch_manifest_path(str(summary["batch_id"]))
+    tmp_path = path.with_suffix(".tmp")
+    tmp_path.write_text(json.dumps(summary, ensure_ascii=False, indent=2))
+    tmp_path.replace(path)
+    return path
 
 
 async def produce_batch(
@@ -296,7 +332,7 @@ async def produce_batch(
     else:
         status = "incomplete"
 
-    return {
+    summary = {
         "status": status,
         "requested_count": count,
         "attempted_count": attempt_index,
@@ -315,6 +351,10 @@ async def produce_batch(
         "items": items,
         "failures": failures,
     }
+    manifest_path = batch_manifest_path(batch_id)
+    summary["manifest_path"] = str(manifest_path)
+    write_batch_manifest(summary)
+    return summary
 
 
 def build_parser() -> argparse.ArgumentParser:

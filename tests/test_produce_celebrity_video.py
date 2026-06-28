@@ -166,3 +166,48 @@ async def test_produce_passes_duration_target_to_pipeline(monkeypatch):
     assert result["duration_profile"] == "standard"
     assert result["target_duration"] == 60
     assert result["actual_duration_sec"] == 62
+
+
+@pytest.mark.asyncio
+async def test_produce_returns_metadata_for_batch_review_summary(monkeypatch):
+    from scripts import produce_celebrity_video as producer
+
+    metadata_variants = {
+        "title_variants": [{"title": "Better Title", "score_total": 93}],
+        "selected_metadata": {
+            "title": "Better Title",
+            "description": "Better description.",
+            "tags": ["celebrity"],
+            "thumbnail_text": "THE GAP",
+        },
+    }
+
+    async def fake_run_local_render(self, **kwargs):
+        return {
+            "review_status": "pending_review",
+            "review_id": "review-1",
+            "topic_id": 123,
+            "file_path": "/tmp/final_video.mp4",
+            "duration_sec": 62,
+            "quality_gate": {"status": "passed"},
+            "youtube_title": "Better Title",
+            "metadata_variants": metadata_variants,
+            "selected_metadata": metadata_variants["selected_metadata"],
+            "selected_topic": kwargs["selected_topic"],
+        }
+
+    async def fake_get_review(review_id):
+        return {"review_id": review_id}
+
+    monkeypatch.setattr(producer.Pipeline, "run_local_render", fake_run_local_render)
+    monkeypatch.setattr(producer, "get_review", fake_get_review)
+
+    result = await producer.produce(
+        language="en",
+        card_layout="flag_hero",
+        write_files=False,
+        selected_topic={"title": "Topic"},
+    )
+
+    assert result["metadata_variants"] == metadata_variants
+    assert result["selected_metadata"]["title"] == "Better Title"

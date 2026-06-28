@@ -20,6 +20,16 @@
             <option value="rejected">Rejected</option>
             <option value="">All</option>
           </select>
+          <select id="qualityFilter" aria-label="Quality status">
+            <option value="">All quality</option>
+            <option value="passed">Quality passed</option>
+            <option value="failed">Quality failed</option>
+          </select>
+          <select id="sortFilter" aria-label="Review sort">
+            <option value="newest">Newest</option>
+            <option value="metadata_score_desc">Best metadata</option>
+            <option value="quality_then_score">Quality + score</option>
+          </select>
         </div>
         <div id="reviewList" class="review-list"></div>
       </aside>

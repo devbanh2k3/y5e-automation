@@ -115,6 +115,8 @@ async def produce(
         "target_duration": target_duration,
         "actual_duration_sec": result.get("duration_sec", 0),
         "quality_gate": result.get("quality_gate", {}),
+        "metadata_variants": result.get("metadata_variants", {}),
+        "selected_metadata": result.get("selected_metadata", {}),
         "youtube_title": result.get("youtube_title", ""),
         "artifacts": artifacts,
         "next_commands": build_next_commands(review_id),

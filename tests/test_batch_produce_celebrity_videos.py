@@ -1,3 +1,4 @@
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -5,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from agents.topic_strategy_agent import TopicSelectionError
+from core.config import get_settings
 from core.fact_verification import FactVerificationError
 from core.video_contract import VideoContractError
 
@@ -106,6 +108,23 @@ def produced_result(index, selected):
         "actual_duration_sec": 61,
         "youtube_title": selected["title"],
         "quality_gate": {"status": "passed"},
+        "metadata_variants": {
+            "title_variants": [
+                {"title": selected["title"], "score_total": 86.5},
+            ],
+            "selected_metadata": {
+                "title": selected["title"],
+                "description": "Optimized description.",
+                "tags": ["celebrity"],
+                "thumbnail_text": "THE GAP",
+            },
+        },
+        "selected_metadata": {
+            "title": selected["title"],
+            "description": "Optimized description.",
+            "tags": ["celebrity"],
+            "thumbnail_text": "THE GAP",
+        },
         "next_commands": {
             "show_review": f"python3 scripts/review_video.py show review-{index}",
         },
@@ -153,6 +172,8 @@ async def test_produce_batch_reserves_distinct_slate_and_returns_strategy_summar
     assert summary["items"][0]["topic_strategy"]["angle"] == "tour_income"
     assert summary["items"][1]["topic_strategy"]["metric_label"] == "AWARDS"
     assert summary["items"][0]["topic_strategy"]["score_total"] == 89
+    assert summary["items"][0]["metadata_score"] == 86.5
+    assert summary["items"][0]["quality_status"] == "passed"
 
 
 @pytest.mark.asyncio
@@ -467,6 +488,41 @@ def test_main_passes_batch_v2_options(monkeypatch, capsys):
     assert captured["duration_profile"] == "short"
     assert captured["target_duration"] == 45
     assert '"success_count": 2' in capsys.readouterr().out
+
+
+@pytest.mark.asyncio
+async def test_produce_batch_writes_review_manifest(monkeypatch, tmp_path):
+    from scripts import batch_produce_celebrity_videos as batch_script
+
+    get_settings.cache_clear()
+    monkeypatch.setenv("STORAGE_PATH", str(tmp_path))
+    topic = selected_topic(1)
+    strategy = FakeStrategy([[topic]])
+
+    async def fake_produce(**kwargs):
+        return produced_result(1, kwargs["selected_topic"])
+
+    monkeypatch.setattr(batch_script, "produce", fake_produce)
+
+    summary = await batch_script.produce_batch(
+        count=1,
+        language="en",
+        card_layout="flag_hero",
+        write_files=True,
+        stop_on_error=False,
+        strategy=strategy,
+    )
+
+    manifest_path = Path(summary["manifest_path"])
+    manifest = json.loads(manifest_path.read_text())
+
+    assert manifest_path.is_file()
+    assert manifest_path.parent == tmp_path / "batches"
+    assert manifest["batch_id"] == summary["batch_id"]
+    assert manifest["items"][0]["review_id"] == "review-1"
+    assert manifest["items"][0]["metadata_score"] == 86.5
+    assert manifest["items"][0]["quality_status"] == "passed"
+    get_settings.cache_clear()
 
 
 def test_cli_help_describes_batch_options():

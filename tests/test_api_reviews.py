@@ -6,9 +6,11 @@ from api.main import app
 
 @pytest.mark.asyncio
 async def test_list_reviews_endpoint_returns_pending_reviews(monkeypatch):
-    async def fake_list_reviews(*, status=None, limit=50):
+    async def fake_list_reviews(*, status=None, limit=50, quality_status=None, sort="newest"):
         assert status == "pending_review"
         assert limit == 25
+        assert quality_status is None
+        assert sort == "newest"
         return [
             {
                 "review_id": "review-1",
@@ -32,6 +34,48 @@ async def test_list_reviews_endpoint_returns_pending_reviews(monkeypatch):
     assert response.status_code == 200
     assert response.json()["reviews"][0]["review_id"] == "review-1"
     assert response.json()["reviews"][0]["youtube"]["title"] == "Title"
+
+
+@pytest.mark.asyncio
+async def test_list_reviews_endpoint_filters_quality_and_sorts_metadata(monkeypatch):
+    captured = {}
+
+    async def fake_list_reviews(*, status=None, limit=50, quality_status=None, sort="newest"):
+        captured.update(
+            {
+                "status": status,
+                "limit": limit,
+                "quality_status": quality_status,
+                "sort": sort,
+            }
+        )
+        return [
+            {
+                "review_id": "review-best",
+                "status": "pending_review",
+                "quality_gate": {"status": "passed"},
+                "metadata_variants": {
+                    "title_variants": [{"title": "Best", "score_total": 94}],
+                },
+                "youtube": {"title": "Best", "description": "", "tags": []},
+            }
+        ]
+
+    monkeypatch.setattr("api.main.list_reviews", fake_list_reviews)
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get(
+            "/api/reviews?status=pending_review&quality_status=passed&sort=metadata_score_desc&limit=10"
+        )
+
+    assert response.status_code == 200
+    assert captured == {
+        "status": "pending_review",
+        "limit": 10,
+        "quality_status": "passed",
+        "sort": "metadata_score_desc",
+    }
+    assert response.json()["reviews"][0]["review_id"] == "review-best"
 
 
 @pytest.mark.asyncio
@@ -201,6 +245,8 @@ async def test_review_ui_page_is_served():
     assert "text/html" in response.headers["content-type"]
     assert 'id="review-app"' in response.text
     assert 'id="selectedMetadata"' in response.text
+    assert 'id="qualityFilter"' in response.text
+    assert 'id="sortFilter"' in response.text
 
 
 @pytest.mark.asyncio
@@ -213,6 +259,8 @@ async def test_review_ui_static_javascript_is_served():
     assert "renderMetadata" in response.text
     assert "selectMetadataVariant" in response.text
     assert "/metadata/select" in response.text
+    assert "quality_status" in response.text
+    assert "metadataScore" in response.text
 
 
 @pytest.mark.asyncio

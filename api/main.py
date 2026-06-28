@@ -302,10 +302,17 @@ async def queue_stats() -> QueueStatsResponse:
 @app.get("/api/reviews", response_model=ReviewListResponse, tags=["Reviews"])
 async def list_review_items(
     status: str | None = "pending_review",
+    quality_status: str | None = None,
+    sort: str = "newest",
     limit: int = 50,
 ) -> ReviewListResponse:
     """Return render reviews, pending first by default."""
-    reviews = await list_reviews(status=status, limit=min(max(limit, 1), 100))
+    reviews = await list_reviews(
+        status=status,
+        quality_status=quality_status,
+        sort=sort,
+        limit=min(max(limit, 1), 100),
+    )
     return ReviewListResponse(reviews=reviews)
 
 

@@ -6,6 +6,8 @@ const state = {
 const els = {
   refreshButton: document.querySelector("#refreshButton"),
   statusFilter: document.querySelector("#statusFilter"),
+  qualityFilter: document.querySelector("#qualityFilter"),
+  sortFilter: document.querySelector("#sortFilter"),
   reviewList: document.querySelector("#reviewList"),
   reviewStatus: document.querySelector("#reviewStatus"),
   reviewTitle: document.querySelector("#reviewTitle"),
@@ -46,6 +48,11 @@ function imageForScene(review, index) {
   return items.find((item) => item.scene_index === index) || {};
 }
 
+function metadataScore(review) {
+  const variants = review.metadata_variants?.title_variants || [];
+  return variants.reduce((best, item) => Math.max(best, Number(item.score_total || 0)), 0);
+}
+
 function renderReviewList() {
   els.reviewList.innerHTML = "";
   if (!state.reviews.length) {
@@ -59,7 +66,9 @@ function renderReviewList() {
     button.className = `review-item ${state.selectedReview?.review_id === review.review_id ? "active" : ""}`;
     button.innerHTML = `
       <div class="review-item-title">${text(review.youtube?.title, "Untitled")}</div>
-      <div class="review-item-meta">${text(review.status)} · ${text(review.created_at)}</div>
+      <div class="review-item-meta">
+        ${text(review.status)} · quality ${text(review.quality_gate?.status, "n/a")} · score ${metadataScore(review)}
+      </div>
     `;
     button.addEventListener("click", () => loadReview(review.review_id));
     els.reviewList.appendChild(button);
@@ -208,7 +217,10 @@ function renderReview(review) {
 
 async function loadReviews() {
   const status = els.statusFilter.value;
-  const query = status ? `?status=${encodeURIComponent(status)}&limit=50` : "?limit=50";
+  const params = new URLSearchParams({ limit: "50", sort: els.sortFilter.value });
+  if (status) params.set("status", status);
+  if (els.qualityFilter.value) params.set("quality_status", els.qualityFilter.value);
+  const query = `?${params.toString()}`;
   const response = await fetch(`/api/reviews${query}`);
   if (!response.ok) throw new Error(`Failed to load reviews: ${response.status}`);
   const payload = await response.json();
@@ -309,6 +321,8 @@ function handleMetadataClick(event) {
 
 els.refreshButton.addEventListener("click", () => loadReviews().catch((error) => alert(error.message)));
 els.statusFilter.addEventListener("change", () => loadReviews().catch((error) => alert(error.message)));
+els.qualityFilter.addEventListener("change", () => loadReviews().catch((error) => alert(error.message)));
+els.sortFilter.addEventListener("change", () => loadReviews().catch((error) => alert(error.message)));
 els.approveButton.addEventListener("click", () => transitionReview("approve"));
 els.rejectButton.addEventListener("click", () => transitionReview("reject"));
 els.regenerateButton.addEventListener("click", () => regenerateSelectedScene());

@@ -118,6 +118,8 @@ async def get_review(review_id: str) -> dict[str, Any]:
 async def list_reviews(
     *,
     status: str | None = None,
+    quality_status: str | None = None,
+    sort: str = "newest",
     limit: int = 50,
 ) -> list[dict[str, Any]]:
     """List review artifacts newest first with optional status filtering."""
@@ -126,10 +128,21 @@ async def list_reviews(
         review = json.loads(path.read_text())
         if status and review.get("status") != status:
             continue
+        if quality_status and (review.get("quality_gate") or {}).get("status") != quality_status:
+            continue
         reviews.append(review)
-        if len(reviews) >= max(1, limit):
-            break
-    return reviews
+    if sort == "metadata_score_desc":
+        reviews.sort(key=_review_metadata_score, reverse=True)
+    elif sort == "quality_then_score":
+        reviews.sort(
+            key=lambda review: (
+                (review.get("quality_gate") or {}).get("status") == "passed",
+                _review_metadata_score(review),
+                str(review.get("created_at", "")),
+            ),
+            reverse=True,
+        )
+    return reviews[: max(1, limit)]
 
 
 async def approve_review(review_id: str, notes: str = "") -> dict[str, Any]:
@@ -286,6 +299,22 @@ def _clean_tags(tags: list[Any]) -> list[str]:
         if text and text not in cleaned:
             cleaned.append(text)
     return cleaned[:20]
+
+
+def _review_metadata_score(review: dict[str, Any]) -> float:
+    variants = review.get("metadata_variants") or {}
+    title_variants = variants.get("title_variants")
+    if not isinstance(title_variants, list):
+        return 0.0
+    scores = []
+    for item in title_variants:
+        if not isinstance(item, dict):
+            continue
+        try:
+            scores.append(float(item.get("score_total", 0)))
+        except (TypeError, ValueError):
+            continue
+    return max(scores, default=0.0)
 
 
 async def save_review(review: dict[str, Any]) -> None:
