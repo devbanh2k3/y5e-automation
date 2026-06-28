@@ -155,6 +155,80 @@ def write_batch_manifest(summary: dict[str, Any]) -> Path:
     return path
 
 
+def format_batch_report(summary: dict[str, Any]) -> str:
+    """Return a human-readable production report for a batch run."""
+    items = summary.get("items") if isinstance(summary.get("items"), list) else []
+    failures = summary.get("failures") if isinstance(summary.get("failures"), list) else []
+    sorted_items = sorted(
+        [item for item in items if isinstance(item, dict)],
+        key=lambda item: (
+            str(item.get("quality_status", "")) == "passed",
+            float(item.get("metadata_score") or 0),
+        ),
+        reverse=True,
+    )
+    quality_passed = sum(1 for item in items if item.get("quality_status") == "passed")
+    requested = int(summary.get("requested_count") or len(items) or 0)
+
+    lines = [
+        "PRODUCTION BATCH REPORT",
+        f"Batch: {summary.get('batch_id', '')}",
+        f"Status: {summary.get('status', '')}",
+        (
+            f"Requested: {summary.get('requested_count', 0)} | "
+            f"Success: {summary.get('success_count', 0)} | "
+            f"Failures: {summary.get('failure_count', 0)}"
+        ),
+        f"Quality passed: {quality_passed}/{len(items) or requested}",
+        f"Manifest: {summary.get('manifest_path', '')}",
+        "",
+        "Review Priority",
+    ]
+
+    if sorted_items:
+        for index, item in enumerate(sorted_items, start=1):
+            topic = item.get("topic_strategy") or {}
+            lines.append(
+                (
+                    f"{index}. {item.get('review_id', '')} | "
+                    f"quality={item.get('quality_status', 'n/a')} | "
+                    f"metadata={item.get('metadata_score', 0)} | "
+                    f"topic={topic.get('score_total', 0)} | "
+                    f"metric={topic.get('metric_label', '')} | "
+                    f"{item.get('youtube_title', '')}"
+                )
+            )
+            lines.append(f"   video: {item.get('video_path', '')}")
+            lines.append(f"   review: python3 scripts/review_video.py show {item.get('review_id', '')}")
+    else:
+        lines.append("No successful videos.")
+
+    if failures:
+        lines.extend(["", "Failures"])
+        for failure in failures[:8]:
+            lines.append(
+                (
+                    f"- slot {failure.get('batch_slot', failure.get('batch_index', ''))}: "
+                    f"{failure.get('classification', failure.get('error_type', 'unknown'))} | "
+                    f"{failure.get('recovery_action', '')} | "
+                    f"{str(failure.get('error', ''))[:180]}"
+                )
+            )
+
+    lines.extend(
+        [
+            "",
+            "Production Checklist",
+            "1. Open Review UI: http://127.0.0.1:8000/review-ui",
+            "2. Sort by Quality + score or Best metadata.",
+            "3. Review highest priority videos first: video, facts, image match, metadata.",
+            "4. Use metadata variants, then approve or reject with reason.",
+            "5. Regenerate only failed scene/card when possible.",
+        ]
+    )
+    return "\n".join(lines)
+
+
 async def produce_batch(
     *,
     count: int,
@@ -400,6 +474,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Stop the batch at the first failed video candidate.",
     )
+    parser.add_argument(
+        "--report",
+        action="store_true",
+        help="Print a human-readable production report instead of raw JSON.",
+    )
     return parser
 
 
@@ -423,7 +502,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(str(exc), file=sys.stderr)
         return 2
 
-    print_json(summary)
+    if args.report:
+        print(format_batch_report(summary))
+    else:
+        print_json(summary)
     if args.stop_on_error and summary["failure_count"]:
         return 1
     return 0

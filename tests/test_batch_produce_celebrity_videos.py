@@ -490,6 +490,98 @@ def test_main_passes_batch_v2_options(monkeypatch, capsys):
     assert '"success_count": 2' in capsys.readouterr().out
 
 
+def test_format_batch_report_prioritizes_review_items_and_checklist():
+    from scripts.batch_produce_celebrity_videos import format_batch_report
+
+    summary = {
+        "status": "completed_with_recoveries",
+        "batch_id": "batch-1",
+        "requested_count": 2,
+        "success_count": 2,
+        "failure_count": 1,
+        "manifest_path": "/tmp/output/batches/batch-1.json",
+        "items": [
+            {
+                "review_id": "review-low",
+                "quality_status": "passed",
+                "metadata_score": 72,
+                "youtube_title": "Low Score Title",
+                "video_path": "/tmp/low.mp4",
+                "actual_duration_sec": 58,
+                "topic_strategy": {"score_total": 82, "metric_label": "FOLLOWERS"},
+            },
+            {
+                "review_id": "review-high",
+                "quality_status": "passed",
+                "metadata_score": 94,
+                "youtube_title": "High Score Title",
+                "video_path": "/tmp/high.mp4",
+                "actual_duration_sec": 61,
+                "topic_strategy": {"score_total": 91, "metric_label": "AWARDS"},
+            },
+        ],
+        "failures": [
+            {
+                "batch_slot": 1,
+                "classification": "fact_rejected",
+                "recovery_action": "request_replacement",
+                "error": "all facts must be verified",
+            }
+        ],
+    }
+
+    report = format_batch_report(summary)
+
+    assert "PRODUCTION BATCH REPORT" in report
+    assert "batch-1" in report
+    assert "Review Priority" in report
+    assert report.index("review-high") < report.index("review-low")
+    assert "metadata=94" in report
+    assert "Quality passed: 2/2" in report
+    assert "Failures" in report
+    assert "fact_rejected" in report
+    assert "Production Checklist" in report
+    assert "Open Review UI" in report
+    assert "http://127.0.0.1:8000/review-ui" in report
+
+
+def test_main_prints_human_report_when_requested(monkeypatch, capsys):
+    from scripts import batch_produce_celebrity_videos as batch_script
+
+    async def fake_produce_batch(**kwargs):
+        return {
+            "status": "completed",
+            "batch_id": "batch-1",
+            "requested_count": 1,
+            "success_count": 1,
+            "failure_count": 0,
+            "stopped_on_error": False,
+            "manifest_path": "/tmp/output/batches/batch-1.json",
+            "items": [
+                {
+                    "review_id": "review-1",
+                    "quality_status": "passed",
+                    "metadata_score": 91,
+                    "youtube_title": "Strong Title",
+                    "video_path": "/tmp/final_video.mp4",
+                    "actual_duration_sec": 60,
+                    "topic_strategy": {"score_total": 90, "metric_label": "AWARDS"},
+                }
+            ],
+            "failures": [],
+        }
+
+    monkeypatch.setattr(batch_script, "produce_batch", fake_produce_batch)
+
+    exit_code = batch_script.main(["--count", "1", "--report"])
+    output = capsys.readouterr().out
+
+    assert exit_code == 0
+    assert "PRODUCTION BATCH REPORT" in output
+    assert "Strong Title" in output
+    assert '"success_count"' not in output
+
+
 @pytest.mark.asyncio
 async def test_produce_batch_writes_review_manifest(monkeypatch, tmp_path):
     from scripts import batch_produce_celebrity_videos as batch_script
@@ -542,3 +634,4 @@ def test_cli_help_describes_batch_options():
     assert "--target-duration" in result.stdout
     assert "--stop-on-error" in result.stdout
     assert "--no-write-artifacts" in result.stdout
+    assert "--report" in result.stdout
