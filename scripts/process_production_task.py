@@ -17,10 +17,12 @@ if str(ROOT_DIR) not in sys.path:
 
 from core import production_tasks
 from agents.topic_strategy_agent import TopicStrategyAgent
+from core.fact_verification import FactVerificationError
 from services.telegram_notifications import build_review_keyboard, send_telegram_message
 from scripts.produce_celebrity_video import produce
 
 logger = logging.getLogger(__name__)
+PRODUCTION_TOPIC_ATTEMPT_BUDGET = 5
 
 
 def print_json(payload: Any) -> None:
@@ -38,23 +40,47 @@ async def process_one_task() -> dict[str, Any]:
     owner_telegram_user_id = int(task["owner_telegram_user_id"])
     selected_topic: dict[str, Any] | None = None
     topic_agent: TopicStrategyAgent | None = None
+    result: dict[str, Any] | None = None
+    last_error: Exception | None = None
     try:
         topic_agent = TopicStrategyAgent()
-        selected_topic = (
-            await topic_agent.run(
-                count=1,
-                language=str(task.get("language") or "en"),
-                batch_id=f"{batch_id}-{task_id}",
-            )
-        )[0]
-        result = await produce(
-            language=str(task.get("language") or "en"),
-            card_layout=str(task.get("card_layout") or "flag_hero"),
-            write_files=True,
-            selected_topic=selected_topic,
-            duration_profile="standard",
-            target_duration=int(task.get("target_duration") or 60),
-        )
+        for attempt_index in range(1, PRODUCTION_TOPIC_ATTEMPT_BUDGET + 1):
+            selected_topic = (
+                await topic_agent.run(
+                    count=1,
+                    language=str(task.get("language") or "en"),
+                    batch_id=f"{batch_id}-{task_id}-attempt-{attempt_index}",
+                )
+            )[0]
+            try:
+                result = await produce(
+                    language=str(task.get("language") or "en"),
+                    card_layout=str(task.get("card_layout") or "flag_hero"),
+                    write_files=True,
+                    selected_topic=selected_topic,
+                    duration_profile="standard",
+                    target_duration=int(task.get("target_duration") or 60),
+                )
+                break
+            except FactVerificationError as exc:
+                last_error = exc
+                _mark_reserved_topic_failed(
+                    topic_agent=topic_agent,
+                    selected_topic=selected_topic,
+                    reason=str(exc),
+                )
+                if attempt_index == PRODUCTION_TOPIC_ATTEMPT_BUDGET:
+                    selected_topic = None
+                    raise
+                logger.info(
+                    "Replacing fact-rejected topic for task %s after attempt %s: %s",
+                    task_id,
+                    attempt_index,
+                    exc,
+                )
+                selected_topic = None
+        if result is None:
+            raise RuntimeError(str(last_error or "production did not return a result"))
     except Exception as exc:  # noqa: BLE001 - worker must preserve task failure.
         await production_tasks.mark_task_failed(
             task_id=task_id,
