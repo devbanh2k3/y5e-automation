@@ -13,6 +13,8 @@ const els = {
   videoPreview: document.querySelector("#videoPreview"),
   approveButton: document.querySelector("#approveButton"),
   rejectButton: document.querySelector("#rejectButton"),
+  regenerateButton: document.querySelector("#regenerateButton"),
+  rerenderInput: document.querySelector("#rerenderInput"),
   notesInput: document.querySelector("#notesInput"),
   reasonInput: document.querySelector("#reasonInput"),
   scenesInput: document.querySelector("#scenesInput"),
@@ -165,10 +167,44 @@ async function transitionReview(action) {
   await loadReviews();
 }
 
+async function regenerateSelectedScene() {
+  if (!state.selectedReview) return;
+  const scenes = sceneIndexes();
+  if (scenes.length !== 1) {
+    alert("Enter exactly one scene index to regenerate.");
+    return;
+  }
+
+  els.regenerateButton.disabled = true;
+  els.regenerateButton.textContent = "Regenerating...";
+  try {
+    const response = await fetch(`/api/reviews/${state.selectedReview.review_id}/regenerate-scene`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        scene: scenes[0],
+        reason: "wrong_image",
+        rerender: els.rerenderInput.checked,
+      }),
+    });
+    if (!response.ok) {
+      const payload = await response.json().catch(() => ({}));
+      alert(payload.detail || "Failed to regenerate scene");
+      return;
+    }
+    const updated = await response.json();
+    renderReview(updated);
+  } finally {
+    els.regenerateButton.disabled = false;
+    els.regenerateButton.textContent = "Regenerate Scene";
+  }
+}
+
 els.refreshButton.addEventListener("click", () => loadReviews().catch((error) => alert(error.message)));
 els.statusFilter.addEventListener("change", () => loadReviews().catch((error) => alert(error.message)));
 els.approveButton.addEventListener("click", () => transitionReview("approve"));
 els.rejectButton.addEventListener("click", () => transitionReview("reject"));
+els.regenerateButton.addEventListener("click", () => regenerateSelectedScene());
 
 loadReviews().catch((error) => {
   els.reviewList.innerHTML = `<p class="meta">${error.message}</p>`;

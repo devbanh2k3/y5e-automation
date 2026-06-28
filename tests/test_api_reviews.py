@@ -244,3 +244,48 @@ async def test_review_scene_image_endpoint_returns_404_for_missing_scene(monkeyp
         response = await client.get("/api/reviews/review-1/images/9")
 
     assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_regenerate_scene_endpoint_calls_service(monkeypatch):
+    captured = {}
+
+    async def fake_regenerate_wrong_image_scene(review_id: str, *, scene_index: int, rerender: bool):
+        captured["review_id"] = review_id
+        captured["scene_index"] = scene_index
+        captured["rerender"] = rerender
+        return {
+            "review_id": review_id,
+            "status": "pending_review",
+            "video": {"file_path": "/tmp/final_video_r2.mp4"},
+            "review_events": [
+                {"event": "scene_regenerated", "scenes": [scene_index]},
+                {"event": "video_rerendered", "scenes": [scene_index]},
+            ],
+        }
+
+    monkeypatch.setattr(
+        "api.main.regenerate_wrong_image_scene",
+        fake_regenerate_wrong_image_scene,
+    )
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post(
+            "/api/reviews/review-1/regenerate-scene",
+            json={"scene": 3, "reason": "wrong_image", "rerender": True},
+        )
+
+    assert response.status_code == 200
+    assert captured == {"review_id": "review-1", "scene_index": 3, "rerender": True}
+    assert response.json()["video"]["file_path"] == "/tmp/final_video_r2.mp4"
+
+
+@pytest.mark.asyncio
+async def test_regenerate_scene_endpoint_rejects_unsupported_reason():
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post(
+            "/api/reviews/review-1/regenerate-scene",
+            json={"scene": 3, "reason": "bad_fact", "rerender": True},
+        )
+
+    assert response.status_code == 409

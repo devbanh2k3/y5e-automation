@@ -35,6 +35,7 @@ from core.reviews import (
 )
 from core.cost_tracker import get_usage_summary
 from core.storage import get_storage_usage
+from scripts.regenerate_scene import regenerate_wrong_image_scene
 
 logger = logging.getLogger(__name__)
 
@@ -98,6 +99,13 @@ class ReviewTransitionRequest(BaseModel):
     notes: str = ""
     reason: str = ""
     scenes: list[int] = Field(default_factory=list)
+
+
+class ReviewRegenerateSceneRequest(BaseModel):
+    """Request body for regenerating one review scene image and rerendering."""
+    scene: int = Field(..., ge=0)
+    reason: str = "wrong_image"
+    rerender: bool = True
 
 
 class ReviewListResponse(BaseModel):
@@ -361,6 +369,26 @@ async def reject_review_item(
             reason=reason,
             scenes=body.scenes,
             notes=body.notes,
+        )
+    except KeyError:
+        raise HTTPException(status_code=404, detail=f"Review {review_id} not found.") from None
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from None
+
+
+@app.post("/api/reviews/{review_id}/regenerate-scene", tags=["Reviews"])
+async def regenerate_review_scene_item(
+    review_id: str,
+    body: ReviewRegenerateSceneRequest,
+) -> dict[str, Any]:
+    """Regenerate one wrong-image scene and rerender the review video."""
+    if body.reason != "wrong_image":
+        raise HTTPException(status_code=409, detail="only wrong_image regeneration is supported")
+    try:
+        return await regenerate_wrong_image_scene(
+            review_id,
+            scene_index=body.scene,
+            rerender=body.rerender,
         )
     except KeyError:
         raise HTTPException(status_code=404, detail=f"Review {review_id} not found.") from None
