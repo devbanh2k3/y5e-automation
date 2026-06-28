@@ -40,6 +40,40 @@ Trong Docker Desktop:
 
 ## 2. Cai dat nen tren may Windows PC
 
+### Cach tu dong khuyen nghi
+
+Chay trong PowerShell Administrator tu repo da clone hoac file source vua tai ve:
+
+```powershell
+Set-ExecutionPolicy -Scope Process Bypass -Force
+.\scripts\setup_windows_server.ps1 -InstallTools
+```
+
+Script Windows se:
+
+- Kiem tra quyen Administrator
+- Bat WSL2/Virtual Machine Platform neu can
+- Cai Git/Docker Desktop qua `winget` neu dung `-InstallTools`
+- Cai Ubuntu 24.04 neu chua co
+- Goi `scripts/setup_wsl_production.sh` trong Ubuntu WSL
+
+Neu chi muon chuan bi Windows va tu chay buoc WSL sau:
+
+```powershell
+.\scripts\setup_windows_server.ps1 -InstallTools -SkipWslDeploy
+```
+
+Trong Ubuntu WSL co the chay truc tiep:
+
+```bash
+bash scripts/setup_wsl_production.sh \
+  --repo-url https://github.com/devbanh2k3/y5e-automation.git \
+  --branch main \
+  --project-dir /home/y5e/y5e-automation
+```
+
+Script se khong ghi de `.env`. Neu `.env` chua co, no tao tu `.env.example` va dung lai de ban dien token/key that.
+
 ### Windows
 
 1. Cai Windows 11 Pro.
