@@ -32,6 +32,7 @@ from core.reviews import (
     get_review,
     list_reviews,
     reject_review,
+    select_review_metadata,
 )
 from core.cost_tracker import get_usage_summary
 from core.storage import get_storage_usage
@@ -106,6 +107,14 @@ class ReviewRegenerateSceneRequest(BaseModel):
     scene: int = Field(..., ge=0)
     reason: str = "wrong_image"
     rerender: bool = True
+
+
+class ReviewMetadataSelectRequest(BaseModel):
+    """Request body for selecting generated metadata variants."""
+    title_index: int | None = Field(default=None, ge=0)
+    description_index: int | None = Field(default=None, ge=0)
+    thumbnail_text_index: int | None = Field(default=None, ge=0)
+    tags: list[str] | None = None
 
 
 class ReviewListResponse(BaseModel):
@@ -369,6 +378,26 @@ async def reject_review_item(
             reason=reason,
             scenes=body.scenes,
             notes=body.notes,
+        )
+    except KeyError:
+        raise HTTPException(status_code=404, detail=f"Review {review_id} not found.") from None
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from None
+
+
+@app.post("/api/reviews/{review_id}/metadata/select", tags=["Reviews"])
+async def select_review_metadata_item(
+    review_id: str,
+    body: ReviewMetadataSelectRequest,
+) -> dict[str, Any]:
+    """Select one or more generated metadata variants for a review."""
+    try:
+        return await select_review_metadata(
+            review_id,
+            title_index=body.title_index,
+            description_index=body.description_index,
+            thumbnail_text_index=body.thumbnail_text_index,
+            tags=body.tags,
         )
     except KeyError:
         raise HTTPException(status_code=404, detail=f"Review {review_id} not found.") from None

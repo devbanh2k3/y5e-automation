@@ -102,6 +102,53 @@ async def test_approve_review_endpoint(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_select_review_metadata_endpoint(monkeypatch):
+    captured = {}
+
+    async def fake_select_review_metadata(review_id: str, **kwargs):
+        captured["review_id"] = review_id
+        captured.update(kwargs)
+        return {
+            "review_id": review_id,
+            "status": "pending_review",
+            "selected_metadata": {
+                "title": "Better Curiosity Title",
+                "description": "Better description.",
+                "tags": ["celebrity", "data comparison"],
+                "thumbnail_text": "UNREAL",
+            },
+            "youtube": {
+                "title": "Better Curiosity Title",
+                "description": "Better description.",
+                "tags": ["celebrity", "data comparison"],
+            },
+        }
+
+    monkeypatch.setattr("api.main.select_review_metadata", fake_select_review_metadata)
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post(
+            "/api/reviews/review-1/metadata/select",
+            json={
+                "title_index": 1,
+                "description_index": 1,
+                "thumbnail_text_index": 0,
+                "tags": ["celebrity", "ranking"],
+            },
+        )
+
+    assert response.status_code == 200
+    assert captured == {
+        "review_id": "review-1",
+        "title_index": 1,
+        "description_index": 1,
+        "thumbnail_text_index": 0,
+        "tags": ["celebrity", "ranking"],
+    }
+    assert response.json()["youtube"]["title"] == "Better Curiosity Title"
+
+
+@pytest.mark.asyncio
 async def test_reject_review_endpoint_returns_409_for_non_pending(monkeypatch):
     async def fake_reject_review(review_id: str, reason: str = "", **kwargs):
         raise ValueError("review is not pending")
@@ -164,6 +211,8 @@ async def test_review_ui_static_javascript_is_served():
     assert response.status_code == 200
     assert "loadReviews" in response.text
     assert "renderMetadata" in response.text
+    assert "selectMetadataVariant" in response.text
+    assert "/metadata/select" in response.text
 
 
 @pytest.mark.asyncio

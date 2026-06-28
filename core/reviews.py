@@ -163,6 +163,58 @@ async def reject_review(
     )
 
 
+async def select_review_metadata(
+    review_id: str,
+    *,
+    title_index: int | None = None,
+    description_index: int | None = None,
+    thumbnail_text_index: int | None = None,
+    tags: list[str] | None = None,
+) -> dict[str, Any]:
+    """Select metadata variants and keep the review youtube fields in sync."""
+    review = await get_review(review_id)
+    variants = review.get("metadata_variants") or {}
+    selected = dict(review.get("selected_metadata") or {})
+
+    if title_index is not None:
+        selected["title"] = _variant_title_at(variants, title_index)
+    if description_index is not None:
+        selected["description"] = _variant_text_at(
+            variants,
+            "description_variants",
+            description_index,
+        )
+    if thumbnail_text_index is not None:
+        selected["thumbnail_text"] = _variant_text_at(
+            variants,
+            "thumbnail_text_suggestions",
+            thumbnail_text_index,
+        )
+
+    if tags is not None:
+        selected["tags"] = _clean_tags(tags)
+    else:
+        selected["tags"] = _clean_tags(
+            variants.get("tags") or selected.get("tags") or review.get("youtube", {}).get("tags") or []
+        )
+
+    youtube = dict(review.get("youtube") or {})
+    youtube["title"] = str(selected.get("title") or youtube.get("title") or "")
+    youtube["description"] = str(selected.get("description") or youtube.get("description") or "")
+    youtube["tags"] = _clean_tags(selected.get("tags") or youtube.get("tags") or [])
+
+    review["selected_metadata"] = selected
+    review["youtube"] = youtube
+    review["updated_at"] = utc_now()
+    append_review_event(
+        review,
+        event="metadata_selected",
+        notes=f"title={title_index}, description={description_index}, thumbnail={thumbnail_text_index}",
+    )
+    await _write_review(review)
+    return review
+
+
 async def _transition_review(
     review_id: str,
     *,
@@ -204,6 +256,36 @@ def append_review_event(
             "created_at": utc_now(),
         }
     )
+
+
+def _variant_title_at(variants: dict[str, Any], index: int) -> str:
+    items = variants.get("title_variants")
+    if not isinstance(items, list) or index >= len(items):
+        raise ValueError("title variant index is invalid")
+    item = items[index]
+    title = str(item.get("title", "") if isinstance(item, dict) else item).strip()
+    if not title:
+        raise ValueError("title variant is empty")
+    return title
+
+
+def _variant_text_at(variants: dict[str, Any], key: str, index: int) -> str:
+    items = variants.get(key)
+    if not isinstance(items, list) or index >= len(items):
+        raise ValueError(f"{key} index is invalid")
+    text = str(items[index]).strip()
+    if not text:
+        raise ValueError(f"{key} value is empty")
+    return text
+
+
+def _clean_tags(tags: list[Any]) -> list[str]:
+    cleaned: list[str] = []
+    for tag in tags:
+        text = str(tag).strip()
+        if text and text not in cleaned:
+            cleaned.append(text)
+    return cleaned[:20]
 
 
 async def save_review(review: dict[str, Any]) -> None:

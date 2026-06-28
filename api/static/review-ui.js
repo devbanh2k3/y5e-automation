@@ -121,7 +121,10 @@ function renderMetadata(review) {
           (item, index) => `
             <div class="metadata-item">
               <span>${index + 1}. ${text(item.title)}</span>
-              <strong>${text(item.score_total, "n/a")}</strong>
+              <div class="metadata-actions">
+                <strong>${text(item.score_total, "n/a")}</strong>
+                <button type="button" data-metadata-type="title" data-index="${index}">Use</button>
+              </div>
             </div>
           `,
         )
@@ -130,12 +133,33 @@ function renderMetadata(review) {
 
   els.descriptionVariants.innerHTML = descriptionVariants.length
     ? descriptionVariants
-        .map((item, index) => `<div class="metadata-item">${index + 1}. ${text(item)}</div>`)
+        .map(
+          (item, index) => `
+            <div class="metadata-item">
+              <span>${index + 1}. ${text(item)}</span>
+              <button type="button" data-metadata-type="description" data-index="${index}">Use</button>
+            </div>
+          `,
+        )
         .join("")
     : '<p class="meta">No description variants.</p>';
 
   renderTags(els.metadataTags, variants.tags || selected.tags || review.youtube?.tags || []);
-  renderTags(els.thumbnailTextSuggestions, variants.thumbnail_text_suggestions || []);
+  els.thumbnailTextSuggestions.innerHTML = "";
+  const thumbnailTexts = variants.thumbnail_text_suggestions || [];
+  if (thumbnailTexts.length) {
+    thumbnailTexts.forEach((value, index) => {
+      const item = document.createElement("button");
+      item.type = "button";
+      item.className = "tag";
+      item.dataset.metadataType = "thumbnail";
+      item.dataset.index = String(index);
+      item.textContent = text(value);
+      els.thumbnailTextSuggestions.appendChild(item);
+    });
+  } else {
+    renderTags(els.thumbnailTextSuggestions, []);
+  }
 }
 
 function renderScenes(review) {
@@ -257,11 +281,40 @@ async function regenerateSelectedScene() {
   }
 }
 
+async function selectMetadataVariant(type, index) {
+  if (!state.selectedReview) return;
+  const body = {};
+  if (type === "title") body.title_index = index;
+  if (type === "description") body.description_index = index;
+  if (type === "thumbnail") body.thumbnail_text_index = index;
+
+  const response = await fetch(`/api/reviews/${state.selectedReview.review_id}/metadata/select`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({}));
+    alert(payload.detail || "Failed to select metadata");
+    return;
+  }
+  renderReview(await response.json());
+}
+
+function handleMetadataClick(event) {
+  const button = event.target.closest("[data-metadata-type]");
+  if (!button) return;
+  selectMetadataVariant(button.dataset.metadataType, Number.parseInt(button.dataset.index, 10));
+}
+
 els.refreshButton.addEventListener("click", () => loadReviews().catch((error) => alert(error.message)));
 els.statusFilter.addEventListener("change", () => loadReviews().catch((error) => alert(error.message)));
 els.approveButton.addEventListener("click", () => transitionReview("approve"));
 els.rejectButton.addEventListener("click", () => transitionReview("reject"));
 els.regenerateButton.addEventListener("click", () => regenerateSelectedScene());
+els.titleVariants.addEventListener("click", handleMetadataClick);
+els.descriptionVariants.addEventListener("click", handleMetadataClick);
+els.thumbnailTextSuggestions.addEventListener("click", handleMetadataClick);
 
 loadReviews().catch((error) => {
   els.reviewList.innerHTML = `<p class="meta">${error.message}</p>`;

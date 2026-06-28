@@ -246,6 +246,7 @@ h4 {
 
 .metadata-item {
   display: flex;
+  align-items: center;
   justify-content: space-between;
   gap: 12px;
   border: 1px solid #292929;
@@ -254,8 +255,21 @@ h4 {
   background: #111;
 }
 
+.metadata-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.metadata-actions strong,
 .metadata-item strong {
   color: #5bc0eb;
+}
+
+.metadata-item button {
+  min-height: 30px;
+  padding: 0 10px;
 }
 
 .tag-list {

@@ -8,6 +8,7 @@ from core.reviews import (
     get_review,
     list_reviews,
     reject_review,
+    select_review_metadata,
 )
 
 
@@ -107,6 +108,53 @@ async def test_create_review_persists_metadata_variants(review_storage):
 
     assert loaded["metadata_variants"] == metadata_variants
     assert loaded["selected_metadata"]["title"] == "Celebrity Numbers That Feel Unreal"
+
+
+@pytest.mark.asyncio
+async def test_select_review_metadata_updates_youtube_fields(review_storage):
+    review = await create_review(
+        job_id="job-123",
+        topic_id=1,
+        video_id=2,
+        file_path="/tmp/final_video.mp4",
+        content_contract={"schema_version": "content_contract_v2", "title": "Video"},
+        metadata_variants={
+            "schema_version": "metadata_variants_v1",
+            "title_variants": [
+                {"title": "Original Title", "score_total": 70},
+                {"title": "Better Curiosity Title", "score_total": 92},
+            ],
+            "description_variants": ["Original description.", "Better description."],
+            "tags": ["celebrity", "data comparison"],
+            "thumbnail_text_suggestions": ["THE GAP", "UNREAL"],
+        },
+        selected_metadata={
+            "title": "Original Title",
+            "description": "Original description.",
+            "tags": ["celebrity"],
+            "thumbnail_text": "THE GAP",
+        },
+        youtube_title="Original Title",
+        youtube_description="Original description.",
+        youtube_tags=["celebrity"],
+        thumbnail_prompt="thumbnail prompt",
+    )
+
+    updated = await select_review_metadata(
+        review["review_id"],
+        title_index=1,
+        description_index=1,
+        thumbnail_text_index=1,
+    )
+
+    assert updated["selected_metadata"]["title"] == "Better Curiosity Title"
+    assert updated["selected_metadata"]["description"] == "Better description."
+    assert updated["selected_metadata"]["thumbnail_text"] == "UNREAL"
+    assert updated["selected_metadata"]["tags"] == ["celebrity", "data comparison"]
+    assert updated["youtube"]["title"] == "Better Curiosity Title"
+    assert updated["youtube"]["description"] == "Better description."
+    assert updated["youtube"]["tags"] == ["celebrity", "data comparison"]
+    assert updated["review_events"][-1]["event"] == "metadata_selected"
 
 
 @pytest.mark.asyncio
