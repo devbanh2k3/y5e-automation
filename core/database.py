@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import logging
+from contextlib import asynccontextmanager
+from collections.abc import AsyncIterator
 from typing import Any
 
 import asyncpg
@@ -54,6 +56,15 @@ async def get_pool() -> asyncpg.Pool:
     if _pool is None:
         return await init_db()
     return _pool
+
+
+@asynccontextmanager
+async def transaction() -> AsyncIterator[asyncpg.Connection]:
+    """Yield one connection inside an atomic PostgreSQL transaction."""
+    pool = await get_pool()
+    async with pool.acquire() as connection:
+        async with connection.transaction():
+            yield connection
 
 
 async def execute(query: str, *args: Any) -> str:

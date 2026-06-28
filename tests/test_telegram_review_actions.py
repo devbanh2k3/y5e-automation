@@ -19,23 +19,19 @@ async def test_handle_review_callback_approves_authorized_user(monkeypatch):
         assert user_id == 111
         return {"telegram_user_id": 111, "role": "producer", "is_active": True}
 
-    async def fake_approve_review(review_id, notes=""):
-        calls["approve"] = {"review_id": review_id, "notes": notes}
-        return {"review_id": review_id, "status": "approved"}
-
-    async def fake_mark_task_review_decision(**kwargs):
-        calls["decision"] = kwargs
+    async def fake_approve_and_enqueue(**kwargs):
+        calls["approve"] = kwargs
+        return {"upload_job_id": "upload-1", "status": "queued"}
 
     monkeypatch.setattr(
         telegram_review_actions.production_tasks,
         "get_authorized_user",
         fake_get_authorized_user,
     )
-    monkeypatch.setattr(telegram_review_actions, "approve_review", fake_approve_review)
     monkeypatch.setattr(
-        telegram_review_actions.production_tasks,
-        "mark_task_review_decision",
-        fake_mark_task_review_decision,
+        telegram_review_actions.youtube_upload_jobs,
+        "approve_and_enqueue",
+        fake_approve_and_enqueue,
     )
 
     response = await telegram_review_actions.handle_review_callback(
@@ -43,9 +39,11 @@ async def test_handle_review_callback_approves_authorized_user(monkeypatch):
         data="rv:ok:review-1",
     )
 
-    assert response == "Approved review review-1."
-    assert calls["approve"] == {"review_id": "review-1", "notes": "approved from Telegram"}
-    assert calls["decision"] == {"review_id": "review-1", "status": "approved"}
+    assert response == "Approved and queued upload upload-1."
+    assert calls["approve"] == {
+        "review_id": "review-1",
+        "owner_telegram_user_id": 111,
+    }
 
 
 @pytest.mark.asyncio

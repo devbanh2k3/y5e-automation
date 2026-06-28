@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from core import production_tasks
-from core.reviews import approve_review, reject_review
+from core import production_tasks, youtube_upload_jobs
+from core.reviews import reject_review
 
 
 async def handle_review_callback(*, telegram_user_id: int, data: str) -> str:
@@ -19,9 +19,11 @@ async def handle_review_callback(*, telegram_user_id: int, data: str) -> str:
     action, reason, review_id = parsed
     try:
         if action == "approve":
-            await approve_review(review_id, notes="approved from Telegram")
-            await production_tasks.mark_task_review_decision(review_id=review_id, status="approved")
-            return f"Approved review {review_id}."
+            job = await youtube_upload_jobs.approve_and_enqueue(
+                review_id=review_id,
+                owner_telegram_user_id=telegram_user_id,
+            )
+            return f"Approved and queued upload {job['upload_job_id']}."
         await reject_review(review_id, reason=reason, notes=f"rejected from Telegram: {reason}")
         await production_tasks.mark_task_review_decision(review_id=review_id, status="rejected")
         return f"Rejected review {review_id}: {reason}."
