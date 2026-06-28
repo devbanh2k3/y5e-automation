@@ -78,3 +78,18 @@ async def test_approve_cannot_enqueue_another_users_review(monkeypatch) -> None:
             review_id="review-user-222",
             owner_telegram_user_id=111,
         )
+
+
+@pytest.mark.asyncio
+async def test_claim_next_upload_job_uses_skip_locked(monkeypatch) -> None:
+    from core import youtube_upload_jobs
+
+    fetchrow = AsyncMock(return_value={"upload_job_id": "upload-1", "status": "uploading"})
+    monkeypatch.setattr(youtube_upload_jobs, "fetchrow", fetchrow)
+
+    job = await youtube_upload_jobs.claim_next_upload_job()
+
+    assert job["upload_job_id"] == "upload-1"
+    query = fetchrow.await_args.args[0]
+    assert "FOR UPDATE SKIP LOCKED" in query
+    assert "failed_retryable" in query

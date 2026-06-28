@@ -5,6 +5,7 @@ from __future__ import annotations
 import mimetypes
 from dataclasses import dataclass
 from pathlib import Path
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 import httpx
@@ -90,6 +91,7 @@ class YouTubeUploadClient:
         metadata: dict[str, Any],
         language: str,
         resumable_session_url: str = "",
+        on_session_created: Callable[[str], Awaitable[None]] | None = None,
     ) -> UploadResult:
         """Stream one MP4 through the YouTube resumable upload protocol."""
         if not video_path.is_file():
@@ -133,9 +135,39 @@ class YouTubeUploadClient:
             session_url = str(initiation.headers.get("Location") or "")
             if not session_url:
                 raise YouTubePermanentError("YouTube upload session is missing")
+            if on_session_created is not None:
+                await on_session_created(session_url)
 
         with video_path.open("rb") as video_file:
             offset = 0
+            if resumable_session_url:
+                probe = await self._request(
+                    "PUT",
+                    session_url,
+                    headers={
+                        "Authorization": f"Bearer {access_token}",
+                        "Content-Length": "0",
+                        "Content-Range": f"bytes */{file_size}",
+                    },
+                    content=b"",
+                )
+                if probe.status_code in {200, 201}:
+                    youtube_video_id = str(probe.json().get("id") or "")
+                    if youtube_video_id:
+                        return UploadResult(
+                            youtube_video_id=youtube_video_id,
+                            youtube_url=f"https://youtube.com/watch?v={youtube_video_id}",
+                        )
+                elif probe.status_code == 308:
+                    uploaded_range = str(probe.headers.get("Range") or "")
+                    if "-" in uploaded_range:
+                        try:
+                            offset = int(uploaded_range.rsplit("-", 1)[1]) + 1
+                        except ValueError:
+                            offset = 0
+                    video_file.seek(offset)
+                else:
+                    self._raise_for_status(probe, operation="upload recovery")
             while offset < file_size:
                 chunk = video_file.read(CHUNK_SIZE)
                 end = offset + len(chunk) - 1
