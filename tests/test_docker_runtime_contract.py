@@ -21,8 +21,23 @@ def test_compose_builds_one_shared_application_image() -> None:
 
     assert "image: youtube_ai_automation-app:latest" in source
     assert source.count("build:") == 1
+    assert "db-migrate:\n    image: youtube_ai_automation-app:latest" in source
     assert "worker:\n    image: youtube_ai_automation-app:latest" in source
-    assert source.count("REMOTION_BROWSER_EXECUTABLE: /usr/bin/chromium") == 2
+    assert "telegram-bot:\n    image: youtube_ai_automation-app:latest" in source
+    assert "production-worker:\n    image: youtube_ai_automation-app:latest" in source
+    assert source.count("REMOTION_BROWSER_EXECUTABLE: /usr/bin/chromium") == 3
+    assert "condition: service_completed_successfully" in source
+
+
+def test_compose_runs_remote_production_inside_docker() -> None:
+    source = (ROOT / "docker-compose.yml").read_text()
+
+    assert 'command: ["python", "scripts/telegram_remote_bot.py"]' in source
+    assert (
+        'command: ["python", "scripts/process_production_task.py", "--loop", "--idle-sleep", "10"]'
+        in source
+    )
+    assert 'command: ["python", "scripts/apply_db_migrations.py"]' in source
 
 
 def test_dockerignore_excludes_runtime_and_generated_assets() -> None:

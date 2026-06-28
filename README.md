@@ -165,6 +165,8 @@ This starts:
 - **n8n** on port `5678`
 - **API server** on port `8000`
 - **Pipeline worker** consuming Redis jobs
+- **Telegram bot** for remote production commands
+- **Production worker** for Telegram-created video tasks
 
 ### 4. Install Video Engine
 
@@ -437,7 +439,7 @@ Find the correct chat id after sending `/start` to the bot:
 python3 scripts/telegram_chat_id.py --timeout 10
 ```
 
-Run the Telegram polling bot:
+Run the Telegram polling bot locally when not using Docker:
 
 ```bash
 python3 scripts/telegram_remote_bot.py
@@ -453,7 +455,7 @@ Process one fair-scheduled production task:
 python3 scripts/process_production_task.py --once
 ```
 
-Run the production worker continuously:
+Run the production worker continuously when not using Docker:
 
 ```bash
 python3 scripts/process_production_task.py --loop --idle-sleep 10
@@ -474,6 +476,12 @@ Telegram create -> fair task queue -> render -> pending review -> Review UI or
 Telegram status.
 
 For an existing database, apply the production-control migration first:
+
+```bash
+python3 scripts/apply_db_migrations.py
+```
+
+Or apply individual SQL files manually:
 
 ```bash
 psql "$DATABASE_URL" -f db/migrations/2026-06-28-telegram-remote-production.sql

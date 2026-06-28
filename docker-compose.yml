@@ -56,11 +56,25 @@ services:
         condition: service_healthy
 
   # ── API server ─────────────────────────────────────────────
-  api:
+  db-migrate:
     image: youtube_ai_automation-app:latest
     build:
       context: .
       dockerfile: Dockerfile
+    restart: "no"
+    command: ["python", "scripts/apply_db_migrations.py"]
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql://ytbot:ytbot@postgres:5432/youtube_automation
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # ── API server ─────────────────────────────────────────────
+  api:
+    image: youtube_ai_automation-app:latest
     restart: unless-stopped
     ports:
       - "8000:8000"
@@ -73,8 +87,8 @@ services:
     volumes:
       - ./output:/app/output
     depends_on:
-      postgres:
-        condition: service_healthy
+      db-migrate:
+        condition: service_completed_successfully
       redis:
         condition: service_healthy
 
@@ -92,8 +106,41 @@ services:
     volumes:
       - ./output:/app/output
     depends_on:
-      postgres:
+      db-migrate:
+        condition: service_completed_successfully
+      redis:
         condition: service_healthy
+
+  # ── Telegram remote control bot ────────────────────────────
+  telegram-bot:
+    image: youtube_ai_automation-app:latest
+    restart: unless-stopped
+    command: ["python", "scripts/telegram_remote_bot.py"]
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql://ytbot:ytbot@postgres:5432/youtube_automation
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      db-migrate:
+        condition: service_completed_successfully
+
+  # ── Telegram production render worker ──────────────────────
+  production-worker:
+    image: youtube_ai_automation-app:latest
+    restart: unless-stopped
+    command: ["python", "scripts/process_production_task.py", "--loop", "--idle-sleep", "10"]
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql://ytbot:ytbot@postgres:5432/youtube_automation
+      REDIS_URL: redis://redis:6379/0
+      REMOTION_BROWSER_EXECUTABLE: /usr/bin/chromium
+    volumes:
+      - ./output:/app/output
+    depends_on:
+      db-migrate:
+        condition: service_completed_successfully
       redis:
         condition: service_healthy
 
