@@ -143,3 +143,104 @@ async def test_reject_review_endpoint_keeps_legacy_notes_compatible(monkeypatch)
 
     assert response.status_code == 200
     assert response.json()["reject_reason"] == "other"
+
+
+@pytest.mark.asyncio
+async def test_review_ui_page_is_served():
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get("/review-ui")
+
+    assert response.status_code == 200
+    assert "text/html" in response.headers["content-type"]
+    assert 'id="review-app"' in response.text
+
+
+@pytest.mark.asyncio
+async def test_review_ui_static_javascript_is_served():
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get("/static/review-ui.js")
+
+    assert response.status_code == 200
+    assert "loadReviews" in response.text
+
+
+@pytest.mark.asyncio
+async def test_review_video_endpoint_streams_review_file(monkeypatch, tmp_path):
+    video_path = tmp_path / "final_video.mp4"
+    video_path.write_bytes(b"mp4-bytes")
+
+    async def fake_get_review(review_id: str):
+        assert review_id == "review-1"
+        return {
+            "review_id": "review-1",
+            "status": "pending_review",
+            "video": {"file_path": str(video_path)},
+        }
+
+    monkeypatch.setattr("api.main.get_review", fake_get_review)
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get("/api/reviews/review-1/video")
+
+    assert response.status_code == 200
+    assert response.content == b"mp4-bytes"
+    assert response.headers["content-type"] == "video/mp4"
+
+
+@pytest.mark.asyncio
+async def test_review_video_endpoint_returns_404_for_missing_file(monkeypatch, tmp_path):
+    missing_path = tmp_path / "missing.mp4"
+
+    async def fake_get_review(review_id: str):
+        return {
+            "review_id": review_id,
+            "status": "pending_review",
+            "video": {"file_path": str(missing_path)},
+        }
+
+    monkeypatch.setattr("api.main.get_review", fake_get_review)
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get("/api/reviews/review-1/video")
+
+    assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_review_scene_image_endpoint_streams_verified_image(monkeypatch, tmp_path):
+    image_path = tmp_path / "scene.webp"
+    image_path.write_bytes(b"image-bytes")
+
+    async def fake_get_review(review_id: str):
+        return {
+            "review_id": review_id,
+            "image_verification_contract": {
+                "items": [
+                    {
+                        "scene_index": 2,
+                        "local_path": str(image_path),
+                    }
+                ]
+            },
+        }
+
+    monkeypatch.setattr("api.main.get_review", fake_get_review)
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get("/api/reviews/review-1/images/2")
+
+    assert response.status_code == 200
+    assert response.content == b"image-bytes"
+
+
+@pytest.mark.asyncio
+async def test_review_scene_image_endpoint_returns_404_for_missing_scene(monkeypatch):
+    async def fake_get_review(review_id: str):
+        return {"review_id": review_id, "image_verification_contract": {"items": []}}
+
+    monkeypatch.setattr("api.main.get_review", fake_get_review)
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get("/api/reviews/review-1/images/9")
+
+    assert response.status_code == 404

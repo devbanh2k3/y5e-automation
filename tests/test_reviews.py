@@ -199,6 +199,38 @@ async def test_reject_review_requires_allowed_reason(review_storage):
 
 
 @pytest.mark.asyncio
+async def test_reject_review_accepts_fact_and_video_reasons(review_storage):
+    first = await create_review(
+        job_id="job-1",
+        topic_id=1,
+        video_id=2,
+        file_path="/tmp/final.mp4",
+        content_contract={},
+        youtube_title="Title",
+        youtube_description="Description",
+        youtube_tags=["tag"],
+        thumbnail_prompt="thumbnail",
+    )
+    second = await create_review(
+        job_id="job-2",
+        topic_id=3,
+        video_id=4,
+        file_path="/tmp/final-2.mp4",
+        content_contract={},
+        youtube_title="Title 2",
+        youtube_description="Description",
+        youtube_tags=["tag"],
+        thumbnail_prompt="thumbnail",
+    )
+
+    fact_rejected = await reject_review(first["review_id"], reason="bad_fact")
+    video_rejected = await reject_review(second["review_id"], reason="bad_video")
+
+    assert fact_rejected["reject_reason"] == "bad_fact"
+    assert video_rejected["reject_reason"] == "bad_video"
+
+
+@pytest.mark.asyncio
 async def test_create_review_persists_image_verification_contract(review_storage):
     image_contract = {
         "schema_version": "image_verification_contract_v1",

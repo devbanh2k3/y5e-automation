@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Review Gate</title>
+    <link rel="stylesheet" href="/static/review-ui.css" />
+  </head>
+  <body>
+    <div id="review-app" class="shell">
+      <aside class="sidebar">
+        <div class="sidebar-header">
+          <h1>Review Gate</h1>
+          <button id="refreshButton" type="button">Refresh</button>
+        </div>
+        <div class="filters">
+          <select id="statusFilter" aria-label="Review status">
+            <option value="pending_review">Pending</option>
+            <option value="approved">Approved</option>
+            <option value="rejected">Rejected</option>
+            <option value="">All</option>
+          </select>
+        </div>
+        <div id="reviewList" class="review-list"></div>
+      </aside>
+
+      <main class="detail">
+        <section class="hero">
+          <div>
+            <p id="reviewStatus" class="status">No review selected</p>
+            <h2 id="reviewTitle">Select a review</h2>
+            <p id="reviewMeta" class="meta"></p>
+          </div>
+          <div class="actions">
+            <button id="approveButton" type="button">Approve</button>
+            <button id="rejectButton" type="button" class="danger">Reject</button>
+          </div>
+        </section>
+
+        <section class="video-panel">
+          <video id="videoPreview" controls preload="metadata"></video>
+        </section>
+
+        <section class="review-form">
+          <label>
+            Notes
+            <input id="notesInput" type="text" placeholder="Optional review notes" />
+          </label>
+          <label>
+            Reject reason
+            <select id="reasonInput">
+              <option value="wrong_image">Wrong image</option>
+              <option value="bad_fact">Bad fact</option>
+              <option value="bad_text">Bad text</option>
+              <option value="bad_video">Bad video</option>
+              <option value="bad_layout">Bad layout</option>
+              <option value="bad_topic">Bad topic</option>
+              <option value="bad_metric">Bad metric</option>
+              <option value="other">Other</option>
+            </select>
+          </label>
+          <label>
+            Scene indexes
+            <input id="scenesInput" type="text" placeholder="Example: 0, 3, 5" />
+          </label>
+        </section>
+
+        <section class="grid">
+          <article>
+            <h3>Quality Gate</h3>
+            <div id="qualityGate" class="kv"></div>
+          </article>
+          <article>
+            <h3>Regenerate</h3>
+            <pre id="regenerateCommand"></pre>
+          </article>
+        </section>
+
+        <section>
+          <h3>Scenes</h3>
+          <div id="sceneList" class="scene-list"></div>
+        </section>
+      </main>
+    </div>
+    <script src="/static/review-ui.js"></script>
+  </body>
+</html>

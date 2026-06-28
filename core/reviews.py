@@ -22,7 +22,9 @@ class ReviewStatus(str, Enum):
 
 ALLOWED_REJECT_REASONS = {
     "wrong_image",
+    "bad_fact",
     "bad_text",
+    "bad_video",
     "bad_layout",
     "bad_topic",
     "bad_metric",

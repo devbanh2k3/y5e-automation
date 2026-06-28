@@ -5,10 +5,12 @@ from __future__ import annotations
 import logging
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from core.config import get_settings
@@ -160,8 +162,17 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+STATIC_DIR = Path(__file__).resolve().parent / "static"
+app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+
 
 # ── Routes ────────────────────────────────────────────────────
+
+
+@app.get("/review-ui", tags=["Reviews"])
+async def review_ui() -> FileResponse:
+    """Serve the local review gate UI."""
+    return FileResponse(STATIC_DIR / "review-ui.html", media_type="text/html")
 
 
 @app.get("/api/health", response_model=HealthResponse, tags=["System"])
@@ -288,6 +299,39 @@ async def get_review_item(review_id: str) -> dict[str, Any]:
         return await get_review(review_id)
     except KeyError:
         raise HTTPException(status_code=404, detail=f"Review {review_id} not found.") from None
+
+
+@app.get("/api/reviews/{review_id}/video", tags=["Reviews"])
+async def get_review_video(review_id: str) -> FileResponse:
+    """Stream the MP4 referenced by a review artifact."""
+    try:
+        review = await get_review(review_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail=f"Review {review_id} not found.") from None
+
+    video_path = Path(str((review.get("video") or {}).get("file_path", ""))).expanduser()
+    if not video_path.is_file():
+        raise HTTPException(status_code=404, detail="Review video file not found.")
+    return FileResponse(video_path, media_type="video/mp4", filename=video_path.name)
+
+
+@app.get("/api/reviews/{review_id}/images/{scene_index}", tags=["Reviews"])
+async def get_review_scene_image(review_id: str, scene_index: int) -> FileResponse:
+    """Serve the verified local image for a review scene."""
+    try:
+        review = await get_review(review_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail=f"Review {review_id} not found.") from None
+
+    items = (review.get("image_verification_contract") or {}).get("items") or []
+    image_item = next(
+        (item for item in items if int(item.get("scene_index", -1)) == scene_index),
+        None,
+    )
+    image_path = Path(str((image_item or {}).get("local_path", ""))).expanduser()
+    if not image_item or not image_path.is_file():
+        raise HTTPException(status_code=404, detail="Review scene image not found.")
+    return FileResponse(image_path, filename=image_path.name)
 
 
 @app.post("/api/reviews/{review_id}/approve", tags=["Reviews"])
