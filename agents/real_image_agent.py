@@ -164,6 +164,25 @@ class RealImageAgent(BaseAgent):
             raise ValueError(f"missing verified real images: {', '.join(missing)}")
         return contract
 
+    async def verify_scene(
+        self,
+        *,
+        topic_id: int,
+        scene_index: int,
+        scene: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Verify one scene and return a missing item instead of raising."""
+
+        semaphore = asyncio.Semaphore(1)
+        async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT, follow_redirects=True) as client:
+            return await self._verify_scene_image(
+                client=client,
+                semaphore=semaphore,
+                topic_id=topic_id,
+                scene_index=scene_index,
+                scene=scene,
+            )
+
     @staticmethod
     def real_image_concurrency() -> int:
         """Return bounded per-video image lookup concurrency."""

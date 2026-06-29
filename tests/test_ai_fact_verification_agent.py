@@ -69,3 +69,32 @@ async def test_agent_rejects_low_confidence(monkeypatch):
 
     with pytest.raises(FactVerificationError):
         await agent.run(content_contract=content_contract())
+
+
+@pytest.mark.asyncio
+async def test_verify_scenes_returns_rejected_item_without_failing_siblings(monkeypatch):
+    agent = AIFactVerificationAgent()
+    contract = content_contract()
+    second_scene = dict(contract["scenes"][0])
+    second_scene["title"] = "Adele"
+    second_scene["factClaim"] = "Uncertain Adele claim"
+    contract["scenes"].append(second_scene)
+    rejected = dict(verified_response())
+    rejected.update(
+        {
+            "scene_index": 1,
+            "person_name": "Adele",
+            "status": "rejected",
+            "confidence": 0.2,
+        }
+    )
+
+    async def fake_ai_json(prompt, system=None, **kwargs):
+        return {"items": [verified_response(), rejected]}
+
+    monkeypatch.setattr(agent, "ai_json", fake_ai_json)
+
+    items = await agent.verify_scenes(content_contract=contract)
+
+    assert items[0]["status"] == "verified"
+    assert items[1]["status"] == "rejected"

@@ -96,6 +96,25 @@ async def test_run_for_content_contract_verifies_images_concurrently_in_scene_or
     assert [item["scene_index"] for item in result["items"]] == list(range(8))
 
 
+@pytest.mark.asyncio
+async def test_verify_scene_returns_missing_item_without_strict_batch_failure(monkeypatch):
+    agent = RealImageAgent()
+
+    async def fake_find_verified_image(**kwargs):
+        return None
+
+    monkeypatch.setattr(agent, "_find_verified_image", fake_find_verified_image)
+
+    item = await agent.verify_scene(
+        topic_id=1,
+        scene_index=0,
+        scene={"title": "#1 Adele"},
+    )
+
+    assert item["status"] == "missing_image"
+    assert item["person_name"] == "Adele"
+
+
 def test_wikimedia_user_agent_includes_contact_and_project_url():
     assert "github.com/devbanh2k3/y5e-automation" in RealImageAgent.WIKIMEDIA_USER_AGENT
     assert "example.com" not in RealImageAgent.WIKIMEDIA_USER_AGENT

@@ -25,6 +25,18 @@ class AIFactVerificationAgent(BaseAgent):
         *,
         content_contract: dict[str, Any],
     ) -> dict[str, Any]:
+        normalized = await self.verify_scenes(content_contract=content_contract)
+        contract = self.build_verified_contract(normalized)
+        validate_fact_verification_contract_v1(contract, require_ai_verified=True)
+        return contract
+
+    async def verify_scenes(
+        self,
+        *,
+        content_contract: dict[str, Any],
+    ) -> list[dict[str, Any]]:
+        """Return one normalized result per scene without enforcing batch success."""
+
         scenes = content_contract.get("scenes")
         if not isinstance(scenes, list) or not scenes:
             raise FactVerificationError("content contract requires factual scenes")
@@ -78,6 +90,10 @@ uncertain claim rejected. Return one item per input scene as JSON:
             item["scene_index"] = index
             item["status"] = str(item.get("status", "rejected")).strip().lower()
             normalized.append(item)
-        contract = build_fact_verification_contract_v1(normalized)
-        validate_fact_verification_contract_v1(contract, require_ai_verified=True)
-        return contract
+        return normalized
+
+    @staticmethod
+    def build_verified_contract(items: list[dict[str, Any]]) -> dict[str, Any]:
+        """Build a strict contract after rejected cards have been removed."""
+
+        return build_fact_verification_contract_v1(items)
