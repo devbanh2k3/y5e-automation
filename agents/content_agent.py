@@ -295,19 +295,36 @@ Return JSON only with this shape:
                 metadata_contract=raw_contract,
             )
 
+        normalize_scene_count = scene_count
+        if production_inventory is not None:
+            ready_scene_count = len(raw_contract.get("scenes") or [])
+            if ready_scene_count < production_inventory.minimum_cards:
+                raise ValueError(
+                    "AI celebrity contract requires at least "
+                    f"{production_inventory.minimum_cards} ready scenes before recovery, "
+                    f"got {ready_scene_count}"
+                )
+            normalize_scene_count = ready_scene_count
+
         normalized = self._normalize_ai_celebrity_contract(
             raw_contract=raw_contract,
             language=language,
             topic=topic,
             card_layout=card_layout,
             duration_target=duration_target,
-            desired_scene_count=scene_count,
+            desired_scene_count=normalize_scene_count,
         )
         if production_inventory is not None:
-            for card, scene in zip(
-                production_inventory.cards.values(), normalized["scenes"]
-            ):
-                card.scene = scene
+            scenes_by_person = {
+                self._normalized_person_key(self._extract_ranked_name(scene["title"])): scene
+                for scene in normalized["scenes"]
+            }
+            for card in production_inventory.cards.values():
+                scene = scenes_by_person.get(
+                    self._normalized_person_key(card.candidate.name)
+                )
+                if scene is not None:
+                    card.scene = scene
             normalized["_production_inventory"] = production_inventory
             normalized["_production_run_id"] = run_id
         return normalized

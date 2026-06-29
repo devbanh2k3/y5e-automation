@@ -444,6 +444,44 @@ async def test_long_content_uses_locked_entity_orchestrator_when_enabled(monkeyp
 
 
 @pytest.mark.asyncio
+async def test_resilient_content_accepts_minimum_ready_scenes_before_recovery(monkeypatch):
+    get_settings.cache_clear()
+    monkeypatch.setenv("RESILIENT_CARD_PIPELINE_ENABLED", "true")
+    monkeypatch.setenv("CARD_MINIMUM_RATIO", "0.90")
+    agent = ContentAgent()
+    metadata_payload = awards_contract_payload(count=0)
+    metadata_payload["scenes"] = []
+    inventory = ProductionInventory(58, 6, 0.90)
+    candidates = [Candidate(f"Musician {index}", "US") for index in range(58)]
+    inventory.lock_candidates(candidates)
+    scenes = awards_contract_payload(count=53)["scenes"]
+
+    async def fake_ai_json(prompt, system=None, **kwargs):
+        return metadata_payload
+
+    async def fake_build(self, **kwargs):
+        return {**metadata_payload, "scenes": scenes, "inventory": inventory}
+
+    monkeypatch.setattr(agent, "ai_json", fake_ai_json)
+    monkeypatch.setattr(
+        "agents.celebrity_content_orchestrator.CelebrityContentOrchestrator.build",
+        fake_build,
+    )
+
+    contract = await agent.run(
+        niche="celebrity",
+        language="en",
+        selected_topic={"title": "Awards", "metric_label": "AWARDS"},
+        duration_target=300,
+    )
+
+    assert len(contract["scenes"]) == 53
+    assert contract["_production_inventory"] is inventory
+    assert sum(1 for card in inventory.cards.values() if card.scene is not None) == 53
+    get_settings.cache_clear()
+
+
+@pytest.mark.asyncio
 async def test_content_agent_builds_seeded_celebrity_mvp_contract(monkeypatch):
     agent = ContentAgent()
 
