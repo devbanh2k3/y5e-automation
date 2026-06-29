@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import math
 import re
+import shutil
 from collections.abc import Iterable
 from pathlib import Path
 from typing import Any, Awaitable, Callable
@@ -315,16 +316,37 @@ class CelebrityContentOrchestrator(BaseAgent):
         ready_cards = inventory.ready_cards
         fact_items: list[dict[str, Any]] = []
         image_items: list[dict[str, Any]] = []
+        topic_image_dir = get_settings().storage_dir / "topics" / str(topic_id) / "images"
+        topic_image_dir.mkdir(parents=True, exist_ok=True)
         for scene_index, (card, final_scene) in enumerate(zip(ready_cards, final_scenes)):
             card.scene = final_scene
             fact_item = dict(card.fact_item or {})
+            verified_value = str(fact_item.get("verified_value", "")).strip()
+            if verified_value:
+                final_scene["metricValue"] = verified_value
+                final_scene["factValue"] = verified_value
+                if "caption" in final_scene:
+                    final_scene["caption"] = verified_value
+                status_text = str(final_scene.get("statusText", "")).strip()
+                if "|" in status_text:
+                    final_scene["statusText"] = (
+                        f"{status_text.split('|', 1)[0].strip()} | {verified_value}"
+                    )
             fact_item["scene_index"] = scene_index
             fact_item["person_name"] = extract_scene_person_name(final_scene)
             fact_items.append(fact_item)
             image_item = dict(card.image_item or {})
+            expected_render_path = f"images/real_{scene_index}.webp"
+            expected_local_path = topic_image_dir / f"real_{scene_index}.webp"
+            source_local_path = Path(str(image_item.get("local_path", "")))
+            if source_local_path.is_file() and source_local_path.resolve() != expected_local_path.resolve():
+                shutil.copyfile(source_local_path, expected_local_path)
+            if expected_local_path.is_file():
+                image_item["local_path"] = str(expected_local_path)
             image_item["scene_index"] = scene_index
             image_item["person_name"] = extract_scene_person_name(final_scene)
             image_item["expected_title"] = str(final_scene.get("title", ""))
+            image_item["render_image_path"] = expected_render_path
             image_items.append(image_item)
 
         content_contract = dict(metadata_contract)

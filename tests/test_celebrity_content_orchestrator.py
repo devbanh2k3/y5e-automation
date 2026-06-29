@@ -481,7 +481,10 @@ async def test_hard_card_is_skipped_when_ninety_percent_are_ready():
     class FactAgent:
         async def verify_scenes(self, *, content_contract):
             name = content_contract["scenes"][0]["title"]
-            return [fact_item(name)]
+            item = fact_item(name)
+            if name == "Person 0":
+                item["verified_value"] = "101"
+            return [item]
 
         def build_verified_contract(self, items):
             from core.fact_verification import build_fact_verification_contract_v1
@@ -505,6 +508,10 @@ async def test_hard_card_is_skipped_when_ninety_percent_are_ready():
     assert result["production_summary"]["final_cards"] == 9
     assert result["production_summary"]["skipped_cards"] == 1
     assert result["production_summary"]["degraded"] is True
+    assert result["content_contract"]["scenes"][0]["metricValue"] == "101"
+    assert result["content_contract"]["scenes"][0]["factValue"] == "101"
+    assert result["image_verification_contract"]["items"][0]["render_image_path"] == "images/real_0.webp"
+    assert result["image_verification_contract"]["items"][1]["render_image_path"] == "images/real_1.webp"
 
 
 @pytest.mark.asyncio
