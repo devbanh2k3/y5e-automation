@@ -74,3 +74,10 @@ def test_dockerignore_excludes_runtime_and_generated_assets() -> None:
     assert "video_engine/node_modules/" in source
     assert "video_engine/public/images/country_scene_*.svg" in source
     assert "*.mp4" in source
+
+
+def test_dockerignore_keeps_env_example_for_runtime_contracts() -> None:
+    source = (ROOT / ".dockerignore").read_text().splitlines()
+
+    assert ".env.*" in source
+    assert "!.env.example" in source

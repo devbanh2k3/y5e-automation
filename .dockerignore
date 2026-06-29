@@ -4,6 +4,7 @@
 
 .env
 .env.*
+!.env.example
 youtube_token.json
 
 __pycache__/
