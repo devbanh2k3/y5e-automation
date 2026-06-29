@@ -243,7 +243,7 @@ class CelebrityContentOrchestrator(BaseAgent):
         )
 
         repaired_count = 0
-        for card in inventory.cards.values():
+        for source_scene_index, card in enumerate(inventory.cards.values()):
             if (
                 card.state is CardState.READY
                 and card.scene is not None
@@ -280,6 +280,7 @@ class CelebrityContentOrchestrator(BaseAgent):
                         failure = await self._verify_card_image(
                             card=card,
                             topic_id=topic_id,
+                            scene_index=source_scene_index,
                             image_agent=image_agent,
                         )
                 if failure is None:
@@ -457,13 +458,14 @@ class CelebrityContentOrchestrator(BaseAgent):
         *,
         card: Any,
         topic_id: int,
+        scene_index: int,
         image_agent: Any,
     ) -> str | None:
         card.state = CardState.IMAGE_SEARCHING
         try:
             item = await image_agent.verify_scene(
                 topic_id=topic_id,
-                scene_index=0,
+                scene_index=scene_index,
                 scene=card.scene,
             )
         except Exception as exc:

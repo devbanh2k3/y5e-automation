@@ -537,6 +537,54 @@ async def test_hard_card_is_skipped_when_ninety_percent_are_ready():
 
 
 @pytest.mark.asyncio
+async def test_image_verification_uses_distinct_source_indices_per_card():
+    orchestrator = CelebrityContentOrchestrator(minimum_reserve=0)
+    inventory = ProductionInventory(3, 1, 1.0)
+    for index in range(3):
+        name = f"Person {index}"
+        inventory.cards[f"card-{index}"] = CardRecord(
+            card_id=f"card-{index}",
+            candidate=Candidate(name, "US"),
+            state=CardState.CONTENT_READY,
+            scene=scene(name),
+        )
+    planned = {**metadata(), "scenes": [card.scene for card in inventory.cards.values()], "inventory": inventory}
+
+    class FactAgent:
+        async def verify_scenes(self, *, content_contract):
+            name = content_contract["scenes"][0]["title"]
+            return [fact_item(name)]
+
+        def build_verified_contract(self, items):
+            from core.fact_verification import build_fact_verification_contract_v1
+
+            return build_fact_verification_contract_v1(items)
+
+    class ImageAgent:
+        def __init__(self):
+            self.scene_indices = []
+
+        async def verify_scene(self, *, topic_id, scene_index, scene):
+            self.scene_indices.append(scene_index)
+            item = image_item(scene["title"])
+            item["local_path"] = f"/tmp/source_{scene_index}.webp"
+            item["render_image_path"] = f"images/real_{scene_index}.webp"
+            return item
+
+    image_agent = ImageAgent()
+    await orchestrator.verify_and_recover(
+        planned,
+        topic_id=1,
+        topic=topic(),
+        language="en",
+        fact_agent=FactAgent(),
+        image_agent=image_agent,
+    )
+
+    assert image_agent.scene_indices == [0, 1, 2]
+
+
+@pytest.mark.asyncio
 async def test_run_fails_only_after_ready_cards_remain_below_minimum():
     orchestrator = CelebrityContentOrchestrator(minimum_reserve=0, fact_attempts=1)
     inventory = ProductionInventory(10, 6, 0.90)
