@@ -306,7 +306,10 @@ def _should_replace_topic(exc: Exception) -> bool:
         return True
     message = str(exc).lower()
     return (
-        "missing verified real images" in message
+        _is_topic_reservation_race(exc)
+        or "could not extract valid json from response" in message
+        or ("scene " in message and " is not an individual person" in message)
+        or "missing verified real images" in message
         or "duplicate celebrity scenes" in message
         or "image verification status must be verified" in message
         or "verified_count and required_count must match card count" in message

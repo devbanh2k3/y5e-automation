@@ -383,6 +383,93 @@ async def test_process_one_task_retries_topic_reservation_race(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_process_one_task_replaces_topic_when_produce_hits_reservation_race(monkeypatch):
+    from scripts import process_production_task
+
+    calls = {"topic_runs": [], "produce": []}
+
+    async def fake_claim_next_fair_task():
+        return {
+            "task_id": "task-1",
+            "batch_id": "batch-1",
+            "owner_telegram_user_id": 111,
+            "slot_index": 1,
+            "target_duration": 300,
+        }
+
+    async def fake_produce(**kwargs):
+        calls["produce"].append(kwargs)
+        if len(calls["produce"]) == 1:
+            raise RuntimeError("topic reservations changed concurrently")
+        return {
+            "review_id": "review-2",
+            "topic_id": "topic-2",
+            "video_path": "/tmp/final-2.mp4",
+            "youtube_title": "Recovered topic",
+            "target_duration": 300,
+        }
+
+    async def fake_mark_task_pending_review(**kwargs):
+        calls["pending"] = kwargs
+
+    async def fake_mark_task_failed(**kwargs):
+        calls["task_failed"] = kwargs
+
+    class FakeRepository:
+        def mark_produced(self, reservation_id, *, topic_id):
+            calls["topic_produced"] = {"reservation_id": reservation_id, "topic_id": topic_id}
+
+        def mark_failed(self, reservation_id, *, reason):
+            calls.setdefault("topic_failed", []).append(
+                {"reservation_id": reservation_id, "reason": reason}
+            )
+
+    class FakeTopicStrategyAgent:
+        def __init__(self):
+            self.repository = FakeRepository()
+
+        async def run(self, *, count, language, batch_id):
+            calls["topic_runs"].append({"count": count, "language": language, "batch_id": batch_id})
+            reservation = len(calls["topic_runs"])
+            return [{"reservation_id": f"reservation-{reservation}", "title": f"Topic {reservation}"}]
+
+    async def fake_get_notification_chat_id(user_id):
+        assert user_id == 111
+        return 999
+
+    async def fake_send_telegram_message(*, chat_id, text, reply_markup=None):
+        calls["notification"] = {"chat_id": chat_id, "text": text, "reply_markup": reply_markup}
+        return True
+
+    monkeypatch.setattr(process_production_task.production_tasks, "claim_next_fair_task", fake_claim_next_fair_task)
+    monkeypatch.setattr(process_production_task, "TopicStrategyAgent", FakeTopicStrategyAgent)
+    monkeypatch.setattr(process_production_task, "produce", fake_produce)
+    monkeypatch.setattr(
+        process_production_task.production_tasks,
+        "mark_task_pending_review",
+        fake_mark_task_pending_review,
+    )
+    monkeypatch.setattr(process_production_task.production_tasks, "mark_task_failed", fake_mark_task_failed)
+    monkeypatch.setattr(
+        process_production_task.production_tasks,
+        "get_notification_chat_id",
+        fake_get_notification_chat_id,
+    )
+    monkeypatch.setattr(process_production_task, "send_telegram_message", fake_send_telegram_message)
+
+    result = await process_production_task.process_one_task()
+
+    assert result["status"] == "pending_review"
+    assert len(calls["topic_runs"]) == 2
+    assert len(calls["produce"]) == 2
+    assert calls["produce"][1]["selected_topic"]["reservation_id"] == "reservation-2"
+    assert calls["topic_failed"][0]["reservation_id"] == "reservation-1"
+    assert calls["topic_produced"] == {"reservation_id": "reservation-2", "topic_id": "topic-2"}
+    assert calls["pending"]["review_id"] == "review-2"
+    assert "task_failed" not in calls
+
+
+@pytest.mark.asyncio
 async def test_process_one_task_replaces_missing_real_image_topic(monkeypatch):
     from scripts import process_production_task
 
