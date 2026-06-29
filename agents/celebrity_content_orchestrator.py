@@ -114,66 +114,60 @@ class CelebrityContentOrchestrator(BaseAgent):
         saved_inventory = checkpoint.load("card-states") if checkpoint else None
         if isinstance(saved_inventory, dict):
             inventory = ProductionInventory.from_dict(saved_inventory)
-            if inventory.target_cards != target_cards:
+            if inventory.target_cards != target_cards or not inventory.cards:
                 inventory = None
         else:
             inventory = None
 
-        if inventory is not None and all(
-            card.scene is not None for card in inventory.cards.values()
-        ):
-            result = dict(metadata_contract)
-            result["scenes"] = [
-                card.scene for card in inventory.cards.values() if card.scene is not None
-            ]
-            result["inventory"] = inventory
-            result["run_id"] = run_id
-            return result
-
-        requested = target_cards + max(
-            self.minimum_reserve,
-            math.ceil(target_cards * self.reserve_ratio),
-        )
-        candidates = await self._plan_candidates(
-            requested_count=requested,
-            topic=topic,
-            language=language,
-            subject=subject,
-        )
-        if len(candidates) < target_cards:
-            raise ValueError(
-                f"entity planner requires {target_cards} unique people, got {len(candidates)}"
+        if inventory is None:
+            requested = target_cards + max(
+                self.minimum_reserve,
+                math.ceil(target_cards * self.reserve_ratio),
             )
+            candidates = await self._plan_candidates(
+                requested_count=requested,
+                topic=topic,
+                language=language,
+                subject=subject,
+            )
+            if len(candidates) < target_cards:
+                raise ValueError(
+                    f"entity planner requires {target_cards} unique people, got {len(candidates)}"
+                )
+            inventory = ProductionInventory(
+                target_cards=target_cards,
+                format_minimum_cards=min(6, target_cards),
+                minimum_ratio=self.minimum_ratio,
+            )
+            inventory.add_candidates(candidates)
+            inventory.lock_candidates(inventory.candidates)
+            if checkpoint:
+                checkpoint.save(
+                    "candidate-pool",
+                    [candidate.to_dict() for candidate in inventory.candidates],
+                )
         await self._emit_progress(
             progress_callback,
             stage="entity_planning",
-            ready=min(len(candidates), target_cards),
+            ready=len(inventory.cards),
             target=target_cards,
         )
 
-        inventory = ProductionInventory(
-            target_cards=target_cards,
-            format_minimum_cards=min(6, target_cards),
-            minimum_ratio=self.minimum_ratio,
-        )
-        inventory.add_candidates(candidates)
-        inventory.lock_candidates(inventory.candidates)
-        if checkpoint:
-            checkpoint.save(
-                "candidate-pool",
-                [candidate.to_dict() for candidate in inventory.candidates],
+        missing_cards = [
+            card for card in inventory.cards.values() if card.scene is None
+        ]
+        if missing_cards:
+            scene_map = await self._write_locked_scenes(
+                candidates=[card.candidate for card in missing_cards],
+                topic=topic,
+                metadata_contract=metadata_contract,
+                language=language,
             )
-        scene_map = await self._write_locked_scenes(
-            candidates=[card.candidate for card in inventory.cards.values()],
-            topic=topic,
-            metadata_contract=metadata_contract,
-            language=language,
-        )
-        for card in inventory.cards.values():
-            key = normalize_person_key(card.candidate.name)
-            card.scene = scene_map.get(key)
-            if card.scene:
-                card.state = CardState.CONTENT_READY
+            for card in missing_cards:
+                key = normalize_person_key(card.candidate.name)
+                card.scene = scene_map.get(key)
+                if card.scene:
+                    card.state = CardState.CONTENT_READY
         await self._emit_progress(
             progress_callback,
             stage="content_writing",

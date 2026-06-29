@@ -282,6 +282,42 @@ async def test_build_resumes_ready_content_from_checkpoint_without_new_ai_calls(
 
 
 @pytest.mark.asyncio
+async def test_build_resumes_partial_checkpoint_and_writes_only_missing_subject(
+    monkeypatch,
+    tmp_path,
+):
+    from core.production_checkpoints import CheckpointStore
+
+    inventory = ProductionInventory(2, 1, 0.50)
+    inventory.add_candidates([Candidate("Adele", "GB"), Candidate("Pink", "US")])
+    inventory.lock_candidates(inventory.candidates)
+    first, second = inventory.cards.values()
+    first.scene = scene("Adele")
+    first.state = CardState.CONTENT_READY
+    CheckpointStore(tmp_path, run_id="run-2").save("card-states", inventory.to_dict())
+    orchestrator = CelebrityContentOrchestrator(storage_dir=tmp_path)
+    requests = []
+
+    async def fake_json(*, operation, **kwargs):
+        assert operation == "scene_write"
+        requests.append(kwargs["locked_names"])
+        return {"scenes": [scene("Pink")]}
+
+    monkeypatch.setattr(orchestrator, "_call_json", fake_json)
+    result = await orchestrator.build(
+        topic=topic(),
+        target_cards=2,
+        metadata_contract=metadata(),
+        language="en",
+        subject="celebrity",
+        run_id="run-2",
+    )
+
+    assert requests == [["Pink"]]
+    assert [item["title"] for item in result["scenes"]] == ["Adele", "Pink"]
+
+
+@pytest.mark.asyncio
 async def test_rejected_fact_replaces_only_failed_card(monkeypatch):
     orchestrator = CelebrityContentOrchestrator(
         reserve_ratio=0.5,
