@@ -219,6 +219,20 @@ class CelebrityContentOrchestrator(BaseAgent):
 
         repaired_count = 0
         for card in inventory.cards.values():
+            if (
+                card.state is CardState.READY
+                and card.scene is not None
+                and card.fact_item is not None
+                and card.image_item is not None
+            ):
+                await self._emit_progress(
+                    progress_callback,
+                    stage="image_verification",
+                    ready=len(inventory.ready_cards),
+                    target=inventory.target_cards,
+                    repairing=inventory.replaced_count,
+                )
+                continue
             replacements_for_slot = 0
             while True:
                 if card.scene is None:

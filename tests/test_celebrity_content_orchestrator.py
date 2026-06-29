@@ -423,3 +423,45 @@ async def test_run_fails_only_after_ready_cards_remain_below_minimum():
             fact_agent=FactAgent(),
             image_agent=ImageAgent(),
         )
+
+
+@pytest.mark.asyncio
+async def test_recovery_does_not_reverify_checkpointed_ready_card():
+    orchestrator = CelebrityContentOrchestrator(minimum_reserve=0)
+    inventory = ProductionInventory(2, 1, 0.50)
+    inventory.lock_candidates([Candidate("Adele", "GB"), Candidate("Pink", "US")])
+    first, second = inventory.cards.values()
+    first.scene = scene("Adele")
+    first.fact_item = fact_item("Adele")
+    first.image_item = image_item("Adele")
+    first.state = CardState.READY
+    second.scene = scene("Pink")
+    second.state = CardState.CONTENT_READY
+    planned = {**metadata(), "scenes": [first.scene, second.scene], "inventory": inventory}
+    verified_names = []
+
+    class FactAgent:
+        async def verify_scenes(self, *, content_contract):
+            name = content_contract["scenes"][0]["title"]
+            verified_names.append(name)
+            return [fact_item(name)]
+
+        def build_verified_contract(self, items):
+            from core.fact_verification import build_fact_verification_contract_v1
+
+            return build_fact_verification_contract_v1(items)
+
+    class ImageAgent:
+        async def verify_scene(self, *, topic_id, scene_index, scene):
+            return image_item(scene["title"])
+
+    await orchestrator.verify_and_recover(
+        planned,
+        topic_id=1,
+        topic=topic(),
+        language="en",
+        fact_agent=FactAgent(),
+        image_agent=ImageAgent(),
+    )
+
+    assert verified_names == ["Pink"]
