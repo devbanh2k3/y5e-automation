@@ -477,6 +477,7 @@ class Pipeline:
             )
 
         output_path = topic_dir / output_filename
+        raw_output_path = output_path.with_suffix(".raw.mp4")
         props_json = json.dumps(video_data, ensure_ascii=False)
         composition_id = self._composition_id_for_template(str(video_data.get("template", "")))
         cmd = [
@@ -485,7 +486,7 @@ class Pipeline:
             "render",
             "src/index.tsx",
             composition_id,
-            str(output_path),
+            str(raw_output_path),
             f"--props={props_json}",
             "--codec=h264",
             "--crf=20",
@@ -519,12 +520,47 @@ class Pipeline:
                 f"Local Remotion render failed (exit {process.returncode}): {stderr_text}"
             )
 
+        await self._apply_export_hygiene(input_path=raw_output_path, output_path=output_path)
+        raw_output_path.unlink(missing_ok=True)
+
         return {
             "video_id": topic_id,
             "file_path": str(output_path.resolve()),
             "duration_sec": 0,
             "status": "rendered",
         }
+
+    @staticmethod
+    async def _apply_export_hygiene(*, input_path: Path, output_path: Path) -> None:
+        """Create a YouTube-friendly MP4 without internal render metadata."""
+        tmp_output = output_path.with_suffix(".cleaning.mp4")
+        tmp_output.unlink(missing_ok=True)
+        cmd = [
+            "ffmpeg",
+            "-y",
+            "-i",
+            str(input_path),
+            "-map_metadata",
+            "-1",
+            "-c",
+            "copy",
+            "-movflags",
+            "+faststart",
+            str(tmp_output),
+        ]
+        process = await asyncio.create_subprocess_exec(
+            *cmd,
+            cwd=str(output_path.parent),
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        _stdout, stderr = await process.communicate()
+        if process.returncode != 0:
+            stderr_text = stderr.decode(errors="replace")[:2000]
+            raise RuntimeError(
+                f"MP4 export hygiene failed (exit {process.returncode}): {stderr_text}"
+            )
+        tmp_output.replace(output_path)
 
     @staticmethod
     def _copy_render_images_to_public(

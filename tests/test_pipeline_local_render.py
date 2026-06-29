@@ -521,19 +521,26 @@ async def test_render_local_video_invokes_remotion(monkeypatch, tmp_path):
     captured: dict[str, object] = {}
 
     class FakeProcess:
+        def __init__(self, cmd):
+            self.cmd = cmd
+
         returncode = 0
 
         async def communicate(self):
-            output_path = Path(captured["output_path"])
+            output_path = Path(self.cmd[5] if self.cmd[0] == "npx" else self.cmd[-1])
             output_path.parent.mkdir(parents=True, exist_ok=True)
-            output_path.write_bytes(b"fake remotion mp4")
+            output_path.write_bytes(
+                b"fake remotion mp4" if self.cmd[0] == "npx" else b"clean mp4"
+            )
             return b"rendered", b""
 
     async def fake_create_subprocess_exec(*cmd, cwd, stdout, stderr):
+        captured.setdefault("cmds", []).append(cmd)
         captured["cmd"] = cmd
         captured["cwd"] = cwd
-        captured["output_path"] = cmd[5]
-        return FakeProcess()
+        if cmd[0] == "npx":
+            captured["output_path"] = cmd[5]
+        return FakeProcess(cmd)
 
     monkeypatch.setattr("asyncio.create_subprocess_exec", fake_create_subprocess_exec)
 
@@ -565,10 +572,16 @@ async def test_render_local_video_invokes_remotion(monkeypatch, tmp_path):
         )
 
         cmd = captured["cmd"]
+        cmd = captured["cmds"][0]
+        ffmpeg_cmd = captured["cmds"][1]
         assert cmd[:5] == ("npx", "remotion", "render", "src/index.tsx", "TimelineVideo")
         assert "--browser-executable=/usr/bin/chromium" in cmd
         assert "--codec=h264" in cmd
-        assert Path(result["file_path"]).read_bytes() == b"fake remotion mp4"
+        assert ffmpeg_cmd[:4] == ("ffmpeg", "-y", "-i", str(Path(result["file_path"]).with_suffix(".raw.mp4")))
+        assert "-map_metadata" in ffmpeg_cmd
+        assert "-movflags" in ffmpeg_cmd
+        assert "+faststart" in ffmpeg_cmd
+        assert Path(result["file_path"]).read_bytes() == b"clean mp4"
         assert result["duration_sec"] == 0
         assert result["status"] == "rendered"
     finally:
@@ -591,17 +604,21 @@ async def test_render_local_video_copies_verified_images_to_remotion_public(monk
     captured: dict[str, object] = {}
 
     class FakeProcess:
+        def __init__(self, cmd):
+            self.cmd = cmd
+
         returncode = 0
 
         async def communicate(self):
-            output_path = Path(captured["output_path"])
+            output_path = Path(self.cmd[5] if self.cmd[0] == "npx" else self.cmd[-1])
             output_path.parent.mkdir(parents=True, exist_ok=True)
             output_path.write_bytes(b"fake remotion mp4")
             return b"rendered", b""
 
     async def fake_create_subprocess_exec(*cmd, cwd, stdout, stderr):
-        captured["output_path"] = cmd[5]
-        return FakeProcess()
+        if cmd[0] == "npx":
+            captured["output_path"] = cmd[5]
+        return FakeProcess(cmd)
 
     monkeypatch.setattr("asyncio.create_subprocess_exec", fake_create_subprocess_exec)
 
@@ -653,18 +670,22 @@ async def test_render_local_video_keeps_timeline_composition_for_card_layouts(mo
     captured: dict[str, object] = {}
 
     class FakeProcess:
+        def __init__(self, cmd):
+            self.cmd = cmd
+
         returncode = 0
 
         async def communicate(self):
-            output_path = Path(captured["output_path"])
+            output_path = Path(self.cmd[5] if self.cmd[0] == "npx" else self.cmd[-1])
             output_path.parent.mkdir(parents=True, exist_ok=True)
             output_path.write_bytes(b"fake remotion mp4")
             return b"rendered", b""
 
     async def fake_create_subprocess_exec(*cmd, cwd, stdout, stderr):
-        captured["cmd"] = cmd
-        captured["output_path"] = cmd[5]
-        return FakeProcess()
+        if cmd[0] == "npx":
+            captured["cmd"] = cmd
+            captured["output_path"] = cmd[5]
+        return FakeProcess(cmd)
 
     monkeypatch.setattr("asyncio.create_subprocess_exec", fake_create_subprocess_exec)
 
