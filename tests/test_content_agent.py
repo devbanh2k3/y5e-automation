@@ -282,8 +282,9 @@ async def test_content_agent_long_fact_collection_uses_non_ranking_card_titles(m
 
 
 @pytest.mark.asyncio
-async def test_content_agent_rejects_duplicate_people_across_long_chunks(monkeypatch):
+async def test_content_agent_repairs_duplicate_people_across_long_chunks(monkeypatch):
     agent = ContentAgent()
+    chunk_attempts = {}
 
     async def fake_ai_json(prompt, system=None, **kwargs):
         if "Celebrity data-comparison card scenes" not in prompt:
@@ -304,10 +305,17 @@ async def test_content_agent_rejects_duplicate_people_across_long_chunks(monkeyp
         assert match is not None
         start_card = int(match.group(1))
         end_card = int(match.group(2))
+        chunk_attempts[start_card] = chunk_attempts.get(start_card, 0) + 1
         return {
             "scenes": [
                 {
-                    "title": "Taylor Swift career milestone" if card in {1, 16} else f"Artist {card} career milestone",
+                    "title": (
+                        "Taylor Swift career milestone"
+                        if card == 1
+                        else "Taylor Swift career milestone"
+                        if card == 16 and chunk_attempts[start_card] == 1
+                        else f"Artist {card} career milestone"
+                    ),
                     "voiceover": "A public career fact.",
                     "caption": "FACT",
                     "image_prompt": "real editorial photo",
@@ -329,19 +337,22 @@ async def test_content_agent_rejects_duplicate_people_across_long_chunks(monkeyp
 
     monkeypatch.setattr(agent, "ai_json", fake_ai_json)
 
-    with pytest.raises(ValueError, match="duplicate celebrity scenes"):
-        await agent.run(
-            niche="celebrity",
-            language="en",
-            selected_topic={
-                "title": "Celebrity Career Facts",
-                "metric_label": "CAREER",
-                "content_format": "fact_collection",
-                "metric_scope": "public biography milestones",
-                "time_scope": "through 2026",
-            },
-            duration_target=300,
-        )
+    contract = await agent.run(
+        niche="celebrity",
+        language="en",
+        selected_topic={
+            "title": "Celebrity Career Facts",
+            "metric_label": "CAREER",
+            "content_format": "fact_collection",
+            "metric_scope": "public biography milestones",
+            "time_scope": "through 2026",
+        },
+        duration_target=300,
+    )
+
+    names = [ContentAgent._extract_ranked_name(scene["title"]) for scene in contract["scenes"]]
+    assert len(names) == len(set(ContentAgent._normalized_person_key(name) for name in names))
+    assert chunk_attempts[16] == 2
 
 
 def test_normalize_ai_celebrity_contract_rejects_too_few_duration_scenes():

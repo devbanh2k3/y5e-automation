@@ -32,6 +32,7 @@ _MIN_DURATION_SCENES = 6
 _MAX_DURATION_SCENES = 80
 _LONG_CONTRACT_CHUNK_THRESHOLD = 24
 _LONG_CONTRACT_CHUNK_SIZE = 15
+_CHUNK_REPAIR_ATTEMPTS = 3
 
 
 class ContentAgent(BaseAgent):
@@ -279,26 +280,43 @@ Return JSON only with this shape:
             ]
 
         for start_position, end_position in chunks:
-            chunk = await self._generate_celebrity_scene_chunk(
-                language=language,
-                subject=subject,
-                topic=topic,
-                metadata_contract=metadata_contract,
-                start_position=start_position,
-                end_position=end_position,
-                used_names=used_names,
-            )
             expected_count = (
                 start_position - end_position + 1
                 if content_format == "ranking"
                 else end_position - start_position + 1
             )
-            if len(chunk) < expected_count:
-                raise ValueError(
-                    f"AI celebrity scene chunk requires {expected_count} scenes, got {len(chunk)}"
+            selected_chunk: list[dict[str, Any]] | None = None
+            chunk_used_names = list(used_names)
+            for repair_attempt in range(1, _CHUNK_REPAIR_ATTEMPTS + 1):
+                chunk = await self._generate_celebrity_scene_chunk(
+                    language=language,
+                    subject=subject,
+                    topic=topic,
+                    metadata_contract=metadata_contract,
+                    start_position=start_position,
+                    end_position=end_position,
+                    used_names=chunk_used_names,
                 )
-            selected_chunk = chunk[:expected_count]
-            self._validate_unique_scene_people(scenes + selected_chunk)
+                if len(chunk) < expected_count:
+                    raise ValueError(
+                        f"AI celebrity scene chunk requires {expected_count} scenes, got {len(chunk)}"
+                    )
+                candidate_chunk = chunk[:expected_count]
+                duplicate_names = self._duplicate_scene_people(scenes + candidate_chunk)
+                if not duplicate_names:
+                    selected_chunk = candidate_chunk
+                    break
+                self.logger.warning(
+                    "Regenerating celebrity scene chunk %s-%s after duplicate people: %s",
+                    start_position,
+                    end_position,
+                    ", ".join(duplicate_names),
+                )
+                chunk_used_names = [*chunk_used_names, *duplicate_names]
+                if repair_attempt == _CHUNK_REPAIR_ATTEMPTS:
+                    self._validate_unique_scene_people(scenes + candidate_chunk)
+            if selected_chunk is None:
+                raise ValueError("AI celebrity scene chunk repair did not return scenes")
             scenes.extend(selected_chunk)
             used_names.extend(
                 self._extract_ranked_name(str(scene.get("title", "")))
@@ -518,6 +536,15 @@ Return JSON only:
 
     @staticmethod
     def _validate_unique_scene_people(scenes: list[dict[str, Any]]) -> None:
+        duplicates = ContentAgent._duplicate_scene_people(scenes)
+        if duplicates:
+            raise ValueError(
+                "duplicate celebrity scenes: "
+                + ", ".join(duplicates)
+            )
+
+    @staticmethod
+    def _duplicate_scene_people(scenes: list[dict[str, Any]]) -> list[str]:
         seen: dict[str, str] = {}
         duplicates: list[str] = []
         for scene in scenes:
@@ -528,11 +555,7 @@ Return JSON only:
             if key in seen and key not in duplicates:
                 duplicates.append(key)
             seen[key] = name
-        if duplicates:
-            raise ValueError(
-                "duplicate celebrity scenes: "
-                + ", ".join(seen[key] for key in duplicates)
-            )
+        return [seen[key] for key in duplicates]
 
     @staticmethod
     def _normalized_person_key(name: str) -> str:

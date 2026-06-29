@@ -211,6 +211,7 @@ def _should_replace_topic(exc: Exception) -> bool:
     message = str(exc).lower()
     return (
         "missing verified real images" in message
+        or "duplicate celebrity scenes" in message
         or "image verification status must be verified" in message
         or "verified_count and required_count must match card count" in message
     )
