@@ -172,6 +172,32 @@ class CelebrityContentOrchestrator(BaseAgent):
                 card.scene = scene_map.get(key)
                 if card.scene:
                     card.state = CardState.CONTENT_READY
+        for _ in range(self.replacement_attempts):
+            missing_cards = [
+                card for card in inventory.cards.values() if card.scene is None
+            ]
+            if not missing_cards or not inventory.reserve:
+                break
+            replacement_cards = []
+            for card in missing_cards:
+                if not inventory.reserve:
+                    break
+                replacement_cards.append(
+                    inventory.replace(card.card_id, reason="content_missing")
+                )
+            if not replacement_cards:
+                break
+            scene_map = await self._write_locked_scenes(
+                candidates=[card.candidate for card in replacement_cards],
+                topic=topic,
+                metadata_contract=metadata_contract,
+                language=language,
+            )
+            for card in replacement_cards:
+                key = normalize_person_key(card.candidate.name)
+                card.scene = scene_map.get(key)
+                if card.scene:
+                    card.state = CardState.CONTENT_READY
         await self._emit_progress(
             progress_callback,
             stage="content_writing",

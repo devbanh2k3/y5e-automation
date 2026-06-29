@@ -172,6 +172,60 @@ async def test_writer_keeps_valid_partial_chunk_and_requests_only_missing_subjec
 
 
 @pytest.mark.asyncio
+async def test_build_replaces_content_missing_cards_from_reserve_before_failing(monkeypatch):
+    orchestrator = CelebrityContentOrchestrator(
+        reserve_ratio=0.5,
+        minimum_reserve=2,
+        planner_attempts=1,
+        content_attempts=1,
+        replacement_attempts=2,
+        minimum_ratio=0.75,
+    )
+    writer_requests = []
+
+    async def fake_json(*, operation, **kwargs):
+        if operation == "entity_plan":
+            return {
+                "candidates": [
+                    candidate("Adele", "GB"),
+                    candidate("Rihanna", "BB"),
+                    candidate("Pink"),
+                    candidate("Beyonce"),
+                    candidate("Taylor Swift"),
+                    candidate("Lady Gaga"),
+                ]
+            }
+        writer_requests.append(kwargs["locked_names"])
+        return {
+            "scenes": [
+                scene(name)
+                for name in kwargs["locked_names"]
+                if name in {"Adele", "Rihanna", "Taylor Swift", "Lady Gaga"}
+            ]
+        }
+
+    monkeypatch.setattr(orchestrator, "_call_json", fake_json)
+    result = await orchestrator.build(
+        topic=topic(),
+        target_cards=4,
+        metadata_contract=metadata(),
+        language="en",
+        subject="celebrity",
+    )
+
+    assert writer_requests == [
+        ["Adele", "Rihanna", "Pink", "Beyonce"],
+        ["Taylor Swift", "Lady Gaga"],
+    ]
+    assert [item["title"] for item in result["scenes"]] == [
+        "Adele",
+        "Rihanna",
+        "Taylor Swift",
+        "Lady Gaga",
+    ]
+
+
+@pytest.mark.asyncio
 async def test_planner_rejects_unsupported_country_code_and_refills(monkeypatch):
     orchestrator = CelebrityContentOrchestrator(
         reserve_ratio=0,
