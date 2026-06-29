@@ -16,7 +16,7 @@ if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
 from core import production_tasks
-from agents.topic_strategy_agent import TopicStrategyAgent
+from agents.topic_strategy_agent import TopicSelectionError, TopicStrategyAgent
 from core.fact_verification import FactVerificationError
 from services.telegram_notifications import build_review_keyboard, send_telegram_message
 from scripts.produce_celebrity_video import produce
@@ -45,13 +45,25 @@ async def process_one_task() -> dict[str, Any]:
     try:
         topic_agent = TopicStrategyAgent()
         for attempt_index in range(1, PRODUCTION_TOPIC_ATTEMPT_BUDGET + 1):
-            selected_topic = (
-                await topic_agent.run(
-                    count=1,
-                    language=str(task.get("language") or "en"),
-                    batch_id=f"{batch_id}-{task_id}-attempt-{attempt_index}",
+            try:
+                selected_topic = (
+                    await topic_agent.run(
+                        count=1,
+                        language=str(task.get("language") or "en"),
+                        batch_id=f"{batch_id}-{task_id}-attempt-{attempt_index}",
+                    )
+                )[0]
+            except TopicSelectionError as exc:
+                if not _is_topic_reservation_race(exc) or attempt_index == PRODUCTION_TOPIC_ATTEMPT_BUDGET:
+                    raise
+                last_error = exc
+                logger.info(
+                    "Retrying topic reservation race for task %s after attempt %s: %s",
+                    task_id,
+                    attempt_index,
+                    exc,
                 )
-            )[0]
+                continue
             try:
                 result = await produce(
                     language=str(task.get("language") or "en"),
@@ -202,6 +214,10 @@ def _should_replace_topic(exc: Exception) -> bool:
         or "image verification status must be verified" in message
         or "verified_count and required_count must match card count" in message
     )
+
+
+def _is_topic_reservation_race(exc: Exception) -> bool:
+    return "reservations changed concurrently" in str(exc).lower()
 
 
 async def process_forever(*, idle_sleep: float) -> None:
