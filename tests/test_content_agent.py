@@ -352,7 +352,8 @@ async def test_content_agent_repairs_duplicate_people_across_long_chunks(monkeyp
 
     names = [ContentAgent._extract_ranked_name(scene["title"]) for scene in contract["scenes"]]
     assert len(names) == len(set(ContentAgent._normalized_person_key(name) for name in names))
-    assert chunk_attempts[16] == 2
+    assert chunk_attempts[16] == 1
+    assert chunk_attempts[58] == 1
 
 
 def test_normalize_ai_celebrity_contract_rejects_too_few_duration_scenes():

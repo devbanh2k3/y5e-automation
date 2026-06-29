@@ -33,6 +33,7 @@ _MAX_DURATION_SCENES = 80
 _LONG_CONTRACT_CHUNK_THRESHOLD = 24
 _LONG_CONTRACT_CHUNK_SIZE = 15
 _CHUNK_REPAIR_ATTEMPTS = 3
+_CONTENT_POOL_FILL_ATTEMPTS = 8
 
 
 class ContentAgent(BaseAgent):
@@ -265,6 +266,7 @@ Return JSON only with this shape:
     ) -> list[dict[str, Any]]:
         scenes: list[dict[str, Any]] = []
         used_names: list[str] = []
+        used_keys: set[str] = set()
         content_format = str(topic.get("content_format") or "ranking").strip() or "ranking"
         if content_format == "ranking":
             chunks = []
@@ -302,28 +304,89 @@ Return JSON only with this shape:
                         f"AI celebrity scene chunk requires {expected_count} scenes, got {len(chunk)}"
                     )
                 candidate_chunk = chunk[:expected_count]
-                duplicate_names = self._duplicate_scene_people(scenes + candidate_chunk)
-                if not duplicate_names:
+                unique_chunk, duplicate_names = self._select_unique_scene_people(
+                    candidate_chunk,
+                    used_keys=used_keys,
+                )
+                if unique_chunk:
                     selected_chunk = candidate_chunk
+                    scenes.extend(unique_chunk)
+                    for scene in unique_chunk:
+                        name = self._extract_ranked_name(str(scene.get("title", "")))
+                        used_names.append(name)
+                        used_keys.add(self._normalized_person_key(name))
+                if len(scenes) >= scene_count:
+                    break
+                if unique_chunk:
+                    if duplicate_names:
+                        self.logger.warning(
+                            "Celebrity scene chunk %s-%s skipped duplicate people and will refill missing cards: %s",
+                            start_position,
+                            end_position,
+                            ", ".join(duplicate_names),
+                        )
                     break
                 self.logger.warning(
-                    "Regenerating celebrity scene chunk %s-%s after duplicate people: %s",
+                    "Celebrity scene chunk %s-%s had duplicate people, keeping unique cards and refilling: %s",
                     start_position,
                     end_position,
-                    ", ".join(duplicate_names),
+                    ", ".join(duplicate_names) if duplicate_names else "not enough unique cards",
                 )
                 chunk_used_names = [*chunk_used_names, *duplicate_names]
                 if repair_attempt == _CHUNK_REPAIR_ATTEMPTS:
-                    self._validate_unique_scene_people(scenes + candidate_chunk)
+                    break
+                if not duplicate_names:
+                    break
+            if len(scenes) >= scene_count:
+                break
             if selected_chunk is None:
-                raise ValueError("AI celebrity scene chunk repair did not return scenes")
-            scenes.extend(selected_chunk)
-            used_names.extend(
-                self._extract_ranked_name(str(scene.get("title", "")))
-                for scene in selected_chunk
-                if isinstance(scene, dict)
+                self.logger.warning(
+                    "Celebrity scene chunk %s-%s returned no unique cards; refilling later.",
+                    start_position,
+                    end_position,
+                )
+
+        fill_attempt = 0
+        while len(scenes) < scene_count and fill_attempt < _CONTENT_POOL_FILL_ATTEMPTS:
+            fill_attempt += 1
+            missing_count = scene_count - len(scenes)
+            candidate_count = min(_LONG_CONTRACT_CHUNK_SIZE, max(missing_count * 3, 5))
+            start_position = candidate_count if content_format == "ranking" else len(scenes) + 1
+            end_position = 1 if content_format == "ranking" else len(scenes) + candidate_count
+            replacement_chunk = await self._generate_celebrity_scene_chunk(
+                language=language,
+                subject=subject,
+                topic=topic,
+                metadata_contract=metadata_contract,
+                start_position=start_position,
+                end_position=end_position,
+                used_names=used_names,
             )
-        return scenes
+            unique_chunk, duplicate_names = self._select_unique_scene_people(
+                replacement_chunk,
+                used_keys=used_keys,
+            )
+            if not unique_chunk:
+                self.logger.warning(
+                    "Celebrity scene refill attempt %s returned no unique cards: %s",
+                    fill_attempt,
+                    ", ".join(duplicate_names),
+                )
+                used_names.extend(duplicate_names)
+                continue
+            for scene in unique_chunk[:missing_count]:
+                scenes.append(scene)
+                name = self._extract_ranked_name(str(scene.get("title", "")))
+                used_names.append(name)
+                used_keys.add(self._normalized_person_key(name))
+        if len(scenes) < scene_count:
+            raise ValueError(
+                f"AI celebrity content pool requires {scene_count} unique scenes, got {len(scenes)}"
+            )
+        return self._reindex_scene_positions(
+            scenes[:scene_count],
+            content_format=content_format,
+        )
 
     async def _generate_celebrity_scene_chunk(
         self,
@@ -556,6 +619,52 @@ Return JSON only:
                 duplicates.append(key)
             seen[key] = name
         return [seen[key] for key in duplicates]
+
+    @staticmethod
+    def _select_unique_scene_people(
+        scenes: list[dict[str, Any]],
+        *,
+        used_keys: set[str],
+    ) -> tuple[list[dict[str, Any]], list[str]]:
+        selected: list[dict[str, Any]] = []
+        duplicates: list[str] = []
+        local_keys: set[str] = set()
+        for scene in scenes:
+            name = ContentAgent._extract_ranked_name(str(scene.get("title", "")))
+            key = ContentAgent._normalized_person_key(name)
+            if not key:
+                continue
+            if key in used_keys or key in local_keys:
+                duplicates.append(name)
+                continue
+            local_keys.add(key)
+            selected.append(scene)
+        return selected, duplicates
+
+    @staticmethod
+    def _reindex_scene_positions(
+        scenes: list[dict[str, Any]],
+        *,
+        content_format: str,
+    ) -> list[dict[str, Any]]:
+        reindexed: list[dict[str, Any]] = []
+        is_ranking = content_format == "ranking"
+        total = len(scenes)
+        for index, scene in enumerate(scenes, start=1):
+            updated = dict(scene)
+            name = ContentAgent._extract_ranked_name(str(updated.get("title", "")))
+            if is_ranking:
+                rank = total - index + 1
+                updated["title"] = f"#{rank} {name}"
+                metric_value = str(updated.get("metricValue") or updated.get("caption") or "").strip()
+                updated["statusText"] = f"#{rank} | {metric_value}".strip()
+            else:
+                updated["title"] = name
+                metric_value = str(updated.get("metricValue") or updated.get("caption") or "").strip()
+                if not str(updated.get("statusText", "")).strip():
+                    updated["statusText"] = f"FACT {index} | {metric_value}".strip()
+            reindexed.append(updated)
+        return reindexed
 
     @staticmethod
     def _normalized_person_key(name: str) -> str:
