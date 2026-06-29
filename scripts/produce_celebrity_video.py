@@ -32,6 +32,7 @@ def write_artifacts(*, result: dict[str, Any], review: dict[str, Any]) -> dict[s
     fact_verification_contract_path = artifact_dir / "fact_verification_contract.json"
     image_verification_contract_path = artifact_dir / "image_verification_contract.json"
     quality_gate_path = artifact_dir / "quality_gate.json"
+    stage_timings_path = artifact_dir / "stage_timings.json"
 
     review_path.write_text(json.dumps(review, ensure_ascii=False, indent=2))
     content_contract_path.write_text(
@@ -53,6 +54,9 @@ def write_artifacts(*, result: dict[str, Any], review: dict[str, Any]) -> dict[s
     quality_gate_path.write_text(
         json.dumps(review.get("quality_gate", result.get("quality_gate", {})), ensure_ascii=False, indent=2)
     )
+    stage_timings_path.write_text(
+        json.dumps(result.get("stage_timings", {}), ensure_ascii=False, indent=2)
+    )
 
     return {
         "review_path": str(review_path),
@@ -60,6 +64,7 @@ def write_artifacts(*, result: dict[str, Any], review: dict[str, Any]) -> dict[s
         "fact_verification_contract_path": str(fact_verification_contract_path),
         "image_verification_contract_path": str(image_verification_contract_path),
         "quality_gate_path": str(quality_gate_path),
+        "stage_timings_path": str(stage_timings_path),
     }
 
 
@@ -117,6 +122,7 @@ async def produce(
         "quality_gate": result.get("quality_gate", {}),
         "metadata_variants": result.get("metadata_variants", {}),
         "selected_metadata": result.get("selected_metadata", {}),
+        "stage_timings": result.get("stage_timings", {}),
         "youtube_title": result.get("youtube_title", ""),
         "artifacts": artifacts,
         "next_commands": build_next_commands(review_id),

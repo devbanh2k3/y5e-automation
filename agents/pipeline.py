@@ -14,6 +14,7 @@ import logging
 import os
 import random
 import shutil
+import time
 import traceback
 from datetime import datetime, timezone
 from pathlib import Path
@@ -276,10 +277,18 @@ class Pipeline:
         image_verification_contract: dict[str, Any] | None = None
         fallback_used = True
         topic_id = self._new_local_render_topic_id()
+        pipeline_started = time.monotonic()
+        stage_timings: dict[str, dict[str, float]] = {}
+
+        def record_stage(stage_name: str, started_at: float) -> None:
+            stage_timings[stage_name] = {
+                "seconds": round(time.monotonic() - started_at, 3)
+            }
 
         if resolved_category.lower() in {"celebrity", "nguoi_noi_tieng", "người nổi tiếng"}:
             from agents.content_agent import ContentAgent
 
+            stage_started = time.monotonic()
             content_contract = await ContentAgent().run(
                 niche="celebrity",
                 language=language,
@@ -288,7 +297,9 @@ class Pipeline:
                 selected_topic=selected_topic,
                 duration_target=duration_target,
             )
+            record_stage("content", stage_started)
             if content_contract.get("contentFormat"):
+                stage_started = time.monotonic()
                 fact_verification_contract = await AIFactVerificationAgent().run(
                     content_contract=content_contract,
                 )
@@ -300,12 +311,15 @@ class Pipeline:
                     fact_verification_contract,
                     content_contract,
                 )
+                record_stage("fact_verification", stage_started)
             video_data = build_video_data_from_content_contract(content_contract)
+            stage_started = time.monotonic()
             image_verification_contract = await RealImageAgent().run_for_content_contract(
                 topic_id=topic_id,
                 content_contract=content_contract,
                 strict=True,
             )
+            record_stage("image_verification", stage_started)
             video_data = apply_verified_images_to_video_data(
                 video_data,
                 image_verification_contract,
@@ -322,16 +336,19 @@ class Pipeline:
             )
         validate_video_data(video_data)
 
+        stage_started = time.monotonic()
         render_result = await self._render_local_video(
             topic_id=topic_id,
             video_data=video_data,
         )
+        record_stage("render", stage_started)
         review: dict[str, Any] | None = None
         quality_gate: dict[str, Any] | None = None
         metadata_variants: dict[str, Any] = {}
         selected_metadata: dict[str, Any] = {}
         thumbnail: dict[str, Any] = {}
         if content_contract:
+            stage_started = time.monotonic()
             quality_gate = run_production_quality_gate(
                 topic_id=topic_id,
                 video_path=render_result["file_path"],
@@ -341,16 +358,20 @@ class Pipeline:
                 image_verification_contract=image_verification_contract,
                 expected_card_layout=card_layout,
             )
+            record_stage("quality_gate", stage_started)
+            stage_started = time.monotonic()
             metadata_variants = await MetadataOptimizerAgent().run(
                 content_contract=content_contract,
                 selected_topic=selected_topic,
             )
+            record_stage("metadata", stage_started)
             selected_metadata = metadata_variants.get("selected_metadata", {})
             youtube_title = str(selected_metadata.get("title") or content_contract["youtube_title"])
             youtube_description = str(
                 selected_metadata.get("description") or content_contract["youtube_description"]
             )
             youtube_tags = selected_metadata.get("tags") or content_contract["youtube_tags"]
+            stage_started = time.monotonic()
             thumbnail = build_review_thumbnail(
                 review_id="",
                 topic_dir=get_settings().storage_dir / "topics" / str(topic_id),
@@ -358,6 +379,8 @@ class Pipeline:
                 image_verification_contract=image_verification_contract,
                 selected_metadata=selected_metadata,
             )
+            record_stage("thumbnail", stage_started)
+            stage_started = time.monotonic()
             review = await create_review(
                 job_id="",
                 topic_id=topic_id,
@@ -375,6 +398,9 @@ class Pipeline:
                 thumbnail_prompt=content_contract["thumbnail_prompt"],
                 thumbnail=thumbnail,
             )
+            record_stage("review", stage_started)
+
+        record_stage("total", pipeline_started)
 
         return {
             "mode": "local_render",
@@ -412,6 +438,7 @@ class Pipeline:
             "metadata_variants": metadata_variants,
             "selected_metadata": selected_metadata,
             "selected_topic": selected_topic,
+            "stage_timings": stage_timings,
         }
 
     @staticmethod

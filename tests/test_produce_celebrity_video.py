@@ -32,6 +32,7 @@ def test_write_artifacts_persists_review_contracts_next_to_video(tmp_path):
         "fact_verification_contract": {"schema_version": "fact_verification_contract_v1"},
         "image_verification_contract": {"status": "verified"},
         "quality_gate": {"status": "passed"},
+        "stage_timings": {"total": {"seconds": 12.3}},
     }
     review = {
         "review_id": "review-1",
@@ -48,12 +49,14 @@ def test_write_artifacts_persists_review_contracts_next_to_video(tmp_path):
     assert Path(artifacts["fact_verification_contract_path"]).exists()
     assert Path(artifacts["image_verification_contract_path"]).exists()
     assert Path(artifacts["quality_gate_path"]).exists()
+    assert Path(artifacts["stage_timings_path"]).exists()
     assert json.loads(Path(artifacts["review_path"]).read_text())["review_id"] == "review-1"
     assert (
         json.loads(Path(artifacts["fact_verification_contract_path"]).read_text())
         == result["fact_verification_contract"]
     )
     assert json.loads(Path(artifacts["quality_gate_path"]).read_text())["status"] == "passed"
+    assert json.loads(Path(artifacts["stage_timings_path"]).read_text())["total"]["seconds"] == 12.3
 
 
 def test_cli_help_describes_review_output_command():

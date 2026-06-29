@@ -34,6 +34,8 @@ async def test_run_local_render_returns_stable_summary(monkeypatch, tmp_path):
     assert result["duration_sec"] == 90
     assert result["status"] == "rendered"
     assert result["fallback_used"] is True
+    assert result["stage_timings"]["total"]["seconds"] >= 0
+    assert result["stage_timings"]["render"]["seconds"] >= 0
     assert Path(result["file_path"]).name == "final_video.mp4"
 
 
@@ -302,6 +304,18 @@ async def test_run_local_render_uses_content_agent_for_celebrity(monkeypatch, tm
     assert result["review_id"] == "review-123"
     assert result["review_status"] == "pending_review"
     assert result["quality_gate"]["status"] == "passed"
+    assert set(result["stage_timings"]) >= {
+        "content",
+        "fact_verification",
+        "image_verification",
+        "render",
+        "quality_gate",
+        "metadata",
+        "thumbnail",
+        "review",
+        "total",
+    }
+    assert all(stage["seconds"] >= 0 for stage in result["stage_timings"].values())
     assert result["content_contract"]["niche"] == "celebrity"
     assert result["content_contract"]["cardLayout"] == "flag_hero"
     assert captured["content_agent_card_layout"] == "flag_hero"
