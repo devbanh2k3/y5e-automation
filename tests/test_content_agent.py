@@ -151,6 +151,65 @@ async def test_content_agent_prompt_requests_duration_based_scene_count(monkeypa
     assert "Use exactly 16 ranking scenes" in prompts[0]
 
 
+@pytest.mark.asyncio
+async def test_content_agent_generates_long_duration_contract_in_chunks(monkeypatch):
+    agent = ContentAgent()
+    prompts = []
+
+    async def fake_ai_json(prompt, system=None, **kwargs):
+        prompts.append(prompt)
+        if "ranking scenes for ranks" not in prompt:
+            return {
+                "title": "Top 58 Most-Awarded Living Musicians",
+                "hook": "Long ranking hook.",
+                "target_audience": "Music fans.",
+                "youtube_title": "Top 58 Most-Awarded Living Musicians",
+                "youtube_description": "Long ranking based on public estimates.",
+                "youtube_tags": ["celebrity", "music awards"],
+                "thumbnail_prompt": "Awarded musicians",
+                "scenes": [],
+            }
+
+        import re
+
+        match = re.search(r"ranks #(\d+) down to #(\d+)", prompt)
+        assert match is not None
+        start_rank = int(match.group(1))
+        end_rank = int(match.group(2))
+        count = start_rank - end_rank + 1
+        return {
+            "scenes": [
+                {
+                    "title": f"#{start_rank - index} Musician {start_rank - index}",
+                    "voiceover": f"Musician {start_rank - index} has a public award estimate.",
+                    "caption": f"AWARDS: {start_rank - index}",
+                    "image_prompt": f"real editorial photo of Musician {start_rank - index}",
+                    "statusText": f"#{start_rank - index} | awards",
+                    "countryCode": "US",
+                    "countryLabel": "UNITED STATES",
+                    "metricLabel": "AWARDS",
+                    "metricValue": str(start_rank - index),
+                    "sourceRequirement": "official award databases",
+                }
+                for index in range(count)
+            ]
+        }
+
+    monkeypatch.setattr(agent, "ai_json", fake_ai_json)
+
+    contract = await agent.run(
+        niche="celebrity",
+        language="en",
+        selected_topic={"title": "Awards", "metric_label": "AWARDS"},
+        duration_target=300,
+    )
+
+    assert len(contract["scenes"]) == 58
+    assert contract["scenes"][0]["title"].startswith("#58 ")
+    assert contract["scenes"][-1]["title"].startswith("#1 ")
+    assert len(prompts) == 5
+
+
 def test_normalize_ai_celebrity_contract_rejects_too_few_duration_scenes():
     with pytest.raises(ValueError, match="requires at least 16 scenes"):
         ContentAgent._normalize_ai_celebrity_contract(

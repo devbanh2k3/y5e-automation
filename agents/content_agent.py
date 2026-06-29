@@ -29,6 +29,8 @@ _FIXED_TEMPLATE_SECONDS = 8
 _SECONDS_PER_CARD = 5.0
 _MIN_DURATION_SCENES = 6
 _MAX_DURATION_SCENES = 80
+_LONG_CONTRACT_CHUNK_THRESHOLD = 24
+_LONG_CONTRACT_CHUNK_SIZE = 15
 
 
 class ContentAgent(BaseAgent):
@@ -217,6 +219,14 @@ Return JSON only with this shape:
         raw_contract = await self.ai_json(prompt, system=system)
         if not isinstance(raw_contract, dict):
             raise ValueError("AI celebrity contract must be an object")
+        if scene_count > _LONG_CONTRACT_CHUNK_THRESHOLD:
+            raw_contract["scenes"] = await self._generate_celebrity_scene_chunks(
+                language=language,
+                subject=subject,
+                topic=topic,
+                scene_count=scene_count,
+                metadata_contract=raw_contract,
+            )
 
         return self._normalize_ai_celebrity_contract(
             raw_contract=raw_contract,
@@ -226,6 +236,102 @@ Return JSON only with this shape:
             duration_target=duration_target,
             desired_scene_count=scene_count,
         )
+
+    async def _generate_celebrity_scene_chunks(
+        self,
+        *,
+        language: str,
+        subject: str,
+        topic: dict[str, Any],
+        scene_count: int,
+        metadata_contract: dict[str, Any],
+    ) -> list[dict[str, Any]]:
+        scenes: list[dict[str, Any]] = []
+        used_names: list[str] = []
+        next_rank = scene_count
+        while next_rank >= 1:
+            end_rank = max(1, next_rank - _LONG_CONTRACT_CHUNK_SIZE + 1)
+            chunk = await self._generate_celebrity_scene_chunk(
+                language=language,
+                subject=subject,
+                topic=topic,
+                metadata_contract=metadata_contract,
+                start_rank=next_rank,
+                end_rank=end_rank,
+                used_names=used_names,
+            )
+            expected_count = next_rank - end_rank + 1
+            if len(chunk) < expected_count:
+                raise ValueError(
+                    f"AI celebrity scene chunk requires {expected_count} scenes, got {len(chunk)}"
+                )
+            selected_chunk = chunk[:expected_count]
+            scenes.extend(selected_chunk)
+            used_names.extend(
+                self._extract_ranked_name(str(scene.get("title", "")))
+                for scene in selected_chunk
+                if isinstance(scene, dict)
+            )
+            next_rank = end_rank - 1
+        return scenes
+
+    async def _generate_celebrity_scene_chunk(
+        self,
+        *,
+        language: str,
+        subject: str,
+        topic: dict[str, Any],
+        metadata_contract: dict[str, Any],
+        start_rank: int,
+        end_rank: int,
+        used_names: list[str],
+    ) -> list[dict[str, Any]]:
+        chunk_count = start_rank - end_rank + 1
+        prompt = f"""Create {chunk_count} Celebrity data-comparison ranking scenes for ranks #{start_rank} down to #{end_rank}.
+
+Video/topic metadata:
+{json.dumps({**topic, "video_title": metadata_contract.get("title", topic.get("title", ""))}, ensure_ascii=False, indent=2)}
+
+Language: {language}
+Subject hint: {subject}
+Already used names, do not repeat:
+{json.dumps(used_names, ensure_ascii=False)}
+
+Hard rules:
+1. Return exactly {chunk_count} scenes.
+2. Use ranks #{start_rank} down to #{end_rank}, in descending rank-number order.
+3. Each scene must be one real public celebrity/person, not a group/couple/family/brand.
+4. Each scene must include title, voiceover, caption, image_prompt, statusText.
+5. Each scene must include countryCode and countryLabel matching the person's nationality/origin.
+6. Each scene must include metricLabel and metricValue for {topic.get("metric_label", "NET WORTH")}.
+7. For factual formats include factClaim, factValue, factUnit, factAsOf, and factContext in every scene.
+8. Use concise text suitable for a fast data-comparison card.
+
+Return JSON only:
+{{
+  "scenes": [
+    {{
+      "title": "#{start_rank} Celebrity Name",
+      "voiceover": "one concise sentence",
+      "caption": "short metric text",
+      "image_prompt": "real editorial photo of Celebrity Name",
+      "statusText": "#{start_rank} | metric",
+      "countryCode": "US",
+      "countryLabel": "UNITED STATES",
+      "metricLabel": "{topic.get("metric_label", "NET WORTH")}",
+      "metricValue": "metric",
+      "sourceRequirement": "what source must later verify this"
+    }}
+  ]
+}}"""
+        system = (
+            "You are a production content planner for long celebrity data-comparison "
+            "videos. Return strict JSON only. Do not repeat people."
+        )
+        raw_chunk = await self.ai_json(prompt, system=system)
+        if not isinstance(raw_chunk, dict) or not isinstance(raw_chunk.get("scenes"), list):
+            raise ValueError("AI celebrity scene chunk requires scenes")
+        return [scene for scene in raw_chunk["scenes"] if isinstance(scene, dict)]
 
     @staticmethod
     def _normalize_ai_celebrity_contract(
