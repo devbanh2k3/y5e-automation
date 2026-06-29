@@ -113,6 +113,9 @@ class ContentAgent(BaseAgent):
         except Exception as exc:
             if selected_topic is not None:
                 raise
+            desired_scene_count = self.desired_scene_count_for_duration(duration_target)
+            if desired_scene_count > _LONG_CONTRACT_CHUNK_THRESHOLD:
+                raise
             self.logger.warning("Falling back to seeded celebrity contract: %s", exc)
             return self._build_celebrity_contract(
                 language=language,

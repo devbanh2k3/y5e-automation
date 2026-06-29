@@ -523,6 +523,28 @@ async def test_content_agent_builds_seeded_celebrity_mvp_contract(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_long_celebrity_content_does_not_fallback_to_short_seed(monkeypatch):
+    agent = ContentAgent()
+
+    async def fake_topic(**kwargs):
+        return {"title": "Long Celebrity Awards", "metric_label": "AWARDS"}
+
+    async def fake_contract(**kwargs):
+        raise ValueError("AI celebrity contract requires at least 26 ready scenes before recovery, got 16")
+
+    monkeypatch.setattr(agent, "_generate_celebrity_topic", fake_topic)
+    monkeypatch.setattr(agent, "_generate_celebrity_contract_from_topic", fake_contract)
+
+    with pytest.raises(ValueError, match="requires at least 26 ready scenes"):
+        await agent.run(
+            niche="celebrity",
+            language="en",
+            card_layout="flag_hero",
+            duration_target=150,
+        )
+
+
+@pytest.mark.asyncio
 async def test_content_agent_uses_ai_topic_and_ranking_for_celebrity(monkeypatch):
     agent = ContentAgent()
     calls: list[str] = []
