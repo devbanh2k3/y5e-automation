@@ -9,6 +9,7 @@ def test_dockerfile_installs_node_runtime_for_remotion_render() -> None:
 
     assert "FROM node:20-bookworm-slim AS node_runtime" in source
     assert "chromium" in source
+    assert "ffmpeg" in source
     assert "COPY --from=node_runtime /usr/local/bin/node /usr/local/bin/node" in source
     assert "COPY --from=node_runtime /usr/local/lib/node_modules /usr/local/lib/node_modules" in source
     assert "apt-get install -y --no-install-recommends gcc libpq-dev nodejs npm" not in source

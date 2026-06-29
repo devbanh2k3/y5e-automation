@@ -14,7 +14,7 @@ WORKDIR /app
 
 # Install system dependencies needed by asyncpg/Pillow and Remotion rendering.
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends gcc libpq-dev chromium && \
+    apt-get install -y --no-install-recommends gcc libpq-dev chromium ffmpeg && \
     rm -rf /var/lib/apt/lists/*
 
 # Copy a pinned Node.js runtime from the official Node image without Debian npm's large dependency tree.
