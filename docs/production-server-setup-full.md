@@ -163,7 +163,7 @@ STORAGE_PATH=./output
 LOG_LEVEL=INFO
 
 RESILIENT_CARD_PIPELINE_ENABLED=true
-CARD_MINIMUM_RATIO=0.90
+CARD_MINIMUM_RATIO=0.85
 CARD_PLANNER_ATTEMPTS=4
 CARD_CONTENT_REPAIR_ATTEMPTS=2
 CARD_FACT_REPAIR_ATTEMPTS=2
@@ -190,8 +190,8 @@ Flow nay duoc dung cho video Celebrity dai:
 4. Card loi duoc sua rieng, sau do thay candidate, sau cung moi bo qua.
 5. Video van render neu so card dat chuan bang hoac cao hon `CARD_MINIMUM_RATIO`.
 
-Voi `CARD_MINIMUM_RATIO=0.90`, video du kien 58 card co the render voi toi thieu
-53 card dat chuan. He thong khong lam cham slide de bu thoi luong; duration thuc te
+Voi `CARD_MINIMUM_RATIO=0.85`, video du kien 58 card co the render voi toi thieu
+50 card dat chuan. He thong khong lam cham slide de bu thoi luong; duration thuc te
 duoc tinh lai theo so card con lai. Ranking va metadata count cung duoc danh lai theo
 so card thuc te.
 
