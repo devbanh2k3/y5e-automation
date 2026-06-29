@@ -92,6 +92,17 @@ services:
       redis:
         condition: service_healthy
 
+  # ── Stable public HTTPS endpoint ──────────────────────────
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    command: ["tunnel", "--no-autoupdate", "run"]
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:?CLOUDFLARE_TUNNEL_TOKEN is required}
+    depends_on:
+      api:
+        condition: service_started
+
   # ── Pipeline worker ────────────────────────────────────────
   worker:
     image: youtube_ai_automation-app:latest

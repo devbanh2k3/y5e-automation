@@ -52,6 +52,19 @@ def test_compose_runs_youtube_upload_worker_with_shared_output() -> None:
     assert "./output:/app/output" in source
 
 
+def test_compose_runs_stable_cloudflare_named_tunnel() -> None:
+    source = (ROOT / "docker-compose.yml").read_text()
+    env_example = (ROOT / ".env.example").read_text()
+
+    assert "cloudflared:" in source
+    assert "image: cloudflare/cloudflared:latest" in source
+    assert 'command: ["tunnel", "--no-autoupdate", "run"]' in source
+    assert "TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:?" in source
+    assert "condition: service_started" in source
+    assert "CLOUDFLARE_TUNNEL_TOKEN=" in env_example
+    assert "PUBLIC_BASE_URL=https://studio.veo3depzai.io.vn" in env_example
+
+
 def test_dockerignore_excludes_runtime_and_generated_assets() -> None:
     source = (ROOT / ".dockerignore").read_text()
 
