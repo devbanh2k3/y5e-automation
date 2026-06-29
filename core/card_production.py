@@ -66,6 +66,14 @@ class Candidate:
             else (),
         )
 
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "name": self.name,
+            "countryCode": self.country_code,
+            "selectionReason": self.selection_reason,
+            "aliases": list(self.aliases),
+        }
+
 
 @dataclass
 class CardRecord:
@@ -79,6 +87,38 @@ class CardRecord:
     last_error: str = ""
     replacement_names: list[str] = field(default_factory=list)
 
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "card_id": self.card_id,
+            "candidate": self.candidate.to_dict(),
+            "state": self.state.value,
+            "attempts": dict(self.attempts),
+            "scene": self.scene,
+            "fact_item": self.fact_item,
+            "image_item": self.image_item,
+            "last_error": self.last_error,
+            "replacement_names": list(self.replacement_names),
+        }
+
+    @classmethod
+    def from_dict(cls, value: dict[str, Any]) -> "CardRecord":
+        return cls(
+            card_id=str(value["card_id"]),
+            candidate=Candidate.from_dict(dict(value["candidate"])),
+            state=CardState(str(value.get("state", CardState.PLANNED.value))),
+            attempts={
+                str(key): int(count)
+                for key, count in dict(value.get("attempts") or {}).items()
+            },
+            scene=value.get("scene"),
+            fact_item=value.get("fact_item"),
+            image_item=value.get("image_item"),
+            last_error=str(value.get("last_error", "")),
+            replacement_names=[
+                str(name) for name in value.get("replacement_names") or []
+            ],
+        )
+
 
 @dataclass
 class ProductionInventory:
@@ -90,6 +130,43 @@ class ProductionInventory:
     reserve: deque[Candidate] = field(default_factory=deque)
     replaced_count: int = 0
     skipped_count: int = 0
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "target_cards": self.target_cards,
+            "format_minimum_cards": self.format_minimum_cards,
+            "minimum_ratio": self.minimum_ratio,
+            "candidates": [candidate.to_dict() for candidate in self.candidates],
+            "cards": {
+                card_id: card.to_dict() for card_id, card in self.cards.items()
+            },
+            "reserve": [candidate.to_dict() for candidate in self.reserve],
+            "replaced_count": self.replaced_count,
+            "skipped_count": self.skipped_count,
+        }
+
+    @classmethod
+    def from_dict(cls, value: dict[str, Any]) -> "ProductionInventory":
+        inventory = cls(
+            target_cards=int(value["target_cards"]),
+            format_minimum_cards=int(value["format_minimum_cards"]),
+            minimum_ratio=float(value.get("minimum_ratio", 0.90)),
+        )
+        inventory.candidates = [
+            Candidate.from_dict(dict(candidate))
+            for candidate in value.get("candidates") or []
+        ]
+        inventory.cards = {
+            str(card_id): CardRecord.from_dict(dict(card))
+            for card_id, card in dict(value.get("cards") or {}).items()
+        }
+        inventory.reserve = deque(
+            Candidate.from_dict(dict(candidate))
+            for candidate in value.get("reserve") or []
+        )
+        inventory.replaced_count = int(value.get("replaced_count", 0))
+        inventory.skipped_count = int(value.get("skipped_count", 0))
+        return inventory
 
     @property
     def minimum_cards(self) -> int:
