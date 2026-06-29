@@ -7,6 +7,7 @@ import re
 from typing import Any
 
 from agents.base_agent import BaseAgent
+from core.config import get_settings
 from core.video_contract import (
     build_content_contract_v2,
     canonical_country_label,
@@ -169,6 +170,15 @@ Return JSON only:
         desired_scene_count: int | None = None,
     ) -> dict[str, Any]:
         scene_count = desired_scene_count or self.desired_scene_count_for_duration(duration_target)
+        use_resilient_pipeline = (
+            get_settings().resilient_card_pipeline_enabled
+            and scene_count > _LONG_CONTRACT_CHUNK_THRESHOLD
+        )
+        if use_resilient_pipeline:
+            topic = dict(topic)
+            topic.setdefault("content_format", "ranking")
+            topic.setdefault("metric_scope", str(topic.get("metric_label") or "public metric"))
+            topic.setdefault("time_scope", "latest reliable public data")
         content_format = str(topic.get("content_format") or "ranking").strip() or "ranking"
         scene_noun = "ranking scenes" if content_format == "ranking" else "card scenes"
         title_rule = (
@@ -183,6 +193,11 @@ Return JSON only:
         )
         scene_example_title = "#10 Celebrity Name" if content_format == "ranking" else "Celebrity Name"
         scene_example_status = "#10 | metric" if content_format == "ranking" else "FACT 1 | metric"
+        scene_requirement = (
+            "Return metadata only. Set scenes to an empty array; a separate locked-subject writer creates cards."
+            if use_resilient_pipeline
+            else f"Use exactly {scene_count} {scene_noun}."
+        )
         prompt = f"""Create a complete content_contract_v2 payload for a Celebrity data-comparison video.
 
 Topic candidate:
@@ -192,7 +207,7 @@ Language: {language}
 Subject hint: {subject}
 
 Hard rules:
-1. Use exactly {scene_count} {scene_noun}.
+1. {scene_requirement}
 2. Each scene must be one real public celebrity/person.
 3. Each scene must include short voiceover, caption, image_prompt, statusText.
 4. Each scene must include countryCode and countryLabel matching the person's nationality/origin.
@@ -237,7 +252,27 @@ Return JSON only with this shape:
         raw_contract = await self.ai_json(prompt, system=system)
         if not isinstance(raw_contract, dict):
             raise ValueError("AI celebrity contract must be an object")
-        if scene_count > _LONG_CONTRACT_CHUNK_THRESHOLD:
+        production_inventory = None
+        if use_resilient_pipeline:
+            from agents.celebrity_content_orchestrator import CelebrityContentOrchestrator
+
+            settings = get_settings()
+            planned = await CelebrityContentOrchestrator(
+                planner_attempts=settings.card_planner_attempts,
+                content_attempts=settings.card_content_repair_attempts,
+                fact_attempts=settings.card_fact_repair_attempts,
+                replacement_attempts=settings.card_replacement_attempts,
+                minimum_ratio=settings.card_minimum_ratio,
+            ).build(
+                topic=topic,
+                target_cards=scene_count,
+                metadata_contract=raw_contract,
+                language=language,
+                subject=subject,
+            )
+            raw_contract["scenes"] = planned["scenes"]
+            production_inventory = planned["inventory"]
+        elif scene_count > _LONG_CONTRACT_CHUNK_THRESHOLD:
             raw_contract["scenes"] = await self._generate_celebrity_scene_chunks(
                 language=language,
                 subject=subject,
@@ -246,7 +281,7 @@ Return JSON only with this shape:
                 metadata_contract=raw_contract,
             )
 
-        return self._normalize_ai_celebrity_contract(
+        normalized = self._normalize_ai_celebrity_contract(
             raw_contract=raw_contract,
             language=language,
             topic=topic,
@@ -254,6 +289,13 @@ Return JSON only with this shape:
             duration_target=duration_target,
             desired_scene_count=scene_count,
         )
+        if production_inventory is not None:
+            for card, scene in zip(
+                production_inventory.cards.values(), normalized["scenes"]
+            ):
+                card.scene = scene
+            normalized["_production_inventory"] = production_inventory
+        return normalized
 
     async def _generate_celebrity_scene_chunks(
         self,

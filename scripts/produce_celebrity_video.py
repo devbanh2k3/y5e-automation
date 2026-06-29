@@ -123,6 +123,7 @@ async def produce(
         "metadata_variants": result.get("metadata_variants", {}),
         "selected_metadata": result.get("selected_metadata", {}),
         "stage_timings": result.get("stage_timings", {}),
+        "production_summary": result.get("production_summary", {}),
         "youtube_title": result.get("youtube_title", ""),
         "artifacts": artifacts,
         "next_commands": build_next_commands(review_id),
@@ -144,7 +145,20 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Skip writing review.json and contract snapshots next to the MP4.",
     )
+    parser.add_argument(
+        "--target-duration",
+        type=_duration_seconds,
+        default=60,
+        help="Target duration in seconds; card count is derived from this value.",
+    )
     return parser
+
+
+def _duration_seconds(value: str) -> int:
+    duration = int(value)
+    if duration < 15:
+        raise argparse.ArgumentTypeError("target duration must be at least 15 seconds")
+    return duration
 
 
 def main() -> int:
@@ -154,6 +168,7 @@ def main() -> int:
             language=args.language,
             card_layout=args.card_layout,
             write_files=not args.no_write_artifacts,
+            target_duration=args.target_duration,
         )
     )
     print_json(result)

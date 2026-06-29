@@ -71,6 +71,22 @@ def test_cli_help_describes_review_output_command():
     assert "--language" in result.stdout
     assert "--card-layout" in result.stdout
     assert "--no-write-artifacts" in result.stdout
+    assert "--target-duration" in result.stdout
+
+
+def test_single_video_cli_accepts_target_duration():
+    from scripts.produce_celebrity_video import build_parser
+
+    args = build_parser().parse_args(["--target-duration", "180"])
+
+    assert args.target_duration == 180
+
+
+def test_single_video_cli_rejects_duration_below_fifteen_seconds():
+    from scripts.produce_celebrity_video import build_parser
+
+    with pytest.raises(SystemExit):
+        build_parser().parse_args(["--target-duration", "14"])
 
 
 @pytest.mark.asyncio
@@ -197,6 +213,12 @@ async def test_produce_returns_metadata_for_batch_review_summary(monkeypatch):
             "metadata_variants": metadata_variants,
             "selected_metadata": metadata_variants["selected_metadata"],
             "selected_topic": kwargs["selected_topic"],
+            "production_summary": {
+                "target_cards": 10,
+                "minimum_cards": 9,
+                "final_cards": 9,
+                "degraded": True,
+            },
         }
 
     async def fake_get_review(review_id):
@@ -214,3 +236,4 @@ async def test_produce_returns_metadata_for_batch_review_summary(monkeypatch):
 
     assert result["metadata_variants"] == metadata_variants
     assert result["selected_metadata"]["title"] == "Better Title"
+    assert result["production_summary"]["final_cards"] == 9

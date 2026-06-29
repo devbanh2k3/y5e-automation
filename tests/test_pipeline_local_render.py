@@ -6,6 +6,7 @@ from agents.pipeline import Pipeline
 from core.config import get_settings
 from core.fact_verification import FactVerificationError
 from core.video_contract import build_content_contract_v2
+from core.card_production import Candidate, ProductionInventory
 
 
 @pytest.mark.asyncio
@@ -60,6 +61,40 @@ async def test_run_local_render_validates_video_data_before_render(monkeypatch):
 
     assert called is True
     assert result["category"] == "Local"
+
+
+@pytest.mark.asyncio
+async def test_prepare_resilient_contract_uses_card_level_recovery(monkeypatch):
+    inventory = ProductionInventory(1, 1, 0.90)
+    inventory.lock_candidates([Candidate("Adele", "GB")])
+    content_contract = {"title": "Awards", "scenes": [], "_production_inventory": inventory}
+    recovered = {
+        "content_contract": {"title": "Awards", "scenes": [{"title": "Adele"}]},
+        "fact_verification_contract": {"status": "ai_verified"},
+        "image_verification_contract": {"status": "verified"},
+        "production_summary": {"target_cards": 1, "minimum_cards": 1, "final_cards": 1},
+    }
+    captured = {}
+
+    async def fake_recover(self, planned, **kwargs):
+        captured["inventory"] = planned["inventory"]
+        return recovered
+
+    monkeypatch.setattr(
+        "agents.celebrity_content_orchestrator.CelebrityContentOrchestrator.verify_and_recover",
+        fake_recover,
+    )
+
+    result = await Pipeline()._prepare_resilient_celebrity_contract(
+        topic_id=123,
+        content_contract=content_contract,
+        selected_topic={"title": "Awards"},
+        language="en",
+    )
+
+    assert result == recovered
+    assert captured["inventory"] is inventory
+    assert "_production_inventory" not in result["content_contract"]
 
 
 @pytest.mark.asyncio

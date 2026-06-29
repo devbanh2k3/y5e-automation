@@ -4,7 +4,7 @@ from pathlib import Path
 from functools import lru_cache
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 
 class ConfigValidationResult(BaseModel):
@@ -58,11 +58,38 @@ class Settings(BaseSettings):
     youtube_upload_max_attempts: int = 5
     youtube_upload_poll_seconds: float = 5.0
 
+    # ── Resilient card production ────────────────────────────
+    resilient_card_pipeline_enabled: bool = True
+    card_minimum_ratio: float = 0.90
+    card_planner_attempts: int = 4
+    card_content_repair_attempts: int = 2
+    card_fact_repair_attempts: int = 2
+    card_replacement_attempts: int = 3
+    ai_json_repair_attempts: int = 2
+    ai_transport_attempts: int = 3
+
     # ── Storage ───────────────────────────────────────────────
     storage_path: str = "./output"
 
     # ── Logging ───────────────────────────────────────────────
     log_level: str = "INFO"
+
+    @field_validator("card_minimum_ratio")
+    @classmethod
+    def _bound_ratio(cls, value: float) -> float:
+        return min(1.0, max(0.5, value))
+
+    @field_validator(
+        "card_planner_attempts",
+        "card_content_repair_attempts",
+        "card_fact_repair_attempts",
+        "card_replacement_attempts",
+        "ai_json_repair_attempts",
+        "ai_transport_attempts",
+    )
+    @classmethod
+    def _bound_attempts(cls, value: int) -> int:
+        return min(10, max(1, value))
 
     # ── Derived helpers ───────────────────────────────────────
     @property

@@ -59,3 +59,15 @@ def test_upload_config_requires_oauth_and_encryption_when_enabled():
     assert result.errors["youtube_oauth_client_id"] == "must be set to a real value"
     assert result.errors["youtube_oauth_client_secret"] == "must be set to a real value"
     assert result.errors["youtube_token_encryption_key"] == "must be set to a real value"
+
+
+def test_resilient_card_settings_are_bounded():
+    settings = Settings(
+        card_minimum_ratio=1.5,
+        card_content_repair_attempts=0,
+        card_replacement_attempts=99,
+    )
+
+    assert settings.card_minimum_ratio == 1.0
+    assert settings.card_content_repair_attempts == 1
+    assert settings.card_replacement_attempts == 10

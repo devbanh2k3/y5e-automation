@@ -1,7 +1,16 @@
 import pytest
 
 from agents.content_agent import ContentAgent
+from core.card_production import Candidate, ProductionInventory
+from core.config import get_settings
 from core.video_contract import validate_content_contract_v2
+
+
+@pytest.fixture(autouse=True)
+def clear_settings_cache_between_tests():
+    get_settings.cache_clear()
+    yield
+    get_settings.cache_clear()
 
 
 def awards_contract_payload(count=10):
@@ -153,6 +162,7 @@ async def test_content_agent_prompt_requests_duration_based_scene_count(monkeypa
 
 @pytest.mark.asyncio
 async def test_content_agent_generates_long_duration_contract_in_chunks(monkeypatch):
+    monkeypatch.setenv("RESILIENT_CARD_PIPELINE_ENABLED", "false")
     agent = ContentAgent()
     prompts = []
 
@@ -212,6 +222,7 @@ async def test_content_agent_generates_long_duration_contract_in_chunks(monkeypa
 
 @pytest.mark.asyncio
 async def test_content_agent_long_fact_collection_uses_non_ranking_card_titles(monkeypatch):
+    monkeypatch.setenv("RESILIENT_CARD_PIPELINE_ENABLED", "false")
     agent = ContentAgent()
     prompts = []
 
@@ -283,6 +294,7 @@ async def test_content_agent_long_fact_collection_uses_non_ranking_card_titles(m
 
 @pytest.mark.asyncio
 async def test_content_agent_repairs_duplicate_people_across_long_chunks(monkeypatch):
+    monkeypatch.setenv("RESILIENT_CARD_PIPELINE_ENABLED", "false")
     agent = ContentAgent()
     chunk_attempts = {}
 
@@ -389,6 +401,46 @@ def test_normalize_ai_celebrity_contract_repairs_missing_fact_fields():
     assert first["factUnit"] == "AWARDS"
     assert first["factAsOf"] == "through 2026"
     assert first["factContext"]
+
+
+@pytest.mark.asyncio
+async def test_long_content_uses_locked_entity_orchestrator_when_enabled(monkeypatch):
+    get_settings.cache_clear()
+    monkeypatch.setenv("RESILIENT_CARD_PIPELINE_ENABLED", "true")
+    agent = ContentAgent()
+    metadata_payload = awards_contract_payload(count=0)
+    metadata_payload["scenes"] = []
+    inventory = ProductionInventory(58, 6, 0.90)
+    candidates = [Candidate(f"Musician {index}", "US") for index in range(58)]
+    inventory.lock_candidates(candidates)
+    scenes = awards_contract_payload(count=58)["scenes"]
+    for card, item in zip(inventory.cards.values(), scenes):
+        card.scene = item
+
+    async def fake_ai_json(prompt, system=None, **kwargs):
+        assert "Return metadata only" in prompt
+        return metadata_payload
+
+    async def fake_build(self, **kwargs):
+        return {**metadata_payload, "scenes": scenes, "inventory": inventory}
+
+    monkeypatch.setattr(agent, "ai_json", fake_ai_json)
+    monkeypatch.setattr(
+        "agents.celebrity_content_orchestrator.CelebrityContentOrchestrator.build",
+        fake_build,
+    )
+
+    contract = await agent.run(
+        niche="celebrity",
+        language="en",
+        selected_topic={"title": "Awards", "metric_label": "AWARDS"},
+        duration_target=300,
+    )
+
+    assert len(contract["scenes"]) == 58
+    assert contract["_production_inventory"] is inventory
+    assert contract["contentFormat"] == "ranking"
+    get_settings.cache_clear()
 
 
 @pytest.mark.asyncio

@@ -275,6 +275,7 @@ class Pipeline:
         content_contract: dict[str, Any] | None = None
         fact_verification_contract: dict[str, Any] | None = None
         image_verification_contract: dict[str, Any] | None = None
+        production_summary: dict[str, Any] = {}
         fallback_used = True
         topic_id = self._new_local_render_topic_id()
         pipeline_started = time.monotonic()
@@ -298,7 +299,20 @@ class Pipeline:
                 duration_target=duration_target,
             )
             record_stage("content", stage_started)
-            if content_contract.get("contentFormat"):
+            if content_contract.get("_production_inventory") is not None:
+                stage_started = time.monotonic()
+                recovered = await self._prepare_resilient_celebrity_contract(
+                    topic_id=topic_id,
+                    content_contract=content_contract,
+                    selected_topic=selected_topic,
+                    language=language,
+                )
+                content_contract = recovered["content_contract"]
+                fact_verification_contract = recovered["fact_verification_contract"]
+                image_verification_contract = recovered["image_verification_contract"]
+                production_summary = recovered["production_summary"]
+                record_stage("card_recovery", stage_started)
+            elif content_contract.get("contentFormat"):
                 stage_started = time.monotonic()
                 fact_verification_contract = await AIFactVerificationAgent().run(
                     content_contract=content_contract,
@@ -313,13 +327,14 @@ class Pipeline:
                 )
                 record_stage("fact_verification", stage_started)
             video_data = build_video_data_from_content_contract(content_contract)
-            stage_started = time.monotonic()
-            image_verification_contract = await RealImageAgent().run_for_content_contract(
-                topic_id=topic_id,
-                content_contract=content_contract,
-                strict=True,
-            )
-            record_stage("image_verification", stage_started)
+            if image_verification_contract is None:
+                stage_started = time.monotonic()
+                image_verification_contract = await RealImageAgent().run_for_content_contract(
+                    topic_id=topic_id,
+                    content_contract=content_contract,
+                    strict=True,
+                )
+                record_stage("image_verification", stage_started)
             video_data = apply_verified_images_to_video_data(
                 video_data,
                 image_verification_contract,
@@ -439,7 +454,43 @@ class Pipeline:
             "selected_metadata": selected_metadata,
             "selected_topic": selected_topic,
             "stage_timings": stage_timings,
+            "production_summary": production_summary,
         }
+
+    async def _prepare_resilient_celebrity_contract(
+        self,
+        *,
+        topic_id: int,
+        content_contract: dict[str, Any],
+        selected_topic: dict[str, Any] | None,
+        language: str,
+    ) -> dict[str, Any]:
+        """Run fact/image gates per card and remove the in-memory inventory marker."""
+
+        from agents.celebrity_content_orchestrator import CelebrityContentOrchestrator
+
+        inventory = content_contract.get("_production_inventory")
+        clean_contract = {
+            key: value
+            for key, value in content_contract.items()
+            if key != "_production_inventory"
+        }
+        settings = get_settings()
+        orchestrator = CelebrityContentOrchestrator(
+            planner_attempts=settings.card_planner_attempts,
+            content_attempts=settings.card_content_repair_attempts,
+            fact_attempts=settings.card_fact_repair_attempts,
+            replacement_attempts=settings.card_replacement_attempts,
+            minimum_ratio=settings.card_minimum_ratio,
+        )
+        return await orchestrator.verify_and_recover(
+            {**clean_contract, "inventory": inventory},
+            topic_id=topic_id,
+            topic=selected_topic or {"title": clean_contract.get("title", "")},
+            language=language,
+            fact_agent=AIFactVerificationAgent(),
+            image_agent=RealImageAgent(),
+        )
 
     @staticmethod
     def _new_local_render_topic_id() -> int:
