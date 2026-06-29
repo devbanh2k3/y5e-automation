@@ -226,6 +226,28 @@ async def test_build_replaces_content_missing_cards_from_reserve_before_failing(
 
 
 @pytest.mark.asyncio
+async def test_scene_writer_uses_locked_candidate_country_metadata(monkeypatch):
+    orchestrator = CelebrityContentOrchestrator()
+
+    async def fake_json(*, operation, **kwargs):
+        bad_scene = scene("Adele")
+        bad_scene["countryCode"] = "ZZ"
+        bad_scene["countryLabel"] = "UNKNOWN"
+        return {"scenes": [bad_scene]}
+
+    monkeypatch.setattr(orchestrator, "_call_json", fake_json)
+    scenes = await orchestrator._write_locked_scenes(
+        candidates=[Candidate("Adele", "GB")],
+        topic=topic(),
+        metadata_contract=metadata(),
+        language="en",
+    )
+
+    assert scenes["adele"]["countryCode"] == "GB"
+    assert scenes["adele"]["countryLabel"] == "UNITED KINGDOM"
+
+
+@pytest.mark.asyncio
 async def test_planner_rejects_unsupported_country_code_and_refills(monkeypatch):
     orchestrator = CelebrityContentOrchestrator(
         reserve_ratio=0,

@@ -555,7 +555,14 @@ class CelebrityContentOrchestrator(BaseAgent):
                     key = normalize_person_key(extract_scene_person_name(scene))
                     if key not in pending:
                         continue
-                    scenes[key] = dict(scene)
+                    candidate = pending[key]
+                    normalized_scene = dict(scene)
+                    normalized_scene["countryCode"] = candidate.country_code
+                    normalized_scene["countryLabel"] = (
+                        canonical_country_label(candidate.country_code)
+                        or str(normalized_scene.get("countryLabel", "")).strip().upper()
+                    )
+                    scenes[key] = normalized_scene
                     pending.pop(key)
         return scenes
 
