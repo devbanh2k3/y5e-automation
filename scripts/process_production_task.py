@@ -8,6 +8,7 @@ import asyncio
 import json
 import logging
 import sys
+import time
 from pathlib import Path
 from typing import Any
 
@@ -24,9 +25,104 @@ from scripts.produce_celebrity_video import produce
 logger = logging.getLogger(__name__)
 PRODUCTION_TOPIC_ATTEMPT_BUDGET = 5
 
+FAILURE_LABELS = {
+    "transport_exhausted": "Không thể kết nối dịch vụ AI sau nhiều lần thử.",
+    "json_exhausted": "AI trả dữ liệu không hợp lệ sau nhiều lần tự sửa.",
+    "insufficient_ready_cards": "Không đủ card có dữ liệu và hình ảnh đáng tin cậy để render.",
+    "render_failed": "Hệ thống render video không hoàn tất.",
+    "production_failed": "Hệ thống không thể hoàn tất video này.",
+}
+
 
 def print_json(payload: Any) -> None:
     print(json.dumps(payload, ensure_ascii=False, indent=2))
+
+
+def build_production_completion_message(
+    *,
+    title: str,
+    layout: str,
+    target_duration: int,
+    summary: dict[str, Any] | None = None,
+) -> str:
+    """Build a review-ready message without exposing internal identifiers."""
+
+    summary = summary or {}
+    lines = [
+        "Video đã sẵn sàng duyệt",
+        f"Tiêu đề: {title or 'Celebrity data video'}",
+        f"Bố cục: {layout or 'flag_hero'}",
+        f"Thời lượng mục tiêu: {target_duration} giây",
+    ]
+    target_cards = int(summary.get("target_cards") or 0)
+    final_cards = int(summary.get("final_cards") or 0)
+    skipped_cards = int(summary.get("skipped_cards") or 0)
+    if target_cards and final_cards:
+        lines.append(f"Kết quả card: {final_cards}/{target_cards} card đạt chuẩn")
+    if skipped_cards:
+        lines.append(f"Đã loại an toàn: {skipped_cards} card không đủ độ tin cậy")
+    lines.append("Xem preview trước, sau đó approve để chọn kênh upload.")
+    return "\n".join(lines)
+
+
+def build_production_failure_message(exc: Exception) -> str:
+    """Map internal exceptions to stable, actionable Telegram text."""
+
+    category = str(getattr(exc, "category", "")).strip()
+    message = str(exc).lower()
+    if not category and ("render failed" in message or "ffmpeg" in message):
+        category = "render_failed"
+    if not category:
+        category = "production_failed"
+    reason = FAILURE_LABELS.get(category, FAILURE_LABELS["production_failed"])
+    return (
+        "Sản xuất video thất bại\n"
+        f"Lý do: {reason}\n"
+        "Mở /status để kiểm tra queue hiện tại."
+    )
+
+
+def build_progress_callback(
+    *,
+    owner_telegram_user_id: int,
+    minimum_interval: float = 15.0,
+):
+    """Return a best-effort, stage-aware Telegram progress callback."""
+
+    last_sent_at = 0.0
+    last_stage = ""
+
+    async def report(event: dict[str, Any]) -> None:
+        nonlocal last_sent_at, last_stage
+        stage = str(event.get("stage") or "")
+        now = time.monotonic()
+        if stage == last_stage and now - last_sent_at < minimum_interval:
+            return
+        labels = {
+            "entity_planning": "Đang lập danh sách nhân vật",
+            "content_writing": "Đang chuẩn bị nội dung",
+            "fact_verification": "Đang xác minh dữ liệu",
+            "image_verification": "Đang xác minh hình ảnh",
+            "finalizing": "Đang hoàn thiện video",
+        }
+        label = labels.get(stage, "Đang xử lý video")
+        ready = int(event.get("ready") or 0)
+        target = int(event.get("target") or 0)
+        text = f"{label}: {ready}/{target} card" if target else label
+        repairing = int(event.get("repairing") or 0)
+        if repairing:
+            text += f"\nĐang sửa: {repairing}"
+        try:
+            await _notify_owner(
+                owner_telegram_user_id=owner_telegram_user_id,
+                text=text,
+            )
+        except Exception as exc:
+            logger.warning("Telegram progress notification failed: %s", exc)
+        last_sent_at = now
+        last_stage = stage
+
+    return report
 
 
 async def process_one_task() -> dict[str, Any]:
@@ -72,6 +168,9 @@ async def process_one_task() -> dict[str, Any]:
                     selected_topic=selected_topic,
                     duration_profile="standard",
                     target_duration=int(task.get("target_duration") or 60),
+                    progress_callback=build_progress_callback(
+                        owner_telegram_user_id=owner_telegram_user_id
+                    ),
                 )
                 break
             except Exception as exc:
@@ -104,11 +203,7 @@ async def process_one_task() -> dict[str, Any]:
         _mark_reserved_topic_failed(topic_agent=topic_agent, selected_topic=selected_topic, reason=str(exc))
         await _notify_owner(
             owner_telegram_user_id=owner_telegram_user_id,
-            text=(
-                "Sản xuất video thất bại\n"
-                f"Lý do: {str(exc)[:500]}\n"
-                "Mở /status để kiểm tra queue hiện tại."
-            ),
+            text=build_production_failure_message(exc),
         )
         return {
             "status": "failed",
@@ -132,12 +227,13 @@ async def process_one_task() -> dict[str, Any]:
     await _notify_owner_with_keyboard(
         owner_telegram_user_id=owner_telegram_user_id,
         review_id=str(result.get("review_id", "")),
-        text=(
-            "Video đã sẵn sàng duyệt\n"
-            f"Tiêu đề: {str(result.get('youtube_title') or 'Celebrity data video')}\n"
-            f"Layout: {str(result.get('card_layout') or '')}\n"
-            f"Thời lượng mục tiêu: {int(result.get('target_duration') or 0)} giây\n"
-            "Xem preview trước, sau đó approve để chọn kênh upload."
+        text=build_production_completion_message(
+            title=str(result.get("youtube_title") or "Celebrity data video"),
+            layout=str(result.get("card_layout") or "flag_hero"),
+            target_duration=int(result.get("target_duration") or 0),
+            summary=result.get("production_summary")
+            if isinstance(result.get("production_summary"), dict)
+            else {},
         ),
     )
     return {

@@ -203,6 +203,85 @@ async def test_planner_rejects_unsupported_country_code_and_refills(monkeypatch)
 
 
 @pytest.mark.asyncio
+async def test_orchestrator_emits_stage_progress_without_exposing_card_ids(monkeypatch):
+    orchestrator = CelebrityContentOrchestrator(
+        reserve_ratio=0,
+        minimum_reserve=0,
+        planner_attempts=1,
+    )
+    events = []
+
+    async def fake_json(*, operation, **kwargs):
+        if operation == "entity_plan":
+            return {"candidates": [candidate("Adele", "GB")]}
+        return {"scenes": [scene("Adele")]}
+
+    async def progress(event):
+        events.append(event)
+
+    monkeypatch.setattr(orchestrator, "_call_json", fake_json)
+    await orchestrator.build(
+        topic=topic(),
+        target_cards=1,
+        metadata_contract=metadata(),
+        language="en",
+        subject="celebrity",
+        progress_callback=progress,
+    )
+
+    assert [event["stage"] for event in events] == [
+        "entity_planning",
+        "content_writing",
+    ]
+    assert all("card_id" not in event for event in events)
+
+
+@pytest.mark.asyncio
+async def test_build_resumes_ready_content_from_checkpoint_without_new_ai_calls(
+    monkeypatch,
+    tmp_path,
+):
+    first = CelebrityContentOrchestrator(
+        reserve_ratio=0,
+        minimum_reserve=0,
+        planner_attempts=1,
+        storage_dir=tmp_path,
+    )
+
+    async def first_json(*, operation, **kwargs):
+        if operation == "entity_plan":
+            return {"candidates": [candidate("Adele", "GB")]}
+        return {"scenes": [scene("Adele")]}
+
+    monkeypatch.setattr(first, "_call_json", first_json)
+    await first.build(
+        topic=topic(),
+        target_cards=1,
+        metadata_contract=metadata(),
+        language="en",
+        subject="celebrity",
+        run_id="run-1",
+    )
+
+    resumed = CelebrityContentOrchestrator(storage_dir=tmp_path)
+
+    async def unexpected_json(**kwargs):
+        raise AssertionError("checkpointed content must not call AI again")
+
+    monkeypatch.setattr(resumed, "_call_json", unexpected_json)
+    result = await resumed.build(
+        topic=topic(),
+        target_cards=1,
+        metadata_contract=metadata(),
+        language="en",
+        subject="celebrity",
+        run_id="run-1",
+    )
+
+    assert [item["title"] for item in result["scenes"]] == ["Adele"]
+
+
+@pytest.mark.asyncio
 async def test_rejected_fact_replaces_only_failed_card(monkeypatch):
     orchestrator = CelebrityContentOrchestrator(
         reserve_ratio=0.5,

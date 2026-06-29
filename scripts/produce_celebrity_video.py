@@ -8,7 +8,7 @@ import asyncio
 import json
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, Awaitable, Callable
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
 if str(ROOT_DIR) not in sys.path:
@@ -91,13 +91,19 @@ async def produce(
     selected_topic: dict[str, Any] | None = None,
     duration_profile: str = "standard",
     target_duration: int = 60,
+    progress_callback: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
 ) -> dict[str, Any]:
+    pipeline_kwargs: dict[str, Any] = {
+        "category": "Celebrity",
+        "language": language,
+        "card_layout": card_layout,
+        "selected_topic": selected_topic,
+        "duration_target": target_duration,
+    }
+    if progress_callback is not None:
+        pipeline_kwargs["progress_callback"] = progress_callback
     result = await Pipeline().run_local_render(
-        category="Celebrity",
-        language=language,
-        card_layout=card_layout,
-        selected_topic=selected_topic,
-        duration_target=target_duration,
+        **pipeline_kwargs,
     )
     if result.get("review_status") != "pending_review":
         raise RuntimeError(f"expected pending_review, got {result.get('review_status')}")

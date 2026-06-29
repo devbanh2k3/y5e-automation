@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import re
-from typing import Any
+from typing import Any, Awaitable, Callable
 
 from agents.base_agent import BaseAgent
 from core.config import get_settings
@@ -52,6 +52,8 @@ class ContentAgent(BaseAgent):
         card_layout: str = "flag_hero",
         selected_topic: dict[str, Any] | None = None,
         duration_target: int = 60,
+        progress_callback: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
+        run_id: str | None = None,
     ) -> dict[str, Any]:
         """Return a complete content contract for the requested niche."""
         normalized_niche = niche.strip().lower() or "celebrity"
@@ -74,6 +76,8 @@ class ContentAgent(BaseAgent):
             card_layout=card_layout,
             selected_topic=selected_topic,
             duration_target=duration_target,
+            progress_callback=progress_callback,
+            run_id=run_id,
         )
         validate_content_contract_v2(contract)
         return contract
@@ -86,6 +90,8 @@ class ContentAgent(BaseAgent):
         card_layout: str,
         selected_topic: dict[str, Any] | None = None,
         duration_target: int = 60,
+        progress_callback: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
+        run_id: str | None = None,
     ) -> dict[str, Any]:
         try:
             topic = selected_topic or await self._generate_celebrity_topic(
@@ -99,6 +105,8 @@ class ContentAgent(BaseAgent):
                 card_layout=card_layout,
                 duration_target=duration_target,
                 desired_scene_count=self.desired_scene_count_for_duration(duration_target),
+                progress_callback=progress_callback,
+                run_id=run_id,
             )
             validate_content_contract_v2(contract)
             return contract
@@ -168,6 +176,8 @@ Return JSON only:
         card_layout: str,
         duration_target: int = 60,
         desired_scene_count: int | None = None,
+        progress_callback: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
+        run_id: str | None = None,
     ) -> dict[str, Any]:
         scene_count = desired_scene_count or self.desired_scene_count_for_duration(duration_target)
         use_resilient_pipeline = (
@@ -269,6 +279,8 @@ Return JSON only with this shape:
                 metadata_contract=raw_contract,
                 language=language,
                 subject=subject,
+                progress_callback=progress_callback,
+                run_id=run_id,
             )
             raw_contract["scenes"] = planned["scenes"]
             production_inventory = planned["inventory"]
@@ -295,6 +307,7 @@ Return JSON only with this shape:
             ):
                 card.scene = scene
             normalized["_production_inventory"] = production_inventory
+            normalized["_production_run_id"] = run_id
         return normalized
 
     async def _generate_celebrity_scene_chunks(

@@ -6,7 +6,8 @@ import json
 import math
 import re
 from collections.abc import Iterable
-from typing import Any
+from pathlib import Path
+from typing import Any, Awaitable, Callable
 
 from agents.base_agent import BaseAgent
 from core.ai_resilience import safe_generate_json
@@ -16,7 +17,9 @@ from core.card_production import (
     ProductionInventory,
     normalize_person_key,
 )
+from core.config import get_settings
 from core.fact_verification import MIN_FACT_CONFIDENCE
+from core.production_checkpoints import CheckpointStore
 from core.video_contract import (
     build_image_verification_contract_v1,
     canonical_country_label,
@@ -32,6 +35,8 @@ _GROUP_WORDS = {
     "sisters",
     "team",
 }
+
+ProgressCallback = Callable[[dict[str, Any]], Awaitable[None]]
 
 
 def extract_scene_person_name(scene: dict[str, Any]) -> str:
@@ -76,6 +81,7 @@ class CelebrityContentOrchestrator(BaseAgent):
         replacement_attempts: int = 3,
         chunk_size: int = 12,
         minimum_ratio: float = 0.90,
+        storage_dir: Path | None = None,
     ) -> None:
         super().__init__(name="celebrity_content_orchestrator")
         self.reserve_ratio = max(0.0, reserve_ratio)
@@ -86,6 +92,7 @@ class CelebrityContentOrchestrator(BaseAgent):
         self.replacement_attempts = max(0, replacement_attempts)
         self.chunk_size = max(1, chunk_size)
         self.minimum_ratio = min(1.0, max(0.0, minimum_ratio))
+        self.storage_dir = storage_dir or get_settings().storage_dir
 
     async def run(self, **kwargs: Any) -> dict[str, Any]:
         return await self.build(**kwargs)
@@ -99,8 +106,30 @@ class CelebrityContentOrchestrator(BaseAgent):
         language: str,
         subject: str,
         run_id: str | None = None,
+        progress_callback: ProgressCallback | None = None,
     ) -> dict[str, Any]:
-        del run_id
+        checkpoint = (
+            CheckpointStore(self.storage_dir, run_id=run_id) if run_id else None
+        )
+        saved_inventory = checkpoint.load("card-states") if checkpoint else None
+        if isinstance(saved_inventory, dict):
+            inventory = ProductionInventory.from_dict(saved_inventory)
+            if inventory.target_cards != target_cards:
+                inventory = None
+        else:
+            inventory = None
+
+        if inventory is not None and all(
+            card.scene is not None for card in inventory.cards.values()
+        ):
+            result = dict(metadata_contract)
+            result["scenes"] = [
+                card.scene for card in inventory.cards.values() if card.scene is not None
+            ]
+            result["inventory"] = inventory
+            result["run_id"] = run_id
+            return result
+
         requested = target_cards + max(
             self.minimum_reserve,
             math.ceil(target_cards * self.reserve_ratio),
@@ -115,6 +144,12 @@ class CelebrityContentOrchestrator(BaseAgent):
             raise ValueError(
                 f"entity planner requires {target_cards} unique people, got {len(candidates)}"
             )
+        await self._emit_progress(
+            progress_callback,
+            stage="entity_planning",
+            ready=min(len(candidates), target_cards),
+            target=target_cards,
+        )
 
         inventory = ProductionInventory(
             target_cards=target_cards,
@@ -123,6 +158,11 @@ class CelebrityContentOrchestrator(BaseAgent):
         )
         inventory.add_candidates(candidates)
         inventory.lock_candidates(inventory.candidates)
+        if checkpoint:
+            checkpoint.save(
+                "candidate-pool",
+                [candidate.to_dict() for candidate in inventory.candidates],
+            )
         scene_map = await self._write_locked_scenes(
             candidates=[card.candidate for card in inventory.cards.values()],
             topic=topic,
@@ -134,12 +174,21 @@ class CelebrityContentOrchestrator(BaseAgent):
             card.scene = scene_map.get(key)
             if card.scene:
                 card.state = CardState.CONTENT_READY
+        await self._emit_progress(
+            progress_callback,
+            stage="content_writing",
+            ready=sum(card.scene is not None for card in inventory.cards.values()),
+            target=target_cards,
+        )
+        if checkpoint:
+            checkpoint.save("card-states", inventory.to_dict())
 
         result = dict(metadata_contract)
         result["scenes"] = [
             card.scene for card in inventory.cards.values() if card.scene is not None
         ]
         result["inventory"] = inventory
+        result["run_id"] = run_id
         return result
 
     async def verify_and_recover(
@@ -151,6 +200,7 @@ class CelebrityContentOrchestrator(BaseAgent):
         language: str,
         fact_agent: Any,
         image_agent: Any,
+        progress_callback: ProgressCallback | None = None,
     ) -> dict[str, Any]:
         """Verify cards independently and replace or skip exhausted slots."""
 
@@ -160,8 +210,12 @@ class CelebrityContentOrchestrator(BaseAgent):
         metadata_contract = {
             key: value
             for key, value in planned.items()
-            if key not in {"inventory", "scenes"}
+            if key not in {"inventory", "scenes", "run_id"}
         }
+        run_id = str(planned.get("run_id") or "").strip()
+        checkpoint = (
+            CheckpointStore(self.storage_dir, run_id=run_id) if run_id else None
+        )
 
         repaired_count = 0
         for card in inventory.cards.values():
@@ -200,6 +254,23 @@ class CelebrityContentOrchestrator(BaseAgent):
                     continue
                 inventory.skip(card.card_id, reason=failure)
                 break
+            if checkpoint:
+                checkpoint.save("card-states", inventory.to_dict())
+                if card.last_error:
+                    checkpoint.append_error(
+                        {
+                            "card": card.card_id,
+                            "category": card.last_error,
+                            "state": card.state.value,
+                        }
+                    )
+            await self._emit_progress(
+                progress_callback,
+                stage="image_verification",
+                ready=len(inventory.ready_cards),
+                target=inventory.target_cards,
+                repairing=inventory.replaced_count,
+            )
 
         content_format = str(planned.get("contentFormat") or "ranking")
         final_scenes = inventory.finalize_scenes(content_format=content_format)
@@ -225,6 +296,24 @@ class CelebrityContentOrchestrator(BaseAgent):
             topic_id=topic_id,
             items=image_items,
         )
+        await self._emit_progress(
+            progress_callback,
+            stage="finalizing",
+            ready=len(final_scenes),
+            target=inventory.target_cards,
+        )
+        if checkpoint:
+            checkpoint.save("scenes", final_scenes)
+            checkpoint.save("verification", {"facts": fact_items, "images": image_items})
+            checkpoint.save(
+                "render-manifest",
+                {
+                    "target_cards": inventory.target_cards,
+                    "minimum_cards": inventory.minimum_cards,
+                    "final_cards": len(final_scenes),
+                    "ready": True,
+                },
+            )
         return {
             "content_contract": content_contract,
             "fact_verification_contract": fact_contract,
@@ -240,6 +329,29 @@ class CelebrityContentOrchestrator(BaseAgent):
                 "degraded": len(final_scenes) < inventory.target_cards,
             },
         }
+
+    async def _emit_progress(
+        self,
+        callback: ProgressCallback | None,
+        *,
+        stage: str,
+        ready: int,
+        target: int,
+        repairing: int = 0,
+    ) -> None:
+        if callback is None:
+            return
+        try:
+            await callback(
+                {
+                    "stage": stage,
+                    "ready": ready,
+                    "target": target,
+                    "repairing": repairing,
+                }
+            )
+        except Exception as exc:
+            self.logger.warning("Production progress callback failed: %s", exc)
 
     async def _verify_card_fact(
         self,

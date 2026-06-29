@@ -18,7 +18,7 @@ import time
 import traceback
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Awaitable, Callable
 
 from agents.ai_fact_verification_agent import AIFactVerificationAgent
 from agents.metadata_optimizer_agent import MetadataOptimizerAgent
@@ -269,6 +269,7 @@ class Pipeline:
         card_layout: str = "flag_hero",
         selected_topic: dict[str, Any] | None = None,
         duration_target: int = 60,
+        progress_callback: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
     ) -> dict[str, Any]:
         """Create a local render artifact using explicit fallback content."""
         resolved_category = category.strip() or "Local"
@@ -290,13 +291,23 @@ class Pipeline:
             from agents.content_agent import ContentAgent
 
             stage_started = time.monotonic()
+            content_kwargs: dict[str, Any] = {
+                "niche": "celebrity",
+                "language": language,
+                "subject": "người nổi tiếng",
+                "card_layout": card_layout,
+                "selected_topic": selected_topic,
+                "duration_target": duration_target,
+            }
+            if (
+                get_settings().resilient_card_pipeline_enabled
+                and self._uses_resilient_card_pipeline(duration_target)
+            ):
+                content_kwargs["run_id"] = str(topic_id)
+            if progress_callback is not None:
+                content_kwargs["progress_callback"] = progress_callback
             content_contract = await ContentAgent().run(
-                niche="celebrity",
-                language=language,
-                subject="người nổi tiếng",
-                card_layout=card_layout,
-                selected_topic=selected_topic,
-                duration_target=duration_target,
+                **content_kwargs,
             )
             record_stage("content", stage_started)
             if content_contract.get("_production_inventory") is not None:
@@ -306,6 +317,7 @@ class Pipeline:
                     content_contract=content_contract,
                     selected_topic=selected_topic,
                     language=language,
+                    progress_callback=progress_callback,
                 )
                 content_contract = recovered["content_contract"]
                 fact_verification_contract = recovered["fact_verification_contract"]
@@ -464,16 +476,18 @@ class Pipeline:
         content_contract: dict[str, Any],
         selected_topic: dict[str, Any] | None,
         language: str,
+        progress_callback: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
     ) -> dict[str, Any]:
         """Run fact/image gates per card and remove the in-memory inventory marker."""
 
         from agents.celebrity_content_orchestrator import CelebrityContentOrchestrator
 
         inventory = content_contract.get("_production_inventory")
+        run_id = str(content_contract.get("_production_run_id") or topic_id)
         clean_contract = {
             key: value
             for key, value in content_contract.items()
-            if key != "_production_inventory"
+            if not key.startswith("_production_")
         }
         settings = get_settings()
         orchestrator = CelebrityContentOrchestrator(
@@ -484,13 +498,19 @@ class Pipeline:
             minimum_ratio=settings.card_minimum_ratio,
         )
         return await orchestrator.verify_and_recover(
-            {**clean_contract, "inventory": inventory},
+            {**clean_contract, "inventory": inventory, "run_id": run_id},
             topic_id=topic_id,
             topic=selected_topic or {"title": clean_contract.get("title", "")},
             language=language,
             fact_agent=AIFactVerificationAgent(),
             image_agent=RealImageAgent(),
+            progress_callback=progress_callback,
         )
+
+    @staticmethod
+    def _uses_resilient_card_pipeline(duration_target: int) -> bool:
+        scene_count = max(6, min(80, round((duration_target - 8) / 5.0)))
+        return scene_count > 24
 
     @staticmethod
     def _new_local_render_topic_id() -> int:

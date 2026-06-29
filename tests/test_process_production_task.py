@@ -1,6 +1,66 @@
 import pytest
 
 
+def test_completion_message_reports_degraded_card_counts_without_internal_ids():
+    from scripts.process_production_task import build_production_completion_message
+
+    text = build_production_completion_message(
+        title="Celebrity Records",
+        layout="flag_hero",
+        target_duration=180,
+        summary={
+            "target_cards": 58,
+            "final_cards": 55,
+            "skipped_cards": 3,
+            "degraded": True,
+        },
+    )
+
+    assert "55/58 card" in text
+    assert "3 card" in text
+    assert "task_id" not in text
+
+
+def test_failure_message_hides_raw_ai_error():
+    from core.ai_resilience import AIJsonFailure
+    from scripts.process_production_task import build_production_failure_message
+
+    text = build_production_failure_message(
+        AIJsonFailure("raw malformed payload", category="json_exhausted", attempts=3)
+    )
+
+    assert "AI trả dữ liệu không hợp lệ" in text
+    assert "raw malformed payload" not in text
+
+
+@pytest.mark.asyncio
+async def test_progress_callback_reports_counts_and_ignores_notification_failure(monkeypatch):
+    from scripts import process_production_task
+
+    messages = []
+
+    async def fake_notify(**kwargs):
+        messages.append(kwargs["text"])
+        raise RuntimeError("Telegram unavailable")
+
+    monkeypatch.setattr(process_production_task, "_notify_owner", fake_notify)
+    callback = process_production_task.build_progress_callback(
+        owner_telegram_user_id=42,
+        minimum_interval=0,
+    )
+
+    await callback(
+        {
+            "stage": "image_verification",
+            "ready": 43,
+            "target": 54,
+            "repairing": 2,
+        }
+    )
+
+    assert messages == ["Đang xác minh hình ảnh: 43/54 card\nĐang sửa: 2"]
+
+
 @pytest.mark.asyncio
 async def test_process_one_task_claims_fair_task_and_marks_pending_review(monkeypatch):
     from scripts import process_production_task
@@ -143,7 +203,8 @@ async def test_process_one_task_marks_failure(monkeypatch):
     assert "render failed" in calls["failed"]["error"]
     assert calls["topic_failed"]["reservation_id"] == "reservation-1"
     assert calls["notification"]["chat_id"] == 999
-    assert "failed" in calls["notification"]["text"].lower()
+    assert "thất bại" in calls["notification"]["text"].lower()
+    assert "render failed" not in calls["notification"]["text"].lower()
 
 
 @pytest.mark.asyncio

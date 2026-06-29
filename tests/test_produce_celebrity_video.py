@@ -13,12 +13,12 @@ def test_produce_celebrity_video_script_exists_and_targets_local_render_flow():
     path = ROOT / "scripts" / "produce_celebrity_video.py"
     assert path.exists()
     source = path.read_text()
-    assert 'category="Celebrity"' in source
+    assert '"category": "Celebrity"' in source
     assert "run_local_render" in source
     assert "pending_review" in source
     assert "review_video.py show" in source
     assert 'card_layout: str = "flag_hero"' in source
-    assert "card_layout=card_layout" in source
+    assert '"card_layout": card_layout' in source
 
 
 def test_write_artifacts_persists_review_contracts_next_to_video(tmp_path):
@@ -237,3 +237,36 @@ async def test_produce_returns_metadata_for_batch_review_summary(monkeypatch):
     assert result["metadata_variants"] == metadata_variants
     assert result["selected_metadata"]["title"] == "Better Title"
     assert result["production_summary"]["final_cards"] == 9
+
+
+@pytest.mark.asyncio
+async def test_produce_forwards_progress_callback_to_pipeline(monkeypatch):
+    from scripts import produce_celebrity_video as producer
+
+    captured = {}
+
+    async def progress(event):
+        return None
+
+    async def fake_run_local_render(self, **kwargs):
+        captured.update(kwargs)
+        return {
+            "review_status": "pending_review",
+            "review_id": "review-1",
+            "topic_id": 123,
+            "file_path": "/tmp/final_video.mp4",
+        }
+
+    async def fake_get_review(review_id):
+        return {"review_id": review_id}
+
+    monkeypatch.setattr(producer.Pipeline, "run_local_render", fake_run_local_render)
+    monkeypatch.setattr(producer, "get_review", fake_get_review)
+
+    await producer.produce(
+        language="en",
+        write_files=False,
+        progress_callback=progress,
+    )
+
+    assert captured["progress_callback"] is progress
