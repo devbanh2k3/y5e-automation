@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
 from agents.base_agent import BaseAgent
@@ -166,6 +167,20 @@ Return JSON only:
         desired_scene_count: int | None = None,
     ) -> dict[str, Any]:
         scene_count = desired_scene_count or self.desired_scene_count_for_duration(duration_target)
+        content_format = str(topic.get("content_format") or "ranking").strip() or "ranking"
+        scene_noun = "ranking scenes" if content_format == "ranking" else "card scenes"
+        title_rule = (
+            "Use rank titles like #10 Celebrity Name."
+            if content_format == "ranking"
+            else "Use the celebrity/person name only as title. Do not prefix titles with rank numbers."
+        )
+        ordering_rule = (
+            "Put lower ranks first and #1 last so the video builds suspense."
+            if content_format == "ranking"
+            else "Order cards by the chosen story logic, not by rank. Use statusText for FACT, RECORD, MILESTONE, or COUNT labels."
+        )
+        scene_example_title = "#10 Celebrity Name" if content_format == "ranking" else "Celebrity Name"
+        scene_example_status = "#10 | metric" if content_format == "ranking" else "FACT 1 | metric"
         prompt = f"""Create a complete content_contract_v2 payload for a Celebrity data-comparison video.
 
 Topic candidate:
@@ -175,7 +190,7 @@ Language: {language}
 Subject hint: {subject}
 
 Hard rules:
-1. Use exactly {scene_count} ranking scenes.
+1. Use exactly {scene_count} {scene_noun}.
 2. Each scene must be one real public celebrity/person.
 3. Each scene must include short voiceover, caption, image_prompt, statusText.
 4. Each scene must include countryCode and countryLabel matching the person's nationality/origin.
@@ -183,10 +198,11 @@ Hard rules:
 6. Numbers must be phrased as public estimates when exact live data may change.
 7. Do not invent scandals, private allegations, health claims, or criminal claims.
 8. image_prompt must ask for a real editorial/photo-source image, not AI art.
-9. Put lower ranks first and #1 last so the video builds suspense.
+9. {ordering_rule}
 10. Use individual people only. Do not use bands, groups, teams, brands, couples, or families.
 11. Follow content_format, metric_scope, and time_scope from the topic exactly.
 12. For factual formats include factClaim, factValue, factUnit, factAsOf, and factContext in every scene.
+13. {title_rule}
 
 Return JSON only with this shape:
 {{
@@ -199,11 +215,11 @@ Return JSON only with this shape:
   "thumbnail_prompt": "thumbnail prompt",
   "scenes": [
     {{
-      "title": "#10 Celebrity Name",
+      "title": "{scene_example_title}",
       "voiceover": "one concise sentence",
       "caption": "short metric text",
       "image_prompt": "real editorial photo of Celebrity Name",
-      "statusText": "#10 | metric",
+      "statusText": "{scene_example_status}",
       "countryCode": "US",
       "countryLabel": "UNITED STATES",
       "metricLabel": "{topic.get("metric_label", "NET WORTH")}",
@@ -248,31 +264,47 @@ Return JSON only with this shape:
     ) -> list[dict[str, Any]]:
         scenes: list[dict[str, Any]] = []
         used_names: list[str] = []
-        next_rank = scene_count
-        while next_rank >= 1:
-            end_rank = max(1, next_rank - _LONG_CONTRACT_CHUNK_SIZE + 1)
+        content_format = str(topic.get("content_format") or "ranking").strip() or "ranking"
+        if content_format == "ranking":
+            chunks = []
+            next_rank = scene_count
+            while next_rank >= 1:
+                end_rank = max(1, next_rank - _LONG_CONTRACT_CHUNK_SIZE + 1)
+                chunks.append((next_rank, end_rank))
+                next_rank = end_rank - 1
+        else:
+            chunks = [
+                (start, min(scene_count, start + _LONG_CONTRACT_CHUNK_SIZE - 1))
+                for start in range(1, scene_count + 1, _LONG_CONTRACT_CHUNK_SIZE)
+            ]
+
+        for start_position, end_position in chunks:
             chunk = await self._generate_celebrity_scene_chunk(
                 language=language,
                 subject=subject,
                 topic=topic,
                 metadata_contract=metadata_contract,
-                start_rank=next_rank,
-                end_rank=end_rank,
+                start_position=start_position,
+                end_position=end_position,
                 used_names=used_names,
             )
-            expected_count = next_rank - end_rank + 1
+            expected_count = (
+                start_position - end_position + 1
+                if content_format == "ranking"
+                else end_position - start_position + 1
+            )
             if len(chunk) < expected_count:
                 raise ValueError(
                     f"AI celebrity scene chunk requires {expected_count} scenes, got {len(chunk)}"
                 )
             selected_chunk = chunk[:expected_count]
+            self._validate_unique_scene_people(scenes + selected_chunk)
             scenes.extend(selected_chunk)
             used_names.extend(
                 self._extract_ranked_name(str(scene.get("title", "")))
                 for scene in selected_chunk
                 if isinstance(scene, dict)
             )
-            next_rank = end_rank - 1
         return scenes
 
     async def _generate_celebrity_scene_chunk(
@@ -282,12 +314,43 @@ Return JSON only with this shape:
         subject: str,
         topic: dict[str, Any],
         metadata_contract: dict[str, Any],
-        start_rank: int,
-        end_rank: int,
+        start_position: int,
+        end_position: int,
         used_names: list[str],
     ) -> list[dict[str, Any]]:
-        chunk_count = start_rank - end_rank + 1
-        prompt = f"""Create {chunk_count} Celebrity data-comparison ranking scenes for ranks #{start_rank} down to #{end_rank}.
+        content_format = str(topic.get("content_format") or "ranking").strip() or "ranking"
+        is_ranking = content_format == "ranking"
+        chunk_count = (
+            start_position - end_position + 1
+            if is_ranking
+            else end_position - start_position + 1
+        )
+        range_instruction = (
+            f"ranks #{start_position} down to #{end_position}"
+            if is_ranking
+            else f"cards {start_position} through {end_position}"
+        )
+        order_instruction = (
+            f"Use ranks #{start_position} down to #{end_position}, in descending rank-number order."
+            if is_ranking
+            else f"Use card numbers {start_position} through {end_position}, in ascending card order."
+        )
+        title_example = (
+            f'"title": "#{start_position} Celebrity Name",'
+            if is_ranking
+            else '"title": "Celebrity Name",'
+        )
+        status_example = (
+            f'"statusText": "#{start_position} | metric",'
+            if is_ranking
+            else f'"statusText": "FACT {start_position} | metric",'
+        )
+        title_rule = (
+            "Ranked scene titles must start with the rank number, for example #12 Celebrity Name."
+            if is_ranking
+            else "Scene titles must be the celebrity/person name only. Put the fact label in statusText, not in title."
+        )
+        prompt = f"""Create {chunk_count} Celebrity data-comparison card scenes for {range_instruction}.
 
 Video/topic metadata:
 {json.dumps({**topic, "video_title": metadata_contract.get("title", topic.get("title", ""))}, ensure_ascii=False, indent=2)}
@@ -299,23 +362,24 @@ Already used names, do not repeat:
 
 Hard rules:
 1. Return exactly {chunk_count} scenes.
-2. Use ranks #{start_rank} down to #{end_rank}, in descending rank-number order.
+2. {order_instruction}
 3. Each scene must be one real public celebrity/person, not a group/couple/family/brand.
 4. Each scene must include title, voiceover, caption, image_prompt, statusText.
 5. Each scene must include countryCode and countryLabel matching the person's nationality/origin.
 6. Each scene must include metricLabel and metricValue for {topic.get("metric_label", "NET WORTH")}.
 7. For factual formats include factClaim, factValue, factUnit, factAsOf, and factContext in every scene.
 8. Use concise text suitable for a fast data-comparison card.
+9. {title_rule}
 
 Return JSON only:
 {{
   "scenes": [
     {{
-      "title": "#{start_rank} Celebrity Name",
+      {title_example}
       "voiceover": "one concise sentence",
       "caption": "short metric text",
       "image_prompt": "real editorial photo of Celebrity Name",
-      "statusText": "#{start_rank} | metric",
+      {status_example}
       "countryCode": "US",
       "countryLabel": "UNITED STATES",
       "metricLabel": "{topic.get("metric_label", "NET WORTH")}",
@@ -408,6 +472,7 @@ Return JSON only:
                     ),
                 }
             )
+        ContentAgent._validate_unique_scene_people(normalized_scenes)
 
         tags = raw_contract.get("youtube_tags")
         youtube_tags = [str(tag).strip() for tag in tags if str(tag).strip()] if isinstance(tags, list) else []
@@ -450,6 +515,28 @@ Return JSON only:
     def _extract_ranked_name(title: str) -> str:
         parts = title.strip().split(" ", 1)
         return parts[1].strip() if parts and parts[0].startswith("#") and len(parts) > 1 else title.strip()
+
+    @staticmethod
+    def _validate_unique_scene_people(scenes: list[dict[str, Any]]) -> None:
+        seen: dict[str, str] = {}
+        duplicates: list[str] = []
+        for scene in scenes:
+            name = ContentAgent._extract_ranked_name(str(scene.get("title", "")))
+            key = ContentAgent._normalized_person_key(name)
+            if not key:
+                continue
+            if key in seen and key not in duplicates:
+                duplicates.append(key)
+            seen[key] = name
+        if duplicates:
+            raise ValueError(
+                "duplicate celebrity scenes: "
+                + ", ".join(seen[key] for key in duplicates)
+            )
+
+    @staticmethod
+    def _normalized_person_key(name: str) -> str:
+        return re.sub(r"[^a-z0-9]+", " ", name.lower()).strip()
 
     @staticmethod
     def _is_group_or_band_name(name: str) -> bool:

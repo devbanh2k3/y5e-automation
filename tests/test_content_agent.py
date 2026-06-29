@@ -158,7 +158,7 @@ async def test_content_agent_generates_long_duration_contract_in_chunks(monkeypa
 
     async def fake_ai_json(prompt, system=None, **kwargs):
         prompts.append(prompt)
-        if "ranking scenes for ranks" not in prompt:
+        if "card scenes for ranks" not in prompt:
             return {
                 "title": "Top 58 Most-Awarded Living Musicians",
                 "hook": "Long ranking hook.",
@@ -208,6 +208,140 @@ async def test_content_agent_generates_long_duration_contract_in_chunks(monkeypa
     assert contract["scenes"][0]["title"].startswith("#58 ")
     assert contract["scenes"][-1]["title"].startswith("#1 ")
     assert len(prompts) == 5
+
+
+@pytest.mark.asyncio
+async def test_content_agent_long_fact_collection_uses_non_ranking_card_titles(monkeypatch):
+    agent = ContentAgent()
+    prompts = []
+
+    async def fake_ai_json(prompt, system=None, **kwargs):
+        prompts.append(prompt)
+        if "Celebrity data-comparison card scenes" not in prompt:
+            return {
+                "title": "Celebrity First Roles and Breakout Facts",
+                "hook": "Famous careers started in surprising places.",
+                "target_audience": "Celebrity trivia viewers.",
+                "youtube_title": "Celebrity First Roles and Breakout Facts",
+                "youtube_description": "Public career milestone facts.",
+                "youtube_tags": ["celebrity", "career facts"],
+                "thumbnail_prompt": "Celebrity career facts",
+                "scenes": [],
+            }
+
+        import re
+
+        match = re.search(r"cards (\d+) through (\d+)", prompt)
+        assert match is not None
+        start_card = int(match.group(1))
+        end_card = int(match.group(2))
+        return {
+            "scenes": [
+                {
+                    "title": f"Musician {card} first major role",
+                    "voiceover": f"Musician {card} had an early public career milestone.",
+                    "caption": f"FIRST ROLE: {2000 + card}",
+                    "image_prompt": f"real editorial photo of Musician {card}",
+                    "statusText": f"FACT {card} | first role",
+                    "countryCode": "US",
+                    "countryLabel": "UNITED STATES",
+                    "metricLabel": "FIRST ROLE",
+                    "metricValue": str(2000 + card),
+                    "sourceRequirement": "public biography",
+                    "factClaim": f"Musician {card} had a public first role in {2000 + card}.",
+                    "factValue": str(2000 + card),
+                    "factUnit": "YEAR",
+                    "factAsOf": "2026",
+                    "factContext": "public biography",
+                }
+                for card in range(start_card, end_card + 1)
+            ]
+        }
+
+    monkeypatch.setattr(agent, "ai_json", fake_ai_json)
+
+    contract = await agent.run(
+        niche="celebrity",
+        language="en",
+        selected_topic={
+            "title": "Celebrity First Roles and Breakout Facts",
+            "metric_label": "FIRST ROLE",
+            "content_format": "fact_collection",
+            "metric_scope": "public biography milestones",
+            "time_scope": "through 2026",
+        },
+        duration_target=300,
+    )
+
+    assert contract["contentFormat"] == "fact_collection"
+    assert len(contract["scenes"]) == 58
+    assert not any(scene["title"].startswith("#") for scene in contract["scenes"])
+    assert contract["scenes"][0]["statusText"].startswith("FACT 1")
+    assert "Use exactly 58 card scenes" in prompts[0]
+    assert "ranking scenes" not in prompts[0]
+
+
+@pytest.mark.asyncio
+async def test_content_agent_rejects_duplicate_people_across_long_chunks(monkeypatch):
+    agent = ContentAgent()
+
+    async def fake_ai_json(prompt, system=None, **kwargs):
+        if "Celebrity data-comparison card scenes" not in prompt:
+            return {
+                "title": "Celebrity Career Facts",
+                "hook": "Career facts.",
+                "target_audience": "Celebrity viewers.",
+                "youtube_title": "Celebrity Career Facts",
+                "youtube_description": "Career facts.",
+                "youtube_tags": ["celebrity"],
+                "thumbnail_prompt": "Celebrity facts",
+                "scenes": [],
+            }
+
+        import re
+
+        match = re.search(r"cards (\d+) through (\d+)", prompt)
+        assert match is not None
+        start_card = int(match.group(1))
+        end_card = int(match.group(2))
+        return {
+            "scenes": [
+                {
+                    "title": "Taylor Swift career milestone" if card in {1, 16} else f"Artist {card} career milestone",
+                    "voiceover": "A public career fact.",
+                    "caption": "FACT",
+                    "image_prompt": "real editorial photo",
+                    "statusText": f"FACT {card}",
+                    "countryCode": "US",
+                    "countryLabel": "UNITED STATES",
+                    "metricLabel": "CAREER",
+                    "metricValue": "FACT",
+                    "sourceRequirement": "public biography",
+                    "factClaim": "A public career fact.",
+                    "factValue": "FACT",
+                    "factUnit": "CAREER",
+                    "factAsOf": "2026",
+                    "factContext": "public biography",
+                }
+                for card in range(start_card, end_card + 1)
+            ]
+        }
+
+    monkeypatch.setattr(agent, "ai_json", fake_ai_json)
+
+    with pytest.raises(ValueError, match="duplicate celebrity scenes"):
+        await agent.run(
+            niche="celebrity",
+            language="en",
+            selected_topic={
+                "title": "Celebrity Career Facts",
+                "metric_label": "CAREER",
+                "content_format": "fact_collection",
+                "metric_scope": "public biography milestones",
+                "time_scope": "through 2026",
+            },
+            duration_target=300,
+        )
 
 
 def test_normalize_ai_celebrity_contract_rejects_too_few_duration_scenes():
