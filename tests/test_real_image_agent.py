@@ -1,4 +1,5 @@
 from io import BytesIO
+import asyncio
 
 from PIL import Image
 
@@ -38,6 +39,61 @@ def test_build_missing_item_contains_reviewable_reason():
     assert item["status"] == "missing_image"
     assert item["confidence"] == 0.0
     assert item["reject_reason"] == "no verified Wikimedia image found"
+
+
+@pytest.mark.asyncio
+async def test_run_for_content_contract_verifies_images_concurrently_in_scene_order(
+    monkeypatch,
+):
+    monkeypatch.setenv("REAL_IMAGE_CONCURRENCY", "3")
+    agent = RealImageAgent()
+    active = 0
+    max_active = 0
+
+    async def fake_find_verified_image(*, client, topic_id, scene_index, person_name, expected_title):
+        nonlocal active, max_active
+        active += 1
+        max_active = max(max_active, active)
+        await asyncio.sleep(0.01)
+        active -= 1
+        return {
+            "scene_index": scene_index,
+            "person_name": person_name,
+            "expected_title": expected_title,
+            "status": "verified",
+            "confidence": 0.9,
+            "local_path": f"/tmp/real_{scene_index}.webp",
+            "render_image_path": f"images/real_{scene_index}.webp",
+            "source_url": "https://commons.wikimedia.org/wiki/File:Example.jpg",
+            "image_url": "https://upload.wikimedia.org/wikipedia/commons/example.jpg",
+            "license": "CC BY-SA 4.0",
+            "attribution": "Example",
+            "quality_score": 0.8,
+            "quality_reason": "portrait",
+            "identity_confidence": 0.95,
+            "content_match_status": "passed",
+            "needs_human_review": False,
+            "source_adapter": "test",
+            "reject_reason": "",
+        }
+
+    monkeypatch.setattr(agent, "_find_verified_image", fake_find_verified_image)
+    contract = {
+        "scenes": [
+            {"title": f"#{index + 1} Person {index}"}
+            for index in range(8)
+        ]
+    }
+
+    result = await agent.run_for_content_contract(
+        topic_id=123,
+        content_contract=contract,
+        strict=True,
+    )
+
+    assert max_active == 3
+    assert result["status"] == "verified"
+    assert [item["scene_index"] for item in result["items"]] == list(range(8))
 
 
 def test_wikimedia_user_agent_includes_contact_and_project_url():
@@ -320,7 +376,7 @@ async def test_run_for_content_contract_returns_verified_wikimedia_contract(monk
         ]
     }
 
-    async def fake_find_verified_image(*, topic_id, scene_index, person_name, expected_title):
+    async def fake_find_verified_image(*, client, topic_id, scene_index, person_name, expected_title):
         local_path = tmp_path / "topics" / str(topic_id) / "images" / f"real_{scene_index}.webp"
         local_path.parent.mkdir(parents=True)
         local_path.write_bytes(b"fake image")

@@ -98,7 +98,37 @@ async def test_create_command_accepts_duration_option(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_create_command_rejects_invalid_duration(monkeypatch):
+async def test_create_command_accepts_longer_duration(monkeypatch):
+    from services import telegram_remote
+
+    captured = {}
+
+    async def fake_get_authorized_user(user_id):
+        return {"telegram_user_id": user_id, "username": "alice", "role": "producer", "is_active": True}
+
+    async def fake_create_production_batch(**kwargs):
+        captured.update(kwargs)
+        return {
+            "batch_id": "batch-1",
+            "requested_count": kwargs["requested_count"],
+            "target_duration": kwargs["target_duration"],
+        }
+
+    monkeypatch.setattr(telegram_remote.production_tasks, "get_authorized_user", fake_get_authorized_user)
+    monkeypatch.setattr(telegram_remote.production_tasks, "create_production_batch", fake_create_production_batch)
+
+    response = await telegram_remote.handle_telegram_command(
+        telegram_user_id=111,
+        username="alice",
+        text="/create 2 celebrity en flag_hero --duration 300",
+    )
+
+    assert captured["target_duration"] == 300
+    assert "300 giây/video" in response
+
+
+@pytest.mark.asyncio
+async def test_create_command_rejects_too_large_duration(monkeypatch):
     from services import telegram_remote
 
     async def fake_get_authorized_user(user_id):
@@ -113,10 +143,10 @@ async def test_create_command_rejects_invalid_duration(monkeypatch):
     response = await telegram_remote.handle_telegram_command(
         telegram_user_id=111,
         username="alice",
-        text="/create 2 celebrity en flag_hero --duration 300",
+        text="/create 2 celebrity en flag_hero --duration 601",
     )
 
-    assert "between 15 and 180 seconds" in response.lower()
+    assert "between 15 and 600 seconds" in response.lower()
 
 
 @pytest.mark.asyncio

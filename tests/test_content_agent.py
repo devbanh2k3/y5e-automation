@@ -33,7 +33,7 @@ def awards_contract_payload(count=10):
 
 @pytest.mark.parametrize(
     ("duration_target", "expected_scene_count"),
-    [(40, 6), (60, 10), (90, 16), (120, 22), (300, 24)],
+    [(40, 6), (60, 10), (90, 16), (120, 22), (300, 58), (600, 80)],
 )
 def test_desired_scene_count_for_duration(duration_target, expected_scene_count):
     assert ContentAgent.desired_scene_count_for_duration(duration_target) == expected_scene_count

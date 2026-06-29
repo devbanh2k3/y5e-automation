@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import html
 import os
 import re
@@ -31,6 +32,8 @@ _ALLOWED_LICENSE_PARTS = (
 _HTTP_TIMEOUT = httpx.Timeout(connect=10.0, read=30.0, write=10.0, pool=10.0)
 _MIN_IMAGE_WIDTH = 200
 _MIN_IMAGE_HEIGHT = 200
+_DEFAULT_REAL_IMAGE_CONCURRENCY = 4
+_MAX_REAL_IMAGE_CONCURRENCY = 8
 _QUERY_HINTS_BY_PERSON = {
     "drake": ("Drake rapper", "Aubrey Graham Drake", "Drake musician"),
     "jay-z": ("Jay-Z rapper", "Jay Z rapper", "Shawn Carter Jay-Z"),
@@ -135,35 +138,20 @@ class RealImageAgent(BaseAgent):
         if not isinstance(scenes, list) or not scenes:
             raise ValueError("content_contract.scenes must contain at least one scene")
 
-        items: list[dict[str, Any]] = []
-        for scene_index, scene in enumerate(scenes):
-            expected_title = str(scene.get("title", "")).strip()
-            person_name = self.extract_person_name(expected_title)
-            if not person_name:
-                items.append(
-                    self.build_missing_item(
-                        scene_index=scene_index,
-                        person_name="",
-                        expected_title=expected_title,
-                        reason="scene title does not contain a person name",
-                    )
-                )
-                continue
+        semaphore = asyncio.Semaphore(self.real_image_concurrency())
 
-            item = await self._find_verified_image(
-                topic_id=topic_id,
-                scene_index=scene_index,
-                person_name=person_name,
-                expected_title=expected_title,
-            )
-            if item is None:
-                item = self.build_missing_item(
+        async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT, follow_redirects=True) as client:
+            tasks = [
+                self._verify_scene_image(
+                    client=client,
+                    semaphore=semaphore,
+                    topic_id=topic_id,
                     scene_index=scene_index,
-                    person_name=person_name,
-                    expected_title=expected_title,
-                    reason="no verified Wikimedia image found",
+                    scene=scene,
                 )
-            items.append(item)
+                for scene_index, scene in enumerate(scenes)
+            ]
+            items = sorted(await asyncio.gather(*tasks), key=lambda item: item["scene_index"])
 
         contract = build_image_verification_contract_v1(topic_id=topic_id, items=items)
         validate_image_verification_contract_v1(contract)
@@ -176,6 +164,51 @@ class RealImageAgent(BaseAgent):
             raise ValueError(f"missing verified real images: {', '.join(missing)}")
         return contract
 
+    @staticmethod
+    def real_image_concurrency() -> int:
+        """Return bounded per-video image lookup concurrency."""
+        try:
+            value = int(os.getenv("REAL_IMAGE_CONCURRENCY", str(_DEFAULT_REAL_IMAGE_CONCURRENCY)))
+        except ValueError:
+            value = _DEFAULT_REAL_IMAGE_CONCURRENCY
+        return max(1, min(_MAX_REAL_IMAGE_CONCURRENCY, value))
+
+    async def _verify_scene_image(
+        self,
+        *,
+        client: httpx.AsyncClient,
+        semaphore: asyncio.Semaphore,
+        topic_id: int,
+        scene_index: int,
+        scene: dict[str, Any],
+    ) -> dict[str, Any]:
+        expected_title = str(scene.get("title", "")).strip()
+        person_name = self.extract_person_name(expected_title)
+        if not person_name:
+            return self.build_missing_item(
+                scene_index=scene_index,
+                person_name="",
+                expected_title=expected_title,
+                reason="scene title does not contain a person name",
+            )
+
+        async with semaphore:
+            item = await self._find_verified_image(
+                client=client,
+                topic_id=topic_id,
+                scene_index=scene_index,
+                person_name=person_name,
+                expected_title=expected_title,
+            )
+        if item is None:
+            return self.build_missing_item(
+                scene_index=scene_index,
+                person_name=person_name,
+                expected_title=expected_title,
+                reason="no verified Wikimedia image found",
+            )
+        return item
+
     async def _find_verified_image(
         self,
         *,
@@ -183,40 +216,50 @@ class RealImageAgent(BaseAgent):
         scene_index: int,
         person_name: str,
         expected_title: str,
+        client: httpx.AsyncClient | None = None,
     ) -> dict[str, Any] | None:
-        async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT, follow_redirects=True) as client:
-            for search_name in self.person_search_names(person_name):
-                result = await self._process_direct_candidates(
-                    candidates=await self._wikidata_p18_candidates(client, search_name),
+        if client is None:
+            async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT, follow_redirects=True) as owned_client:
+                return await self._find_verified_image(
+                    client=owned_client,
                     topic_id=topic_id,
                     scene_index=scene_index,
-                    person_name=search_name,
+                    person_name=person_name,
                     expected_title=expected_title,
                 )
-                if result is not None:
-                    return result
-                result = await self._process_direct_candidates(
-                    candidates=await self._wikipedia_pageimage_candidates(client, search_name),
-                    topic_id=topic_id,
-                    scene_index=scene_index,
-                    person_name=search_name,
-                    expected_title=expected_title,
-                )
-                if result is not None:
-                    return result
 
-            for search_name in self.person_search_names(person_name):
-                for search_query in self.wikimedia_search_queries(search_name):
-                    result = await self._find_commons_search_image(
-                        client=client,
-                        topic_id=topic_id,
-                        scene_index=scene_index,
-                        person_name=search_name,
-                        expected_title=expected_title,
-                        search_query=search_query,
-                    )
-                    if result is not None:
-                        return result
+        for search_name in self.person_search_names(person_name):
+            result = await self._process_direct_candidates(
+                candidates=await self._wikidata_p18_candidates(client, search_name),
+                topic_id=topic_id,
+                scene_index=scene_index,
+                person_name=search_name,
+                expected_title=expected_title,
+            )
+            if result is not None:
+                return result
+            result = await self._process_direct_candidates(
+                candidates=await self._wikipedia_pageimage_candidates(client, search_name),
+                topic_id=topic_id,
+                scene_index=scene_index,
+                person_name=search_name,
+                expected_title=expected_title,
+            )
+            if result is not None:
+                return result
+
+        for search_name in self.person_search_names(person_name):
+            for search_query in self.wikimedia_search_queries(search_name):
+                result = await self._find_commons_search_image(
+                    client=client,
+                    topic_id=topic_id,
+                    scene_index=scene_index,
+                    person_name=search_name,
+                    expected_title=expected_title,
+                    search_query=search_query,
+                )
+                if result is not None:
+                    return result
         return None
 
     async def _process_direct_candidates(
