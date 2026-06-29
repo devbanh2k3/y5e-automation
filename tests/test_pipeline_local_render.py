@@ -728,3 +728,30 @@ async def test_render_local_video_keeps_timeline_composition_for_card_layouts(mo
         (public_dir / "images" / "local-logo.svg").unlink(missing_ok=True)
         (public_dir / "images" / "local-placeholder.svg").unlink(missing_ok=True)
         get_settings.cache_clear()
+
+
+def test_apply_render_media_defaults_selects_random_background_music(monkeypatch, tmp_path):
+    project_root = Path(__file__).resolve().parents[1]
+    music_dir = project_root / "assets" / "audio" / "bgm"
+    track_a = music_dir / "track_a.mp3"
+    track_b = music_dir / "track_b.mp3"
+    track_a.parent.mkdir(parents=True, exist_ok=True)
+    track_a.write_bytes(b"track-a")
+    track_b.write_bytes(b"track-b")
+    public_dir = tmp_path / "public"
+    video_data = {
+        "musicPath": "",
+        "logoPath": "images/local-logo.svg",
+    }
+
+    monkeypatch.setattr("agents.pipeline.random.choice", lambda tracks: track_b)
+
+    try:
+        Pipeline._apply_render_media_defaults(video_data=video_data, public_dir=public_dir)
+
+        assert video_data["logoPath"] == ""
+        assert video_data["musicPath"] == "audio/track_b.mp3"
+        assert (public_dir / "audio" / "track_b.mp3").read_bytes() == b"track-b"
+    finally:
+        track_a.unlink(missing_ok=True)
+        track_b.unlink(missing_ok=True)

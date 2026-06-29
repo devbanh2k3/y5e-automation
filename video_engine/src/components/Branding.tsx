@@ -1,5 +1,5 @@
 import React from "react";
-import { useCurrentFrame, interpolate, Easing, Img, staticFile } from "remotion";
+import { useCurrentFrame, interpolate, Easing } from "remotion";
 
 interface BrandingProps {
   logoPath: string;
@@ -9,8 +9,7 @@ interface BrandingProps {
 
 /**
  * Branding elements for different video phases.
- * - Intro: 3-second logo animation (scale up + fade in)
- * - Main: Small logo watermark bottom-right (10% opacity)
+ * - Intro/Main: no channel logo or watermark
  * - Outro: Subscribe CTA card (5 seconds)
  */
 export const Branding: React.FC<BrandingProps> = ({
@@ -20,111 +19,18 @@ export const Branding: React.FC<BrandingProps> = ({
   const frame = useCurrentFrame();
 
   if (phase === "intro") {
-    return <IntroLogo logoPath={logoPath} frame={frame} />;
+    return null;
   }
 
   if (phase === "main") {
-    return <WatermarkLogo logoPath={logoPath} />;
+    return null;
   }
 
-  return <OutroCTA logoPath={logoPath} frame={frame} />;
+  return <OutroCTA frame={frame} />;
 };
 
-/* ─── Intro: 90 frames (3s) logo reveal ─── */
-function IntroLogo({ logoPath, frame }: { logoPath: string; frame: number }) {
-  const opacity = interpolate(frame, [0, 20], [0, 1], {
-    extrapolateLeft: "clamp",
-    extrapolateRight: "clamp",
-    easing: Easing.out(Easing.cubic),
-  });
-
-  const scale = interpolate(frame, [0, 25], [0.6, 1], {
-    extrapolateLeft: "clamp",
-    extrapolateRight: "clamp",
-    easing: Easing.out(Easing.back(1.6)),
-  });
-
-  // Fade out near the end of intro
-  const fadeOut = interpolate(frame, [70, 90], [1, 0], {
-    extrapolateLeft: "clamp",
-    extrapolateRight: "clamp",
-  });
-
-  return (
-    <div
-      style={{
-        position: "absolute",
-        inset: 0,
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        justifyContent: "center",
-        backgroundColor: "#0a0a0a",
-        opacity: opacity * fadeOut,
-        zIndex: 100,
-      }}
-    >
-      <div
-        style={{
-          transform: `scale(${Math.round(scale * 1000) / 1000})`,
-          backfaceVisibility: "hidden",
-        }}
-      >
-        <Img
-          src={staticFile(logoPath)}
-          style={{
-            width: 240,
-            height: 240,
-            objectFit: "contain",
-          }}
-        />
-      </div>
-      <div
-        style={{
-          marginTop: 30,
-          fontSize: 28,
-          fontWeight: 700,
-          color: "rgba(255,255,255,0.7)",
-          letterSpacing: "0.15em",
-          textTransform: "uppercase",
-          opacity: interpolate(frame, [15, 35], [0, 1], {
-            extrapolateLeft: "clamp",
-            extrapolateRight: "clamp",
-          }),
-        }}
-      >
-        PRESENTS
-      </div>
-    </div>
-  );
-}
-
-/* ─── Main: watermark ─── */
-function WatermarkLogo({ logoPath }: { logoPath: string }) {
-  return (
-    <div
-      style={{
-        position: "absolute",
-        bottom: 30,
-        right: 30,
-        opacity: 0.1,
-        zIndex: 10,
-      }}
-    >
-      <Img
-        src={staticFile(logoPath)}
-        style={{
-          width: 80,
-          height: 80,
-          objectFit: "contain",
-        }}
-      />
-    </div>
-  );
-}
-
 /* ─── Outro: 150 frames (5s) subscribe CTA ─── */
-function OutroCTA({ logoPath, frame }: { logoPath: string; frame: number }) {
+function OutroCTA({ frame }: { frame: number }) {
   const cardOpacity = interpolate(frame, [0, 20], [0, 1], {
     extrapolateLeft: "clamp",
     extrapolateRight: "clamp",
@@ -179,11 +85,6 @@ function OutroCTA({ logoPath, frame }: { logoPath: string; frame: number }) {
           backfaceVisibility: "hidden",
         }}
       >
-        <Img
-          src={staticFile(logoPath)}
-          style={{ width: 120, height: 120, objectFit: "contain" }}
-        />
-
         <div
           style={{
             fontSize: 52,

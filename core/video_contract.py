@@ -262,7 +262,7 @@ def build_video_data_from_content_contract(payload: dict[str, Any]) -> dict[str,
             "alert": "",
             "reveal": "",
         },
-        "logoPath": "images/local-logo.svg",
+        "logoPath": "",
         "holdDurationFrames": DEFAULT_HOLD_DURATION_FRAMES,
         "transitionDurationFrames": DEFAULT_TRANSITION_DURATION_FRAMES,
         "content_contract": payload,
@@ -407,7 +407,7 @@ def build_local_render_video_data(
             "alert": "",
             "reveal": "",
         },
-        "logoPath": "images/local-logo.svg",
+        "logoPath": "",
         "holdDurationFrames": 120,
         "transitionDurationFrames": 15,
     }
@@ -440,6 +440,6 @@ def validate_video_data(payload: dict[str, Any]) -> None:
 
     payload.setdefault("musicPath", "")
     payload.setdefault("sfxPaths", {"transition": "", "alert": "", "reveal": ""})
-    payload.setdefault("logoPath", "images/local-logo.svg")
+    payload.setdefault("logoPath", "")
     payload.setdefault("holdDurationFrames", 120)
     payload.setdefault("transitionDurationFrames", 15)

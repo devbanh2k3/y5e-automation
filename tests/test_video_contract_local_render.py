@@ -22,7 +22,7 @@ def test_build_local_render_video_data_returns_valid_payload():
     assert payload["language"] == "vi"
     assert payload["musicPath"] == ""
     assert payload["sfxPaths"] == {"transition": "", "alert": "", "reveal": ""}
-    assert payload["logoPath"] == "images/local-logo.svg"
+    assert payload["logoPath"] == ""
     assert payload["holdDurationFrames"] == 120
     assert payload["transitionDurationFrames"] == 15
     assert len(payload["cards"]) >= 3

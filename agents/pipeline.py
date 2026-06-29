@@ -12,6 +12,7 @@ import asyncio
 import json
 import logging
 import os
+import random
 import shutil
 import traceback
 from datetime import datetime, timezone
@@ -440,7 +441,9 @@ class Pipeline:
         images_dir.mkdir(parents=True, exist_ok=True)
 
         public_data_path = public_dir / "video_data.json"
+        self._apply_render_media_defaults(video_data=video_data, public_dir=public_dir)
         public_data_path.write_text(json.dumps(video_data, ensure_ascii=False, indent=2))
+        data_path.write_text(json.dumps(video_data, ensure_ascii=False, indent=2))
         self._copy_render_images_to_public(
             topic_dir=topic_dir,
             public_dir=public_dir,
@@ -457,20 +460,6 @@ class Pipeline:
                         '<rect x="48" y="48" width="1104" height="704" fill="#20242c" stroke="#e52d27" stroke-width="16"/>',
                         '<text x="600" y="370" text-anchor="middle" fill="#ffffff" font-family="Arial, sans-serif" font-size="72" font-weight="700">LOCAL RENDER</text>',
                         '<text x="600" y="460" text-anchor="middle" fill="#e52d27" font-family="Arial, sans-serif" font-size="40" font-weight="700">Y5E AUTOMATION</text>',
-                        "</svg>",
-                    ]
-                )
-            )
-
-        logo_path = images_dir / "local-logo.svg"
-        if not logo_path.exists():
-            logo_path.write_text(
-                "\n".join(
-                    [
-                        '<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">',
-                        '<rect width="512" height="512" rx="96" fill="#e52d27"/>',
-                        '<path d="M192 150v212l168-106z" fill="#ffffff"/>',
-                        '<text x="256" y="438" text-anchor="middle" fill="#ffffff" font-family="Arial, sans-serif" font-size="52" font-weight="900">Y5E</text>',
                         "</svg>",
                     ]
                 )
@@ -529,6 +518,38 @@ class Pipeline:
             "duration_sec": 0,
             "status": "rendered",
         }
+
+    @staticmethod
+    def _apply_render_media_defaults(*, video_data: dict[str, Any], public_dir: Path) -> None:
+        """Apply neutral branding and random background music for local renders."""
+        video_data["logoPath"] = ""
+        if str(video_data.get("musicPath", "")).strip():
+            return
+
+        project_root = Path(__file__).resolve().parent.parent
+        music_roots = [
+            project_root / "assets" / "audio" / "bgm",
+            project_root / "assets" / "audio",
+        ]
+        supported_suffixes = {".mp3", ".wav", ".m4a", ".aac", ".ogg"}
+        tracks: list[Path] = []
+        for music_root in music_roots:
+            if not music_root.is_dir():
+                continue
+            tracks.extend(
+                path
+                for path in music_root.rglob("*")
+                if path.is_file() and path.suffix.lower() in supported_suffixes
+            )
+        if not tracks:
+            return
+
+        selected = random.choice(sorted(set(tracks), key=str))
+        audio_dir = public_dir / "audio"
+        audio_dir.mkdir(parents=True, exist_ok=True)
+        destination = audio_dir / selected.name
+        shutil.copy2(selected, destination)
+        video_data["musicPath"] = f"audio/{destination.name}"
 
     @staticmethod
     async def _apply_export_hygiene(*, input_path: Path, output_path: Path) -> None:
