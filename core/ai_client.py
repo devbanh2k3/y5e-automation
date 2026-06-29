@@ -13,6 +13,7 @@ from typing import Any
 
 import httpx
 
+from core.ai_resilience import extract_json_object
 from core.config import get_settings
 from core.cost_tracker import log_api_call
 
@@ -65,30 +66,7 @@ def _extract_json(text: str) -> dict[str, Any]:
     Raises:
         ValueError: If no valid JSON could be extracted.
     """
-    # Try direct parse first
-    text = text.strip()
-    try:
-        return json.loads(text)
-    except json.JSONDecodeError:
-        pass
-
-    # Try to find JSON inside markdown code fences
-    match = re.search(r"```(?:json)?\s*\n?(.*?)```", text, re.DOTALL)
-    if match:
-        try:
-            return json.loads(match.group(1).strip())
-        except json.JSONDecodeError:
-            pass
-
-    # Try to find the first { ... } block
-    match = re.search(r"\{.*\}", text, re.DOTALL)
-    if match:
-        try:
-            return json.loads(match.group(0))
-        except json.JSONDecodeError:
-            pass
-
-    raise ValueError(f"Could not extract valid JSON from response: {text[:200]}")
+    return extract_json_object(text)
 
 
 def parse_sse_chat_completion(text: str) -> tuple[str, int]:
