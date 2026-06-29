@@ -318,6 +318,38 @@ async def test_build_resumes_partial_checkpoint_and_writes_only_missing_subject(
 
 
 @pytest.mark.asyncio
+async def test_ai_retry_budgets_are_forwarded_to_safe_json_call(monkeypatch):
+    from core.ai_resilience import AIJsonResult
+
+    captured = {}
+    orchestrator = CelebrityContentOrchestrator(
+        ai_transport_attempts=5,
+        ai_json_repair_attempts=4,
+    )
+
+    async def fake_safe_generate_json(generate, **kwargs):
+        captured.update(kwargs)
+        return AIJsonResult(value={"candidates": []}, attempts=1, json_repairs=0)
+
+    monkeypatch.setattr(
+        "agents.celebrity_content_orchestrator.safe_generate_json",
+        fake_safe_generate_json,
+    )
+
+    await orchestrator._call_json(
+        operation="entity_plan",
+        topic=topic(),
+        language="en",
+        subject="celebrity",
+        requested_count=1,
+        blacklist=[],
+    )
+
+    assert captured["transport_attempts"] == 5
+    assert captured["json_repair_attempts"] == 4
+
+
+@pytest.mark.asyncio
 async def test_rejected_fact_replaces_only_failed_card(monkeypatch):
     orchestrator = CelebrityContentOrchestrator(
         reserve_ratio=0.5,

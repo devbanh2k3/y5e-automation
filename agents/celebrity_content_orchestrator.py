@@ -82,6 +82,8 @@ class CelebrityContentOrchestrator(BaseAgent):
         chunk_size: int = 12,
         minimum_ratio: float = 0.90,
         storage_dir: Path | None = None,
+        ai_transport_attempts: int = 3,
+        ai_json_repair_attempts: int = 2,
     ) -> None:
         super().__init__(name="celebrity_content_orchestrator")
         self.reserve_ratio = max(0.0, reserve_ratio)
@@ -93,6 +95,8 @@ class CelebrityContentOrchestrator(BaseAgent):
         self.chunk_size = max(1, chunk_size)
         self.minimum_ratio = min(1.0, max(0.0, minimum_ratio))
         self.storage_dir = storage_dir or get_settings().storage_dir
+        self.ai_transport_attempts = max(1, ai_transport_attempts)
+        self.ai_json_repair_attempts = max(0, ai_json_repair_attempts)
 
     async def run(self, **kwargs: Any) -> dict[str, Any]:
         return await self.build(**kwargs)
@@ -521,6 +525,8 @@ class CelebrityContentOrchestrator(BaseAgent):
                 "You create factual celebrity comparison data. Return one valid JSON "
                 "object only. Never add people outside an explicitly locked list."
             ),
+            transport_attempts=self.ai_transport_attempts,
+            json_repair_attempts=self.ai_json_repair_attempts,
         )
         return result.value
 

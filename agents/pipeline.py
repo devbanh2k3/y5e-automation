@@ -496,6 +496,8 @@ class Pipeline:
             fact_attempts=settings.card_fact_repair_attempts,
             replacement_attempts=settings.card_replacement_attempts,
             minimum_ratio=settings.card_minimum_ratio,
+            ai_transport_attempts=settings.ai_transport_attempts,
+            ai_json_repair_attempts=settings.ai_json_repair_attempts,
         )
         return await orchestrator.verify_and_recover(
             {**clean_contract, "inventory": inventory, "run_id": run_id},

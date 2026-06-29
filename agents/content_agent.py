@@ -273,6 +273,8 @@ Return JSON only with this shape:
                 fact_attempts=settings.card_fact_repair_attempts,
                 replacement_attempts=settings.card_replacement_attempts,
                 minimum_ratio=settings.card_minimum_ratio,
+                ai_transport_attempts=settings.ai_transport_attempts,
+                ai_json_repair_attempts=settings.ai_json_repair_attempts,
             ).build(
                 topic=topic,
                 target_cards=scene_count,
