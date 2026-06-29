@@ -16,7 +16,12 @@ from core.card_production import (
     ProductionInventory,
     normalize_person_key,
 )
-from core.video_contract import canonical_country_label, normalize_country_code
+from core.fact_verification import MIN_FACT_CONFIDENCE
+from core.video_contract import (
+    build_image_verification_contract_v1,
+    canonical_country_label,
+    normalize_country_code,
+)
 
 _GROUP_WORDS = {
     "band",
@@ -67,6 +72,8 @@ class CelebrityContentOrchestrator(BaseAgent):
         minimum_reserve: int = 10,
         planner_attempts: int = 4,
         content_attempts: int = 3,
+        fact_attempts: int = 2,
+        replacement_attempts: int = 3,
         chunk_size: int = 12,
         minimum_ratio: float = 0.90,
     ) -> None:
@@ -75,6 +82,8 @@ class CelebrityContentOrchestrator(BaseAgent):
         self.minimum_reserve = max(0, minimum_reserve)
         self.planner_attempts = max(1, planner_attempts)
         self.content_attempts = max(1, content_attempts)
+        self.fact_attempts = max(1, fact_attempts)
+        self.replacement_attempts = max(0, replacement_attempts)
         self.chunk_size = max(1, chunk_size)
         self.minimum_ratio = min(1.0, max(0.0, minimum_ratio))
 
@@ -132,6 +141,167 @@ class CelebrityContentOrchestrator(BaseAgent):
         ]
         result["inventory"] = inventory
         return result
+
+    async def verify_and_recover(
+        self,
+        planned: dict[str, Any],
+        *,
+        topic_id: int,
+        topic: dict[str, Any],
+        language: str,
+        fact_agent: Any,
+        image_agent: Any,
+    ) -> dict[str, Any]:
+        """Verify cards independently and replace or skip exhausted slots."""
+
+        inventory = planned.get("inventory")
+        if not isinstance(inventory, ProductionInventory):
+            raise TypeError("planned content requires a ProductionInventory")
+        metadata_contract = {
+            key: value
+            for key, value in planned.items()
+            if key not in {"inventory", "scenes"}
+        }
+
+        repaired_count = 0
+        for card in inventory.cards.values():
+            replacements_for_slot = 0
+            while True:
+                if card.scene is None:
+                    scene_map = await self._write_locked_scenes(
+                        candidates=[card.candidate],
+                        topic=topic,
+                        metadata_contract=metadata_contract,
+                        language=language,
+                    )
+                    card.scene = scene_map.get(normalize_person_key(card.candidate.name))
+                if card.scene is None:
+                    failure = "content_missing"
+                else:
+                    failure = await self._verify_card_fact(
+                        card=card,
+                        metadata_contract=metadata_contract,
+                        fact_agent=fact_agent,
+                    )
+                    if failure is None:
+                        failure = await self._verify_card_image(
+                            card=card,
+                            topic_id=topic_id,
+                            image_agent=image_agent,
+                        )
+                if failure is None:
+                    card.state = CardState.READY
+                    break
+
+                if replacements_for_slot < self.replacement_attempts and inventory.reserve:
+                    inventory.replace(card.card_id, reason=failure)
+                    replacements_for_slot += 1
+                    repaired_count += 1
+                    continue
+                inventory.skip(card.card_id, reason=failure)
+                break
+
+        content_format = str(planned.get("contentFormat") or "ranking")
+        final_scenes = inventory.finalize_scenes(content_format=content_format)
+        ready_cards = inventory.ready_cards
+        fact_items: list[dict[str, Any]] = []
+        image_items: list[dict[str, Any]] = []
+        for scene_index, (card, final_scene) in enumerate(zip(ready_cards, final_scenes)):
+            card.scene = final_scene
+            fact_item = dict(card.fact_item or {})
+            fact_item["scene_index"] = scene_index
+            fact_item["person_name"] = extract_scene_person_name(final_scene)
+            fact_items.append(fact_item)
+            image_item = dict(card.image_item or {})
+            image_item["scene_index"] = scene_index
+            image_item["person_name"] = extract_scene_person_name(final_scene)
+            image_item["expected_title"] = str(final_scene.get("title", ""))
+            image_items.append(image_item)
+
+        content_contract = dict(metadata_contract)
+        content_contract["scenes"] = final_scenes
+        fact_contract = fact_agent.build_verified_contract(fact_items)
+        image_contract = build_image_verification_contract_v1(
+            topic_id=topic_id,
+            items=image_items,
+        )
+        return {
+            "content_contract": content_contract,
+            "fact_verification_contract": fact_contract,
+            "image_verification_contract": image_contract,
+            "inventory": inventory,
+            "production_summary": {
+                "target_cards": inventory.target_cards,
+                "minimum_cards": inventory.minimum_cards,
+                "final_cards": len(final_scenes),
+                "repaired_cards": repaired_count,
+                "replaced_cards": inventory.replaced_count,
+                "skipped_cards": inventory.skipped_count,
+                "degraded": len(final_scenes) < inventory.target_cards,
+            },
+        }
+
+    async def _verify_card_fact(
+        self,
+        *,
+        card: Any,
+        metadata_contract: dict[str, Any],
+        fact_agent: Any,
+    ) -> str | None:
+        for attempt in range(1, self.fact_attempts + 1):
+            card.state = CardState.FACT_CHECKING
+            card.attempts["fact"] = attempt
+            try:
+                items = await fact_agent.verify_scenes(
+                    content_contract={**metadata_contract, "scenes": [card.scene]}
+                )
+            except Exception as exc:
+                card.last_error = type(exc).__name__
+                continue
+            if not items:
+                card.last_error = "fact_missing"
+                continue
+            item = dict(items[0])
+            confidence = item.get("confidence")
+            if (
+                item.get("status") in {"verified", "corrected"}
+                and isinstance(confidence, int | float)
+                and confidence >= MIN_FACT_CONFIDENCE
+            ):
+                card.fact_item = item
+                if item.get("status") == "corrected":
+                    value = str(item.get("verified_value", "")).strip()
+                    if value and card.scene is not None:
+                        card.scene["factValue"] = value
+                        card.scene["metricValue"] = value
+                        card.scene["caption"] = value
+                card.state = CardState.FACT_READY
+                return None
+            card.last_error = "fact_rejected"
+        return card.last_error or "fact_rejected"
+
+    @staticmethod
+    async def _verify_card_image(
+        *,
+        card: Any,
+        topic_id: int,
+        image_agent: Any,
+    ) -> str | None:
+        card.state = CardState.IMAGE_SEARCHING
+        try:
+            item = await image_agent.verify_scene(
+                topic_id=topic_id,
+                scene_index=0,
+                scene=card.scene,
+            )
+        except Exception as exc:
+            card.last_error = type(exc).__name__
+            return "image_error"
+        if item.get("status") != "verified":
+            card.last_error = str(item.get("reject_reason") or "image_missing")
+            return "image_missing"
+        card.image_item = dict(item)
+        return None
 
     async def _plan_candidates(
         self,
