@@ -39,6 +39,11 @@ def test_resolve_duration_target_allows_explicit_override():
         ),
         (RuntimeError("image verification failed: wrong person"), "image_failed"),
         (RuntimeError("remotion render failed with exit code 1"), "render_failed"),
+        (ValueError("Could not extract valid JSON from response: {"), "ai_output_invalid"),
+        (
+            ValueError("AI celebrity contract requires at least 24 scenes, got 10"),
+            "ai_output_invalid",
+        ),
         (TopicSelectionError("could not select diverse topics"), "topic_selection_failed"),
         (RuntimeError("anything else"), "unknown"),
     ],
@@ -252,6 +257,72 @@ async def test_produce_batch_v2_retries_repairable_contract_once(monkeypatch):
     assert attempts == ["reservation-1", "reservation-1"]
     assert summary["failures"][0]["classification"] == "repairable_contract"
     assert summary["failures"][0]["recovery_action"] == "retry_same_topic"
+
+
+@pytest.mark.asyncio
+async def test_produce_batch_replaces_invalid_ai_output(monkeypatch):
+    from scripts import batch_produce_celebrity_videos as batch_script
+
+    failed = selected_topic(1)
+    replacement = selected_topic(2)
+    strategy = FakeStrategy([[failed], [replacement]])
+    attempts = []
+
+    async def fake_produce(**kwargs):
+        selected_topic = kwargs["selected_topic"]
+        attempts.append(selected_topic["reservation_id"])
+        if selected_topic["reservation_id"] == "reservation-1":
+            raise ValueError("AI celebrity contract requires at least 24 scenes, got 10")
+        return produced_result(len(attempts), selected_topic)
+
+    monkeypatch.setattr(batch_script, "produce", fake_produce)
+
+    summary = await batch_script.produce_batch(
+        count=1,
+        language="en",
+        card_layout="flag_hero",
+        write_files=True,
+        stop_on_error=False,
+        strategy=strategy,
+        max_attempts=3,
+    )
+
+    assert summary["success_count"] == 1
+    assert summary["replacement_count"] == 1
+    assert attempts == ["reservation-1", "reservation-2"]
+    assert summary["failures"][0]["classification"] == "ai_output_invalid"
+    assert summary["failures"][0]["recovery_action"] == "request_replacement"
+
+
+@pytest.mark.asyncio
+async def test_produce_batch_retries_initial_topic_reservation_race(monkeypatch):
+    from scripts import batch_produce_celebrity_videos as batch_script
+
+    topic = selected_topic(1)
+    strategy = FakeStrategy(
+        [TopicSelectionError("topic reservations changed concurrently"), [topic]]
+    )
+
+    async def fake_produce(**kwargs):
+        return produced_result(1, kwargs["selected_topic"])
+
+    monkeypatch.setattr(batch_script, "produce", fake_produce)
+
+    summary = await batch_script.produce_batch(
+        count=1,
+        language="en",
+        card_layout="flag_hero",
+        write_files=True,
+        stop_on_error=False,
+        strategy=strategy,
+        max_attempts=3,
+    )
+
+    assert summary["success_count"] == 1
+    assert summary["failure_count"] == 1
+    assert summary["failures"][0]["classification"] == "topic_selection_race"
+    assert summary["failures"][0]["recovery_action"] == "retry_topic_selection"
+    assert len(strategy.calls) == 2
 
 
 @pytest.mark.asyncio

@@ -43,6 +43,8 @@ def resolve_duration_target(duration_profile: str, target_duration: int | None) 
 def classify_batch_failure(exc: Exception) -> str:
     message = str(exc).lower()
     if isinstance(exc, TopicSelectionError):
+        if "reservations changed concurrently" in message:
+            return "topic_selection_race"
         return "topic_selection_failed"
     if isinstance(exc, FactVerificationError):
         return "fact_rejected"
@@ -61,6 +63,16 @@ def classify_batch_failure(exc: Exception) -> str:
         ):
             return "repairable_contract"
         return "unknown"
+    if any(
+        marker in message
+        for marker in (
+            "could not extract valid json",
+            "requires at least",
+            "ai celebrity contract",
+            "ai topic candidates",
+        )
+    ):
+        return "ai_output_invalid"
     if "image" in message or "photo" in message or "wikimedia" in message:
         return "image_failed"
     if "render" in message or "remotion" in message or "ffmpeg" in message:
@@ -78,9 +90,52 @@ def recovery_action_for(
         return "stop_on_error"
     if classification in {"repairable_contract", "render_failed"} and retry_available:
         return "retry_same_topic"
-    if classification == "topic_selection_failed":
+    if classification in {"topic_selection_failed", "topic_selection_race"}:
         return "no_replacement_available"
     return "request_replacement"
+
+
+async def reserve_initial_slate(
+    *,
+    topic_strategy: TopicStrategyAgent,
+    count: int,
+    language: str,
+    batch_id: str,
+    attempt_budget: int,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], int]:
+    """Reserve an initial slate, retrying transient reservation races within budget."""
+    failures: list[dict[str, Any]] = []
+    selection_attempts = max(1, min(3, attempt_budget))
+    for selection_index in range(1, selection_attempts + 1):
+        try:
+            slate = await topic_strategy.run(
+                count=count,
+                language=language,
+                batch_id=batch_id if selection_index == 1 else f"{batch_id}-selection-{selection_index}",
+            )
+        except Exception as exc:  # noqa: BLE001 - return structured selection failures.
+            classification = classify_batch_failure(exc)
+            retryable = classification == "topic_selection_race" and selection_index < selection_attempts
+            failures.append(
+                {
+                    "attempt_index": 0,
+                    "batch_index": 0,
+                    "batch_slot": 0,
+                    "reservation_id": "",
+                    "error": str(exc),
+                    "error_type": exc.__class__.__name__,
+                    "classification": classification,
+                    "recovery_action": (
+                        "retry_topic_selection" if retryable else "no_replacement_available"
+                    ),
+                    "final_status": "retrying" if retryable else "failed",
+                }
+            )
+            if retryable:
+                continue
+            return [], failures, selection_index
+        return slate, failures, selection_index
+    return [], failures, selection_attempts
 
 
 def summarize_success(
@@ -255,27 +310,14 @@ async def produce_batch(
     retry_count = 0
     batch_id = str(uuid4())
     topic_strategy = strategy or TopicStrategyAgent()
-    try:
-        slate = await topic_strategy.run(
-            count=count,
-            language=language,
-            batch_id=batch_id,
-        )
-    except Exception as exc:  # noqa: BLE001 - return structured selection failures.
-        failures.append(
-            {
-                "attempt_index": 0,
-                "batch_index": 0,
-                "batch_slot": 0,
-                "reservation_id": "",
-                "error": str(exc),
-                "error_type": exc.__class__.__name__,
-                "classification": classify_batch_failure(exc),
-                "recovery_action": "no_replacement_available",
-                "final_status": "failed",
-            }
-        )
-        slate = []
+    slate, selection_failures, selection_attempts = await reserve_initial_slate(
+        topic_strategy=topic_strategy,
+        count=count,
+        language=language,
+        batch_id=batch_id,
+        attempt_budget=attempt_budget,
+    )
+    failures.extend(selection_failures)
     queue = [
         {
             "topic": selected_topic,
@@ -285,7 +327,7 @@ async def produce_batch(
         }
         for index, selected_topic in enumerate(slate)
     ]
-    attempt_index = 0
+    attempt_index = max(0, selection_attempts - 1)
 
     while len(items) < count and attempt_index < attempt_budget and queue:
         attempt = queue.pop(0)

@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import logging
 import sys
 from pathlib import Path
 from typing import Any
@@ -19,6 +20,8 @@ from services.telegram_notifications import TELEGRAM_API, answer_callback_query,
 from services.telegram_remote import handle_telegram_command
 from services.telegram_channels import TelegramResponse, handle_channel_callback
 from services.telegram_review_actions import handle_review_callback
+
+logger = logging.getLogger(__name__)
 
 
 async def send_message(
@@ -110,6 +113,39 @@ async def handle_callback_query(callback_query: dict[str, Any]) -> bool:
     return True
 
 
+async def fetch_updates(
+    *,
+    client: Any,
+    url: str,
+    offset: int,
+) -> int:
+    """Fetch and handle one Telegram long-poll batch, preserving offset on transient failures."""
+    import httpx
+
+    try:
+        response = await client.get(
+            url,
+            params={
+                "timeout": 30,
+                "offset": offset,
+                "allowed_updates": ["message", "callback_query"],
+            },
+        )
+        response.raise_for_status()
+    except httpx.TimeoutException as exc:
+        logger.warning("Telegram polling timeout; retrying without crashing bot: %s", exc)
+        return offset
+    except httpx.HTTPError as exc:
+        logger.warning("Telegram polling HTTP error; retrying without crashing bot: %s", exc)
+        return offset
+
+    payload = response.json()
+    for update in payload.get("result", []):
+        offset = max(offset, int(update.get("update_id", 0)) + 1)
+        await handle_update(update)
+    return offset
+
+
 async def poll_forever(*, poll_interval: float = 1.0) -> None:
     """Poll Telegram updates forever."""
     settings = get_settings()
@@ -121,15 +157,7 @@ async def poll_forever(*, poll_interval: float = 1.0) -> None:
 
     async with httpx.AsyncClient(timeout=35.0) as client:
         while True:
-            response = await client.get(
-                url,
-                params={"timeout": 30, "offset": offset, "allowed_updates": ["message", "callback_query"]},
-            )
-            response.raise_for_status()
-            payload = response.json()
-            for update in payload.get("result", []):
-                offset = max(offset, int(update.get("update_id", 0)) + 1)
-                await handle_update(update)
+            offset = await fetch_updates(client=client, url=url, offset=offset)
             await asyncio.sleep(poll_interval)
 
 

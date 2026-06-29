@@ -99,3 +99,23 @@ async def test_handle_update_routes_callback_query(monkeypatch):
         "chat_id": 999,
         "message_text": "Approved review review-1.",
     }
+
+
+@pytest.mark.asyncio
+async def test_fetch_updates_treats_telegram_timeout_as_transient(caplog):
+    import httpx
+
+    from scripts import telegram_remote_bot
+
+    class TimeoutClient:
+        async def get(self, *args, **kwargs):
+            raise httpx.ReadTimeout("telegram getUpdates timed out")
+
+    offset = await telegram_remote_bot.fetch_updates(
+        client=TimeoutClient(),
+        url="https://api.telegram.org/botTOKEN/getUpdates",
+        offset=42,
+    )
+
+    assert offset == 42
+    assert "Telegram polling timeout" in caplog.text
