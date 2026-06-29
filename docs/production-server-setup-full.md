@@ -161,6 +161,15 @@ YOUTUBE_TOKEN_ENCRYPTION_KEY=your_fernet_key
 
 STORAGE_PATH=./output
 LOG_LEVEL=INFO
+
+RESILIENT_CARD_PIPELINE_ENABLED=true
+CARD_MINIMUM_RATIO=0.90
+CARD_PLANNER_ATTEMPTS=4
+CARD_CONTENT_REPAIR_ATTEMPTS=2
+CARD_FACT_REPAIR_ATTEMPTS=2
+CARD_REPLACEMENT_ATTEMPTS=3
+AI_JSON_REPAIR_ATTEMPTS=2
+AI_TRANSPORT_ATTEMPTS=3
 ```
 
 Tao `YOUTUBE_TOKEN_ENCRYPTION_KEY`:
@@ -170,6 +179,38 @@ python3 -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().
 ```
 
 Khong commit `.env`.
+
+### Resilient card production
+
+Flow nay duoc dung cho video Celebrity dai:
+
+1. AI lap danh sach nhan vat va candidate du phong.
+2. Code loai trung tren toan video truoc khi viet scene.
+3. Scene writer chi viet cac nhan vat da khoa.
+4. Card loi duoc sua rieng, sau do thay candidate, sau cung moi bo qua.
+5. Video van render neu so card dat chuan bang hoac cao hon `CARD_MINIMUM_RATIO`.
+
+Voi `CARD_MINIMUM_RATIO=0.90`, video du kien 58 card co the render voi toi thieu
+53 card dat chuan. He thong khong lam cham slide de bu thoi luong; duration thuc te
+duoc tinh lai theo so card con lai. Ranking va metadata count cung duoc danh lai theo
+so card thuc te.
+
+Khong ha `CARD_MINIMUM_RATIO` chi de tang ti le hoan tat. Gia tri thap hon dong nghia
+video co it noi dung duoc xac minh hon.
+
+Checkpoint nam tai:
+
+```text
+./output/production_runs/<run_id>/
+```
+
+Thu muc nay chua candidate pool, card state, scene, fact/image verification va render
+manifest. Khi worker/container restart, card da `ready` khong bi goi lai AI, fact API
+hoac image search. Khong xoa checkpoint cua run dang xu ly.
+
+Telegram co the bao video hoan tat o che do degraded, vi du `55/58 card dat chuan`.
+Day la ket qua hop le: cac card khong du du lieu da bi loai co kiem soat, khong phai
+toan video bi fail.
 
 ## 5. Cloudflare Named Tunnel co dinh
 
