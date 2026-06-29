@@ -630,9 +630,11 @@ Each authorized Telegram user can connect multiple YouTube channels. Channel own
 1. Enable YouTube Data API v3 in a Google Cloud project.
 2. Configure an External OAuth consent screen and add test users while the app remains in Testing.
 3. Create a Web application OAuth client.
-4. Start a Cloudflare Quick Tunnel for port `8000` and set `PUBLIC_BASE_URL` to its HTTPS URL.
-5. Register this exact redirect URI in Google Cloud: `<PUBLIC_BASE_URL>/api/youtube/oauth/callback`.
-6. Generate the encryption key:
+4. In Cloudflare Dashboard, create a remotely managed tunnel named `youtube-automation-production`.
+5. Publish `studio.veo3depzai.io.vn` to the Docker origin `http://api:8000`.
+6. Copy only the tunnel token (`eyJ...`) into `.env`; never commit it.
+7. Register this exact redirect URI in Google Cloud: `https://studio.veo3depzai.io.vn/api/youtube/oauth/callback`.
+8. Generate the encryption key:
 
 ```bash
 python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
@@ -645,20 +647,22 @@ YOUTUBE_UPLOAD_ENABLED=false
 YOUTUBE_OAUTH_CLIENT_ID=...
 YOUTUBE_OAUTH_CLIENT_SECRET=...
 YOUTUBE_TOKEN_ENCRYPTION_KEY=...
-PUBLIC_BASE_URL=https://your-quick-tunnel.trycloudflare.com
+PUBLIC_BASE_URL=https://studio.veo3depzai.io.vn
+CLOUDFLARE_TUNNEL_TOKEN=eyJ...
 ```
 
 Rebuild and start the services:
 
 ```bash
-docker compose build api telegram-bot youtube-upload-worker
-docker compose up -d db-migrate api telegram-bot production-worker youtube-upload-worker
+docker compose build db-migrate
+docker compose up -d db-migrate api cloudflared telegram-bot production-worker youtube-upload-worker
+./scripts/verify_named_tunnel.sh
 docker compose logs -f youtube-upload-worker
 ```
 
 Use `/channels` in Telegram, tap **Add channel**, complete Google consent, then select the channel before creating a batch. Keep `YOUTUBE_UPLOAD_ENABLED=false` until a disposable Private operator smoke confirms the exact destination channel. The approved production behavior is Public; enable it only after that check.
 
-Cloudflare Quick Tunnel URLs change after restart. Update both `PUBLIC_BASE_URL` and the authorized Google redirect URI when that happens. A stable deployment should use a Cloudflare Named Tunnel or a fixed HTTPS domain.
+The Named Tunnel reconnects to the same hostname after Docker or server restarts. Cloudflare owns the DNS route; the application only requires the stable URL and tunnel token.
 
 The upload worker streams MP4 chunks directly from the shared output volume. n8n receives no OAuth token and does not transfer video binaries.
 

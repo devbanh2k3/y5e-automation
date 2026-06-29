@@ -150,7 +150,8 @@ FALLBACK_MODEL=gemini-2.5-flash
 TELEGRAM_BOT_TOKEN=your_telegram_bot_token
 TELEGRAM_CHAT_ID=your_default_chat_id
 
-PUBLIC_BASE_URL=https://your-public-domain-or-cloudflare-tunnel
+PUBLIC_BASE_URL=https://studio.veo3depzai.io.vn
+CLOUDFLARE_TUNNEL_TOKEN=eyJ...
 
 YOUTUBE_UPLOAD_ENABLED=true
 YOUTUBE_OAUTH_CLIENT_ID=your_google_oauth_client_id
@@ -170,35 +171,32 @@ python3 -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().
 
 Khong commit `.env`.
 
-## 5. Cloudflare Quick Tunnel tam thoi
+## 5. Cloudflare Named Tunnel co dinh
 
-Dung khi chua co domain rieng.
+Trong Cloudflare Dashboard:
 
-Tren may server:
+1. Mo `Networking -> Tunnels -> Create tunnel`.
+2. Dat ten `youtube-automation-production`.
+3. Them Public hostname `studio.veo3depzai.io.vn`.
+4. Dat Service la `http://api:8000`.
+5. Chon Docker va copy rieng token bat dau bang `eyJ...`.
 
-```bash
-cloudflared tunnel --url http://localhost:8000
-```
-
-Copy URL dang:
-
-```text
-https://xxxxx.trycloudflare.com
-```
-
-Gan vao `.env`:
+Gan token vao `.env`, khong commit file nay:
 
 ```env
-PUBLIC_BASE_URL=https://xxxxx.trycloudflare.com
+PUBLIC_BASE_URL=https://studio.veo3depzai.io.vn
+CLOUDFLARE_TUNNEL_TOKEN=eyJ...
 ```
 
-Sau do restart service:
+Khoi dong va kiem tra tunnel:
 
 ```bash
-docker compose up -d --build api telegram-bot production-worker youtube-upload-worker
+docker compose up -d cloudflared
+docker compose logs --tail=80 cloudflared
+./scripts/verify_named_tunnel.sh
 ```
 
-Luu y: Quick Tunnel co the doi URL moi lan chay. Khi URL doi, Google OAuth redirect URI cung phai cap nhat.
+Named Tunnel giu nguyen hostname sau khi Docker hoac may server restart.
 
 ## 6. Google OAuth / YouTube upload
 
@@ -210,7 +208,7 @@ Trong Google Cloud Console:
 4. Authorized redirect URI:
 
 ```text
-https://your-public-base-url/api/youtube/oauth/callback
+https://studio.veo3depzai.io.vn/api/youtube/oauth/callback
 ```
 
 Trong Telegram:
@@ -235,6 +233,7 @@ Kiem tra:
 docker compose ps
 curl -fsS http://localhost:8000/api/health
 curl -fsS http://localhost:8000/api/ready
+./scripts/verify_named_tunnel.sh
 ```
 
 Log quan trong:
@@ -244,6 +243,7 @@ docker compose logs -f api
 docker compose logs -f telegram-bot
 docker compose logs -f production-worker
 docker compose logs -f youtube-upload-worker
+docker compose logs -f cloudflared
 ```
 
 ## 8. Test flow that
@@ -331,23 +331,34 @@ Neu code da push:
 
 ```bash
 git pull
-docker compose up -d --build api telegram-bot production-worker youtube-upload-worker
+docker compose up -d --build api cloudflared telegram-bot production-worker youtube-upload-worker
 docker compose ps
 curl -fsS http://localhost:8000/api/health
+./scripts/verify_named_tunnel.sh
 ```
 
 Neu co thay doi DB:
 
 ```bash
 docker compose up db-migrate
-docker compose up -d api telegram-bot production-worker youtube-upload-worker
+docker compose up -d api cloudflared telegram-bot production-worker youtube-upload-worker
+```
+
+Neu Cloudflare token bi rotate, cap nhat `CLOUDFLARE_TUNNEL_TOKEN` trong `.env`, sau do chi recreate connector:
+
+```bash
+docker compose up -d --force-recreate cloudflared
+docker compose ps cloudflared
+docker compose logs --since=10m cloudflared
+./scripts/verify_named_tunnel.sh
 ```
 
 ## 12. Checklist truoc khi san xuat hang loat
 
 - Git server dang o branch dung va working tree sach.
 - `.env` da co token Telegram, Router/AI, YouTube OAuth, encryption key.
-- `PUBLIC_BASE_URL` la HTTPS public URL.
+- `PUBLIC_BASE_URL=https://studio.veo3depzai.io.vn`.
+- `CLOUDFLARE_TUNNEL_TOKEN` da duoc dat va khong nam trong Git.
 - `/channels` connect duoc kenh YouTube.
 - `/create 1 ...` render thanh cong.
 - Preview video mo inline, khong bat tai file.
