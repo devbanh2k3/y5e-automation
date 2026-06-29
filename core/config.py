@@ -60,7 +60,7 @@ class Settings(BaseSettings):
 
     # ── Resilient card production ────────────────────────────
     resilient_card_pipeline_enabled: bool = True
-    card_minimum_ratio: float = 0.85
+    card_minimum_ratio: float = 0.80
     card_planner_attempts: int = 4
     card_content_repair_attempts: int = 2
     card_fact_repair_attempts: int = 2
