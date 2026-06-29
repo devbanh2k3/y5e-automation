@@ -16,6 +16,8 @@ def test_windows_server_setup_script_has_required_guards() -> None:
     assert "setup_wsl_production.sh" in text
     assert "PUBLIC_BASE_URL" in text
     assert "YOUTUBE_TOKEN_ENCRYPTION_KEY" in text
+    assert "CLOUDFLARE_TUNNEL_TOKEN" in text
+    assert "studio.veo3depzai.io.vn" in text
 
 
 def test_wsl_production_setup_script_has_required_deploy_steps() -> None:
@@ -32,6 +34,9 @@ def test_wsl_production_setup_script_has_required_deploy_steps() -> None:
     assert "docker compose ps" in text
     assert "TELEGRAM_BOT_TOKEN" in text
     assert "YOUTUBE_OAUTH_CLIENT_ID" in text
+    assert "CLOUDFLARE_TUNNEL_TOKEN" in text
+    assert "cloudflared" in text
+    assert 'curl -fsS "${public_base_url}/api/health"' in text
 
 
 def test_wsl_production_setup_script_is_valid_bash() -> None:

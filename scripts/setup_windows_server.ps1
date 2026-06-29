@@ -132,8 +132,11 @@ Write-Step "Important .env values"
 Write-Host "The WSL installer will create .env if missing, but you must fill:"
 Write-Host "PRIMARY_API_BASE, PRIMARY_API_KEY, PRIMARY_MODEL"
 Write-Host "TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, PUBLIC_BASE_URL"
+Write-Host "CLOUDFLARE_TUNNEL_TOKEN"
 Write-Host "YOUTUBE_UPLOAD_ENABLED, YOUTUBE_OAUTH_CLIENT_ID, YOUTUBE_OAUTH_CLIENT_SECRET"
 Write-Host "YOUTUBE_TOKEN_ENCRYPTION_KEY"
+Write-Host "Stable URL: https://studio.veo3depzai.io.vn"
+Write-Host "OAuth callback: https://studio.veo3depzai.io.vn/api/youtube/oauth/callback"
 
 if (-not $SkipWslDeploy) {
     Invoke-WslDeploy

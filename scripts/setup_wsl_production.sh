@@ -127,6 +127,7 @@ Fill real production values before starting services:
   TELEGRAM_BOT_TOKEN
   TELEGRAM_CHAT_ID
   PUBLIC_BASE_URL
+  CLOUDFLARE_TUNNEL_TOKEN
   YOUTUBE_UPLOAD_ENABLED
   YOUTUBE_OAUTH_CLIENT_ID
   YOUTUBE_OAUTH_CLIENT_SECRET
@@ -167,6 +168,7 @@ validate_env() {
     TELEGRAM_BOT_TOKEN
     TELEGRAM_CHAT_ID
     PUBLIC_BASE_URL
+    CLOUDFLARE_TUNNEL_TOKEN
     YOUTUBE_UPLOAD_ENABLED
     YOUTUBE_OAUTH_CLIENT_ID
     YOUTUBE_OAUTH_CLIENT_SECRET
@@ -187,6 +189,9 @@ validate_env() {
   if [[ "$(env_value PUBLIC_BASE_URL)" != https://* ]]; then
     die "PUBLIC_BASE_URL must be a public HTTPS URL for Telegram preview and Google OAuth"
   fi
+  if [[ "$(env_value PUBLIC_BASE_URL)" != "https://studio.veo3depzai.io.vn" ]]; then
+    die "PUBLIC_BASE_URL must be https://studio.veo3depzai.io.vn"
+  fi
 }
 
 start_stack() {
@@ -194,9 +199,9 @@ start_stack() {
   cd "$PROJECT_DIR"
   mkdir -p output
   if [[ "$SKIP_BUILD" -eq 1 ]]; then
-    docker compose up -d api telegram-bot production-worker youtube-upload-worker
+    docker compose up -d api cloudflared telegram-bot production-worker youtube-upload-worker
   else
-    docker compose up -d --build api telegram-bot production-worker youtube-upload-worker
+    docker compose up -d --build api cloudflared telegram-bot production-worker youtube-upload-worker
   fi
   docker compose ps
 }
@@ -215,6 +220,20 @@ health_check() {
   done
   printf "\n"
   curl -fsS http://localhost:8000/api/ready || true
+  printf "\n"
+
+  local public_base_url
+  public_base_url="$(env_value PUBLIC_BASE_URL)"
+  index=1
+  log "Checking Named Tunnel health at ${public_base_url}"
+  until curl -fsS "${public_base_url}/api/health"; do
+    if [[ "$index" -ge "$attempts" ]]; then
+      docker compose logs --tail=80 cloudflared api || true
+      die "Cloudflare Named Tunnel health check failed"
+    fi
+    index=$((index + 1))
+    sleep 2
+  done
   printf "\n"
 }
 
