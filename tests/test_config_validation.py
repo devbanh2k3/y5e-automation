@@ -71,3 +71,17 @@ def test_resilient_card_settings_are_bounded():
     assert settings.card_minimum_ratio == 1.0
     assert settings.card_content_repair_attempts == 1
     assert settings.card_replacement_attempts == 10
+
+
+def test_native_render_settings_are_bounded(monkeypatch):
+    monkeypatch.setenv("NATIVE_RENDER_ENABLED", "true")
+    monkeypatch.setenv("NATIVE_RENDER_CHUNK_SECONDS", "5")
+    monkeypatch.setenv("NATIVE_RENDER_MAX_PARALLEL_CHUNKS", "99")
+    monkeypatch.setenv("RENDER_IMAGE_QUALITY", "200")
+
+    settings = Settings(_env_file=None)
+
+    assert settings.native_render_enabled is True
+    assert settings.native_render_chunk_seconds == 30
+    assert settings.native_render_max_parallel_chunks == 4
+    assert settings.render_image_quality == 95

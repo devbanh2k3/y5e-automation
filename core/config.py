@@ -68,6 +68,22 @@ class Settings(BaseSettings):
     ai_json_repair_attempts: int = 2
     ai_transport_attempts: int = 3
 
+    # ── Native render runner ─────────────────────────────────
+    native_render_enabled: bool = False
+    native_render_fallback: str = "docker"
+    native_render_queue: str = "native_render"
+    native_render_heartbeat_seconds: int = 15
+    native_render_heartbeat_timeout_seconds: int = 60
+    native_render_chunk_seconds: int = 40
+    native_render_max_parallel_chunks: int = 2
+    native_render_chunk_retries: int = 2
+    native_render_encoder: str = "auto"
+    native_render_encoder_strict: bool = False
+    native_render_result_timeout_per_target_second: int = 6
+    render_image_max_width: int = 1080
+    render_image_max_height: int = 1350
+    render_image_quality: int = 88
+
     # ── Storage ───────────────────────────────────────────────
     storage_path: str = "./output"
 
@@ -90,6 +106,21 @@ class Settings(BaseSettings):
     @classmethod
     def _bound_attempts(cls, value: int) -> int:
         return min(10, max(1, value))
+
+    @field_validator("native_render_chunk_seconds")
+    @classmethod
+    def _bound_chunk_seconds(cls, value: int) -> int:
+        return min(45, max(30, value))
+
+    @field_validator("native_render_max_parallel_chunks")
+    @classmethod
+    def _bound_parallel_chunks(cls, value: int) -> int:
+        return min(4, max(1, value))
+
+    @field_validator("render_image_quality")
+    @classmethod
+    def _bound_render_image_quality(cls, value: int) -> int:
+        return min(95, max(70, value))
 
     # ── Derived helpers ───────────────────────────────────────
     @property
