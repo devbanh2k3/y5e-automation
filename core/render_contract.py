@@ -28,8 +28,8 @@ class NativeRenderRequest(BaseModel):
     output_path: str
     composition_id: str
     target_duration: int = Field(gt=0)
-    width: int = 1080
-    height: int = 1920
+    width: int = 1920
+    height: int = 1080
     fps: int = 30
     chunk_seconds: int = 40
     max_parallel_chunks: int = 2

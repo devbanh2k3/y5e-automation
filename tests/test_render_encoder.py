@@ -17,8 +17,8 @@ def _valid_probe(**stream_overrides):
     stream = {
         "codec_type": "video",
         "codec_name": "h264",
-        "width": 1080,
-        "height": 1920,
+        "width": 1920,
+        "height": 1080,
         "avg_frame_rate": "30/1",
         "duration": "300.0",
     }
@@ -69,9 +69,9 @@ def test_encode_command_uses_encoder_specific_quality(tmp_path) -> None:
 
 
 def test_validation_rejects_wrong_dimensions() -> None:
-    with pytest.raises(OutputValidationError, match="1080x1920"):
+    with pytest.raises(OutputValidationError, match="1920x1080"):
         validate_probe_payload(
-            _valid_probe(width=720, height=1280), expected_duration=300
+            _valid_probe(width=1280, height=720), expected_duration=300
         )
 
 

@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Cut long-form 1080x1920 render time by moving rendering to a resumable native macOS/Windows runner with normalized assets, static card snapshots, bounded chunk parallelism, and VideoToolbox/NVENC encoding with CPU fallback.
+**Goal:** Cut long-form 1920x1080 Full HD landscape render time by moving rendering to a resumable native macOS/Windows runner with normalized assets, static card snapshots, bounded chunk parallelism, and VideoToolbox/NVENC encoding with CPU fallback.
 
 **Architecture:** Docker remains the control plane and enqueues versioned render contracts in Redis. A host-native Python runner validates the contract, builds render derivatives, snapshots static card layers, renders deterministic frame chunks with Remotion, concatenates and encodes them with the best verified host encoder, validates the final MP4, and reports completion through Redis. The existing in-container renderer remains the rollout fallback.
 
@@ -408,7 +408,7 @@ def test_failed_hardware_probe_falls_back_to_x264():
 
 
 def test_validation_rejects_wrong_dimensions():
-    with pytest.raises(OutputValidationError, match="1080x1920"):
+    with pytest.raises(OutputValidationError, match="1920x1080"):
         validate_probe_payload(make_probe(width=720, height=1280), expected_duration=300)
 ```
 
@@ -429,7 +429,7 @@ CPU:          -c:v libx264 -preset medium -crf 20
 Common:       -pix_fmt yuv420p -r 30 -c:a aac -b:a 192k -movflags +faststart -map_metadata -1
 ```
 
-Parse `ffprobe -show_streams -show_format -of json` and require H.264, 1080x1920, 30 fps tolerance, expected duration tolerance, valid timestamps, and audio when configured.
+Parse `ffprobe -show_streams -show_format -of json` and require H.264, 1920x1080, 30 fps tolerance, expected duration tolerance, valid timestamps, and audio when configured.
 
 - [ ] **Step 4: Run and verify GREEN**
 
@@ -658,7 +658,7 @@ Run: `cd video_engine && npm test -- --run && npm run build`
 
 Expected: all Python and TypeScript tests pass.
 
-- [ ] **Step 5: Run macOS 1080x1920 smoke and benchmark**
+- [ ] **Step 5: Run macOS 1920x1080 smoke and benchmark**
 
 Run: `python3 scripts/native_render_runner.py --check`
 

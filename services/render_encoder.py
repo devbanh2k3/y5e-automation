@@ -172,8 +172,8 @@ def validate_probe_payload(
     if video.get("codec_name") != "h264":
         raise OutputValidationError("video codec must be h264")
     width, height = int(video.get("width") or 0), int(video.get("height") or 0)
-    if (width, height) != (1080, 1920):
-        raise OutputValidationError(f"output must be 1080x1920, got {width}x{height}")
+    if (width, height) != (1920, 1080):
+        raise OutputValidationError(f"output must be 1920x1080, got {width}x{height}")
     try:
         fps = float(Fraction(str(video.get("avg_frame_rate") or "0/1")))
     except (ValueError, ZeroDivisionError) as exc:

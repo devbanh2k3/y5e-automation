@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Reduce production render time for long 1080x1920 videos while preserving the existing visual template, content pipeline, review gate, and YouTube publishing flow. The system will keep API, Telegram, queue, and upload services in Docker while moving Remotion rendering to a native macOS or Windows runner that can use host resources and hardware video encoders directly.
+Reduce production render time for long 1920x1080 Full HD landscape videos while preserving the existing visual template, content pipeline, review gate, and YouTube publishing flow. The system will keep API, Telegram, queue, and upload services in Docker while moving Remotion rendering to a native macOS or Windows runner that can use host resources and hardware video encoders directly.
 
 The production target is a 40-65% reduction in end-to-end render time for a representative five-minute video, without lowering output resolution or introducing visible layout, animation, audio, or synchronization regressions.
 
@@ -33,7 +33,7 @@ This increment excludes:
 
 - Docker remains the production control plane; the host-native process owns rendering only.
 - The runner uses one shared Python orchestration implementation on macOS and Windows.
-- Remotion still produces 1080x1920 frames. Acceleration comes from native Chromium, normalized assets, cheaper effects, bounded chunk parallelism, and hardware final encoding.
+- Remotion still produces 1920x1080 landscape frames. Acceleration comes from native Chromium, normalized assets, cheaper effects, bounded chunk parallelism, and hardware final encoding.
 - Static card content may be pre-rendered, but scrolling, card entrance, and transition animations remain dynamic.
 - The current Docker render implementation remains available until the native path passes benchmark and smoke acceptance criteria.
 - Hardware encoding is an optimization, not a requirement. Unsupported or failed hardware encoders fall back to `libx264` automatically.
@@ -144,7 +144,7 @@ If the native runner is unavailable, `NATIVE_RENDER_FALLBACK=docker` uses the cu
 The runner uses `ffprobe` to require:
 
 - A readable MP4 container.
-- One H.264 video stream at 1080x1920 and 30 fps.
+- One H.264 video stream at 1920x1080 and 30 fps.
 - Duration within a bounded tolerance of the requested timeline duration.
 - A valid audio stream when background music is configured.
 - No missing chunk duration or timestamp discontinuity.
@@ -229,7 +229,7 @@ Integration tests cover:
 - Simulated NVENC/VideoToolbox failure followed by `libx264` success.
 - Docker fallback when no native heartbeat exists.
 
-Platform smoke tests render the same short 1080x1920 fixture on macOS and Windows NVIDIA. Windows hardware behavior cannot be claimed verified until the smoke test runs on the target NVIDIA machine.
+Platform smoke tests render the same short 1920x1080 fixture on macOS and Windows NVIDIA. Windows hardware behavior cannot be claimed verified until the smoke test runs on the target NVIDIA machine.
 
 ## Acceptance Criteria
 
@@ -241,7 +241,7 @@ Platform smoke tests render the same short 1080x1920 fixture on macOS and Window
 - Long videos render in reusable card-safe chunks with bounded parallelism.
 - Restarting the runner does not re-render valid completed chunks.
 - A failed chunk is retried independently and does not regenerate content, images, or successful chunks.
-- Final MP4 output is 1080x1920, 30 fps, YouTube-compatible, duration-correct, and validated before review.
+- Final MP4 output is 1920x1080, 30 fps, YouTube-compatible, duration-correct, and validated before review.
 - The current Docker renderer remains a functional rollout fallback.
 - Benchmark reports make speed claims reproducible on the same hardware.
 - The representative five-minute benchmark meets the 40% improvement target before native rendering becomes the production default.

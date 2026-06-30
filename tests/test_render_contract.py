@@ -25,8 +25,8 @@ def test_render_request_confines_artifacts_to_output_root(tmp_path: Path) -> Non
 
     assert request.contract_version == 1
     assert request.target_duration == 300
-    assert request.width == 1080
-    assert request.height == 1920
+    assert request.width == 1920
+    assert request.height == 1080
     assert request.idempotency_key
 
     with pytest.raises(RenderContractError, match="outside output root"):
