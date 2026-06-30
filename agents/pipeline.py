@@ -16,6 +16,7 @@ import random
 import shutil
 import time
 import traceback
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Awaitable, Callable
@@ -41,6 +42,57 @@ from services.thumbnail_collage import build_review_thumbnail
 logger = logging.getLogger(__name__)
 
 _LOCAL_RENDER_TIMEOUT_SEC = 600
+
+
+@dataclass(frozen=True)
+class LocalRenderProfile:
+    """Runtime render settings selected for the current video."""
+
+    timeout_sec: int
+    concurrency: int
+    crf: int
+
+
+def _bounded_int_from_env(name: str, default: int, *, minimum: int, maximum: int) -> int:
+    try:
+        value = int(os.getenv(name, str(default)))
+    except ValueError:
+        value = default
+    return max(minimum, min(maximum, value))
+
+
+def resolve_local_render_profile(*, target_duration: int | None) -> LocalRenderProfile:
+    """Resolve safe Remotion settings for local 1080p rendering."""
+
+    base_timeout = _bounded_int_from_env(
+        "LOCAL_RENDER_TIMEOUT_BASE_SEC",
+        _LOCAL_RENDER_TIMEOUT_SEC,
+        minimum=300,
+        maximum=7200,
+    )
+    timeout_per_target = _bounded_int_from_env(
+        "LOCAL_RENDER_TIMEOUT_PER_TARGET_SEC",
+        5,
+        minimum=1,
+        maximum=30,
+    )
+    duration = max(0, int(target_duration or 0))
+    timeout_sec = max(base_timeout, duration * timeout_per_target)
+    return LocalRenderProfile(
+        timeout_sec=timeout_sec,
+        concurrency=_bounded_int_from_env(
+            "REMOTION_CONCURRENCY",
+            1,
+            minimum=1,
+            maximum=8,
+        ),
+        crf=_bounded_int_from_env(
+            "REMOTION_CRF",
+            20,
+            minimum=16,
+            maximum=35,
+        ),
+    )
 
 
 class PipelineError(Exception):
@@ -569,6 +621,13 @@ class Pipeline:
         raw_output_path = output_path.with_suffix(".raw.mp4")
         props_json = json.dumps(video_data, ensure_ascii=False)
         composition_id = self._composition_id_for_template(str(video_data.get("template", "")))
+        target_duration = int(
+            video_data.get("targetDuration")
+            or video_data.get("duration_target")
+            or video_data.get("target_duration")
+            or 0
+        )
+        render_profile = resolve_local_render_profile(target_duration=target_duration)
         cmd = [
             "npx",
             "remotion",
@@ -578,7 +637,8 @@ class Pipeline:
             str(raw_output_path),
             f"--props={props_json}",
             "--codec=h264",
-            "--crf=20",
+            f"--crf={render_profile.crf}",
+            f"--concurrency={render_profile.concurrency}",
         ]
         browser_executable = os.getenv("REMOTION_BROWSER_EXECUTABLE", "").strip()
         if browser_executable:
@@ -594,13 +654,13 @@ class Pipeline:
         try:
             _stdout, stderr = await asyncio.wait_for(
                 process.communicate(),
-                timeout=_LOCAL_RENDER_TIMEOUT_SEC,
+                timeout=render_profile.timeout_sec,
             )
         except asyncio.TimeoutError:
             process.kill()
             await process.wait()
             raise RuntimeError(
-                f"Local Remotion render timed out after {_LOCAL_RENDER_TIMEOUT_SEC}s"
+                f"Local Remotion render timed out after {render_profile.timeout_sec}s"
             )
 
         if process.returncode != 0:

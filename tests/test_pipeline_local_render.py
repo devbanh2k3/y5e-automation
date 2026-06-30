@@ -3,6 +3,7 @@ from pathlib import Path
 import pytest
 
 from agents.pipeline import Pipeline
+from agents.pipeline import resolve_local_render_profile
 from core.config import get_settings
 from core.fact_verification import FactVerificationError
 from core.video_contract import build_content_contract_v2
@@ -637,6 +638,105 @@ async def test_render_local_video_invokes_remotion(monkeypatch, tmp_path):
         public_dir = Path(__file__).resolve().parents[1] / "video_engine" / "public"
         (public_dir / "video_data.json").unlink(missing_ok=True)
         (public_dir / "images" / "local-logo.svg").unlink(missing_ok=True)
+        (public_dir / "images" / "local-placeholder.svg").unlink(missing_ok=True)
+        get_settings.cache_clear()
+
+
+def test_resolve_local_render_profile_scales_timeout_for_long_video(monkeypatch):
+    monkeypatch.setenv("LOCAL_RENDER_TIMEOUT_BASE_SEC", "600")
+    monkeypatch.setenv("LOCAL_RENDER_TIMEOUT_PER_TARGET_SEC", "5")
+    monkeypatch.setenv("REMOTION_CONCURRENCY", "2")
+    monkeypatch.setenv("REMOTION_CRF", "22")
+
+    profile = resolve_local_render_profile(target_duration=300)
+
+    assert profile.timeout_sec == 1500
+    assert profile.concurrency == 2
+    assert profile.crf == 22
+
+
+def test_resolve_local_render_profile_bounds_unsafe_env_values(monkeypatch):
+    monkeypatch.setenv("LOCAL_RENDER_TIMEOUT_BASE_SEC", "5")
+    monkeypatch.setenv("LOCAL_RENDER_TIMEOUT_PER_TARGET_SEC", "0")
+    monkeypatch.setenv("REMOTION_CONCURRENCY", "99")
+    monkeypatch.setenv("REMOTION_CRF", "99")
+
+    profile = resolve_local_render_profile(target_duration=60)
+
+    assert profile.timeout_sec == 300
+    assert profile.concurrency == 8
+    assert profile.crf == 35
+
+
+@pytest.mark.asyncio
+async def test_render_local_video_passes_render_profile_to_remotion(monkeypatch, tmp_path):
+    get_settings.cache_clear()
+    monkeypatch.setenv("STORAGE_PATH", str(tmp_path / "output"))
+    monkeypatch.setenv("REMOTION_CONCURRENCY", "3")
+    monkeypatch.setenv("REMOTION_CRF", "23")
+    monkeypatch.setenv("LOCAL_RENDER_TIMEOUT_BASE_SEC", "600")
+    monkeypatch.setenv("LOCAL_RENDER_TIMEOUT_PER_TARGET_SEC", "5")
+
+    captured: dict[str, object] = {}
+
+    class FakeProcess:
+        def __init__(self, cmd):
+            self.cmd = cmd
+
+        returncode = 0
+
+        async def communicate(self):
+            output_path = Path(self.cmd[5] if self.cmd[0] == "npx" else self.cmd[-1])
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            output_path.write_bytes(b"fake mp4")
+            return b"rendered", b""
+
+    async def fake_create_subprocess_exec(*cmd, cwd, stdout, stderr):
+        captured.setdefault("cmds", []).append(cmd)
+        return FakeProcess(cmd)
+
+    async def fake_wait_for(awaitable, timeout):
+        captured["timeout"] = timeout
+        return await awaitable
+
+    monkeypatch.setattr("asyncio.create_subprocess_exec", fake_create_subprocess_exec)
+    monkeypatch.setattr("asyncio.wait_for", fake_wait_for)
+
+    pipeline = Pipeline()
+    try:
+        await pipeline._render_local_video(
+            topic_id=7,
+            video_data={
+                "template": "timeline",
+                "targetDuration": 300,
+                "title": "Local",
+                "subtitle": "Science",
+                "language": "en",
+                "cards": [
+                    {
+                        "header": "LOCAL 1",
+                        "title": "Local",
+                        "description": "Test",
+                        "imagePath": "images/local-placeholder.svg",
+                        "statusText": "FALLBACK",
+                    }
+                ],
+                "introCards": [],
+                "musicPath": "",
+                "sfxPaths": {"transition": "", "alert": "", "reveal": ""},
+                "logoPath": "",
+                "holdDurationFrames": 120,
+                "transitionDurationFrames": 15,
+            },
+        )
+
+        remotion_cmd = captured["cmds"][0]
+        assert "--concurrency=3" in remotion_cmd
+        assert "--crf=23" in remotion_cmd
+        assert captured["timeout"] == 1500
+    finally:
+        public_dir = Path(__file__).resolve().parents[1] / "video_engine" / "public"
+        (public_dir / "video_data.json").unlink(missing_ok=True)
         (public_dir / "images" / "local-placeholder.svg").unlink(missing_ok=True)
         get_settings.cache_clear()
 
