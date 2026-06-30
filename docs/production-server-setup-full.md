@@ -424,3 +424,93 @@ Khi da on dinh:
 - Tang batch len 10 video.
 - Neu render cham nhung RAM con du, scale `production-worker=2`.
 - Neu upload cham, giu upload worker = 1 de tranh quota/API issue.
+
+## 14. Native Render Runner Full HD
+
+Native Runner chi thay the buoc Remotion/FFmpeg. API, Telegram, PostgreSQL,
+Redis, review va upload van chay trong Docker. Output giu nguyen 1920x1080,
+30 fps va template landscape hien tai.
+
+### macOS Apple Silicon
+
+Kiem tra va cai runner:
+
+```bash
+bash scripts/setup_native_render_macos.sh
+python3 scripts/native_render_runner.py --check
+```
+
+Chay foreground de test:
+
+```bash
+python3 scripts/native_render_runner.py
+```
+
+Sau khi smoke thanh cong, cai LaunchAgent:
+
+```bash
+bash scripts/setup_native_render_macos.sh --install-service
+tail -f output/native-render-runner.log
+```
+
+### Windows NVIDIA
+
+Mo PowerShell Administrator:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\setup_native_render_windows.ps1
+python scripts\native_render_runner.py --check
+python scripts\native_render_runner.py
+```
+
+Sau khi test foreground thanh cong:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\setup_native_render_windows.ps1 -InstallService
+Get-ScheduledTask -TaskName Y5ENativeRenderRunner
+```
+
+`--check` phai hien `h264_videotoolbox` tren Mac hoac `h264_nvenc` tren PC
+NVIDIA. Neu GPU encoder loi, runner tu fallback `libx264` tru khi bat strict mode.
+
+### Cau hinh rollout
+
+Giu fallback trong lan dau:
+
+```dotenv
+NATIVE_RENDER_ENABLED=true
+NATIVE_RENDER_FALLBACK=docker
+NATIVE_RENDER_ENCODER=auto
+NATIVE_RENDER_CHUNK_SECONDS=40
+NATIVE_RENDER_MAX_PARALLEL_CHUNKS=2
+```
+
+Docker Compose dang expose Redis host port `6380`; `.env` cua native runner can
+dung `REDIS_URL=redis://localhost:6380/0`. Cac Docker service tiep tuc duoc
+override bang `redis://redis:6379/0`. Khong expose port Redis ra Internet.
+
+### Recovery
+
+- Runner restart: khoi dong lai cung lenh; chunk hop le duoc reuse.
+- GPU encode loi: kiem tra `--check`; pipeline van fallback CPU.
+- Runner mat heartbeat: control plane dung Docker renderer khi fallback la `docker`.
+- Chunk loi: xem `output/topics/{topic_id}/render-cache/*/render-manifest.json` va log runner.
+- Tat native khan cap: dat `NATIVE_RENDER_ENABLED=false`, restart production worker.
+
+### Benchmark gate
+
+Ghi lai thoi gian baseline va native tren cung mot topic, sau do chay:
+
+```bash
+python3 scripts/benchmark_native_render.py \
+  --latest-topic \
+  --baseline-output output/topics/BASELINE_TOPIC/final_video.mp4 \
+  --native-output output/topics/NATIVE_TOPIC/final_video.mp4 \
+  --baseline-seconds 1200 \
+  --native-seconds 600 \
+  --encoder h264_videotoolbox \
+  --report output/benchmarks/native-render-macos.json
+```
+
+Chi coi native la mac dinh khi report co `rollout_gate_passed=true`, video qua
+review hinh/chu/am thanh va thoi gian giam toi thieu 40% tren cung may.
