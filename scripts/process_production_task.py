@@ -18,6 +18,7 @@ if str(ROOT_DIR) not in sys.path:
 
 from core import production_tasks
 from agents.topic_strategy_agent import TopicSelectionError, TopicStrategyAgent
+from core.ai_resilience import AIJsonFailure
 from core.fact_verification import FactVerificationError
 from services.telegram_notifications import build_review_keyboard, send_telegram_message
 from scripts.produce_celebrity_video import produce
@@ -307,6 +308,8 @@ def _should_replace_topic(exc: Exception) -> bool:
     """Return true for topic-specific data failures that a new topic can solve."""
     if isinstance(exc, FactVerificationError):
         return True
+    if isinstance(exc, AIJsonFailure) and exc.category == "json_exhausted":
+        return True
     message = str(exc).lower()
     return (
         _is_topic_reservation_race(exc)
@@ -316,6 +319,10 @@ def _should_replace_topic(exc: Exception) -> bool:
         or "duplicate celebrity scenes" in message
         or "image verification status must be verified" in message
         or "verified_count and required_count must match card count" in message
+        or "ai response does not contain a valid json object" in message
+        or ("requires at least" in message and "verified scenes" in message)
+        or ("requires at least" in message and "verified facts" in message)
+        or ("requires at least" in message and "ready cards" in message)
     )
 
 

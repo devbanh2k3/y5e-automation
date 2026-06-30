@@ -638,12 +638,20 @@ class Pipeline:
             final_scenes,
             content_format=content_format,
         )
+        topic_image_dir = get_settings().storage_dir / "topics" / str(topic_id) / "images"
+        topic_image_dir.mkdir(parents=True, exist_ok=True)
         for index, item in enumerate(final_fact_items):
             item["scene_index"] = index
             item["person_name"] = self._extract_celebrity_name(
                 str(final_scenes[index].get("title", ""))
             )
         for index, item in enumerate(final_image_items):
+            expected_local_path = topic_image_dir / f"real_{index}.webp"
+            source_local_path = Path(str(item.get("local_path", "")))
+            if source_local_path.is_file() and source_local_path.resolve() != expected_local_path.resolve():
+                shutil.copyfile(source_local_path, expected_local_path)
+            if expected_local_path.is_file():
+                item["local_path"] = str(expected_local_path)
             item["scene_index"] = index
             item["expected_title"] = str(final_scenes[index].get("title", ""))
             item["person_name"] = self._extract_celebrity_name(

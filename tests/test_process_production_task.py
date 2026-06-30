@@ -33,6 +33,35 @@ def test_failure_message_hides_raw_ai_error():
     assert "raw malformed payload" not in text
 
 
+def test_ai_json_failure_is_retryable_topic_failure():
+    from core.ai_resilience import AIJsonFailure
+    from scripts.process_production_task import _should_replace_topic
+
+    exc = AIJsonFailure(
+        "AI response does not contain a valid JSON object",
+        category="json_exhausted",
+        attempts=3,
+    )
+
+    assert _should_replace_topic(exc)
+
+
+def test_plain_ai_json_parse_error_is_retryable_topic_failure():
+    from scripts.process_production_task import _should_replace_topic
+
+    exc = ValueError("AI response does not contain a valid JSON object")
+
+    assert _should_replace_topic(exc)
+
+
+def test_minimum_verified_scene_shortfall_is_retryable_topic_failure():
+    from scripts.process_production_task import _should_replace_topic
+
+    exc = ValueError("requires at least 46 verified scenes, got 45")
+
+    assert _should_replace_topic(exc)
+
+
 @pytest.mark.asyncio
 async def test_progress_callback_reports_counts_and_ignores_notification_failure(monkeypatch):
     from scripts import process_production_task

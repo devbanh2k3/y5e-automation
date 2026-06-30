@@ -89,6 +89,17 @@ class NativeRenderRunner:
         self.chunk_validator = chunk_validator or self._default_chunk_validator
         self.encoder = encoder or self._encode
 
+    def _host_path(self, path: str | Path) -> Path:
+        """Map Docker volume paths from render contracts onto the host checkout."""
+        candidate = Path(path)
+        if candidate.is_absolute():
+            try:
+                relative = candidate.relative_to("/app/output")
+            except ValueError:
+                return candidate
+            return self.project_root / "output" / relative
+        return (self.project_root / candidate).resolve()
+
     async def render_missing_chunks(
         self,
         *,
@@ -168,13 +179,15 @@ class NativeRenderRunner:
     ) -> NativeRenderResult:
         """Run all native render stages and return a validated final result."""
         started = time.monotonic()
-        topic_dir = Path(request.output_path).parent
+        topic_dir = self._host_path(request.output_path).parent
         cache_dir = topic_dir / "render-cache" / request.idempotency_key[:16]
         chunk_dir = cache_dir / "chunks"
         cache_dir.mkdir(parents=True, exist_ok=True)
         await set_render_status(job_id, "processing", stage="preparing_assets")
 
-        video_data = json.loads(Path(request.video_data_path).read_text(encoding="utf-8"))
+        video_data = json.loads(
+            self._host_path(request.video_data_path).read_text(encoding="utf-8")
+        )
         video_data, asset_hash = await self._prepare_assets(
             request=request,
             video_data=video_data,
@@ -241,7 +254,7 @@ class NativeRenderRunner:
 
         await set_render_status(job_id, "processing", stage="final_encoding")
         capabilities = capabilities or detect_encoder_capabilities()
-        output_path = Path(request.output_path)
+        output_path = self._host_path(request.output_path)
         temporary_output = output_path.with_name(f".{output_path.name}.native.tmp.mp4")
         temporary_output.unlink(missing_ok=True)
         profile = await self.encode_with_fallback(
@@ -271,7 +284,7 @@ class NativeRenderRunner:
         return NativeRenderResult(
             job_id=job_id,
             status="completed",
-            output_path=str(output_path),
+            output_path=request.output_path,
             encoder=profile.name,
             metrics=metrics,
         )
@@ -284,7 +297,7 @@ class NativeRenderRunner:
         cache_dir: Path,
     ) -> tuple[dict[str, Any], str]:
         cards = [dict(card) for card in video_data.get("cards") or []]
-        topic_dir = Path(request.output_path).parent
+        topic_dir = self._host_path(request.output_path).parent
         sources = [topic_dir / str(card["imagePath"]) for card in cards]
         manifest = build_render_asset_manifest(
             sources,

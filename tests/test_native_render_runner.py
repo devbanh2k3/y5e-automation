@@ -8,6 +8,14 @@ from services.render_chunks import RenderChunk
 from services.render_encoder import EncoderCapabilities
 
 
+def test_runner_maps_container_output_paths_to_host_storage(tmp_path: Path) -> None:
+    runner = NativeRenderRunner(project_root=tmp_path)
+
+    mapped = runner._host_path("/app/output/topics/123/final_video.mp4")
+
+    assert mapped == tmp_path / "output" / "topics" / "123" / "final_video.mp4"
+
+
 @pytest.mark.asyncio
 async def test_runner_reuses_completed_chunks_after_restart(tmp_path: Path) -> None:
     attempts: Counter[int] = Counter()

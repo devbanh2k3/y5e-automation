@@ -69,6 +69,8 @@ async def test_run_local_render_returns_stable_summary(monkeypatch, tmp_path):
 
 @pytest.mark.asyncio
 async def test_run_local_render_validates_video_data_before_render(monkeypatch):
+    get_settings.cache_clear()
+    monkeypatch.setenv("NATIVE_RENDER_ENABLED", "false")
     called = False
 
     async def fake_render(self, *, topic_id, video_data):
@@ -84,7 +86,10 @@ async def test_run_local_render_validates_video_data_before_render(monkeypatch):
     monkeypatch.setattr(Pipeline, "_render_local_video", fake_render)
     pipeline = Pipeline()
 
-    result = await pipeline.run_local_render(category="", language="vi")
+    try:
+        result = await pipeline.run_local_render(category="", language="vi")
+    finally:
+        get_settings.cache_clear()
 
     assert called is True
     assert result["category"] == "Local"
@@ -125,9 +130,16 @@ async def test_prepare_resilient_contract_uses_card_level_recovery(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_prepare_celebrity_scene_gate_drops_bad_fact_and_image_cards(monkeypatch):
+async def test_prepare_celebrity_scene_gate_drops_bad_fact_and_image_cards(monkeypatch, tmp_path):
     get_settings.cache_clear()
     monkeypatch.setenv("CARD_MINIMUM_RATIO", "0.50")
+    monkeypatch.setenv("STORAGE_PATH", str(tmp_path))
+    source_images = tmp_path / "source-images"
+    source_images.mkdir()
+    celine_image = source_images / "celine.webp"
+    taylor_image = source_images / "taylor.webp"
+    celine_image.write_bytes(b"celine image")
+    taylor_image.write_bytes(b"taylor image")
     content_contract = build_content_contract_v2(
         niche="celebrity",
         title="Celebrity facts",
@@ -290,7 +302,7 @@ async def test_prepare_celebrity_scene_gate_drops_bad_fact_and_image_cards(monke
                         "expected_title": "#3 Celine Dion",
                         "status": "verified",
                         "confidence": 0.9,
-                        "local_path": "/tmp/celine.webp",
+                        "local_path": str(celine_image),
                         "render_image_path": "images/real_0.webp",
                         "source_url": "https://commons.wikimedia.org/wiki/File:Celine.jpg",
                         "image_url": "https://upload.wikimedia.org/celine.jpg",
@@ -318,7 +330,7 @@ async def test_prepare_celebrity_scene_gate_drops_bad_fact_and_image_cards(monke
                         "expected_title": "#1 Taylor Swift",
                         "status": "verified",
                         "confidence": 0.9,
-                        "local_path": "/tmp/taylor.webp",
+                        "local_path": str(taylor_image),
                         "render_image_path": "images/real_2.webp",
                         "source_url": "https://commons.wikimedia.org/wiki/File:Taylor.jpg",
                         "image_url": "https://upload.wikimedia.org/taylor.jpg",
@@ -358,6 +370,8 @@ async def test_prepare_celebrity_scene_gate_drops_bad_fact_and_image_cards(monke
     assert result["fact_verification_contract"]["required_count"] == 2
     assert result["image_verification_contract"]["status"] == "verified"
     assert [item["scene_index"] for item in result["image_verification_contract"]["items"]] == [0, 1]
+    assert (tmp_path / "topics" / "123" / "images" / "real_0.webp").read_bytes() == b"celine image"
+    assert (tmp_path / "topics" / "123" / "images" / "real_1.webp").read_bytes() == b"taylor image"
     get_settings.cache_clear()
 
 
@@ -365,6 +379,7 @@ async def test_prepare_celebrity_scene_gate_drops_bad_fact_and_image_cards(monke
 async def test_run_local_render_uses_content_agent_for_celebrity(monkeypatch, tmp_path):
     get_settings.cache_clear()
     monkeypatch.setenv("STORAGE_PATH", str(tmp_path))
+    monkeypatch.setenv("NATIVE_RENDER_ENABLED", "false")
     captured: dict[str, object] = {}
 
     class FakeRealImageAgent:
@@ -541,7 +556,7 @@ async def test_run_local_render_uses_content_agent_for_celebrity(monkeypatch, tm
         captured["video_data"] = video_data
         output = tmp_path / "topics" / str(topic_id) / "final_video.mp4"
         image_dir = output.parent / "images"
-        image_dir.mkdir(parents=True)
+        image_dir.mkdir(parents=True, exist_ok=True)
         output.write_bytes(b"fake mp4")
         for index in range(len(video_data["cards"])):
             (image_dir / f"real_{index}.webp").write_bytes(f"image {index}".encode())
@@ -723,6 +738,7 @@ async def test_run_local_render_passes_duration_target_to_content_agent(
 ):
     get_settings.cache_clear()
     monkeypatch.setenv("STORAGE_PATH", str(tmp_path))
+    monkeypatch.setenv("NATIVE_RENDER_ENABLED", "false")
     captured: dict[str, object] = {}
 
     class FakeContentAgent:
@@ -791,7 +807,7 @@ async def test_run_local_render_passes_duration_target_to_content_agent(
     async def fake_render(self, *, topic_id, video_data):
         output = tmp_path / "topics" / str(topic_id) / "final_video.mp4"
         image_dir = output.parent / "images"
-        image_dir.mkdir(parents=True)
+        image_dir.mkdir(parents=True, exist_ok=True)
         (image_dir / "real_0.webp").write_bytes(b"image")
         output.write_bytes(b"fake mp4")
         return {"video_id": 1, "file_path": str(output), "duration_sec": 60, "status": "rendered"}
@@ -1067,6 +1083,7 @@ async def test_render_video_uses_live_native_runner_when_enabled(monkeypatch, tm
     get_settings.cache_clear()
     monkeypatch.setenv("STORAGE_PATH", str(tmp_path / "output"))
     monkeypatch.setenv("NATIVE_RENDER_ENABLED", "true")
+    monkeypatch.setenv("NATIVE_RENDER_RESULT_TIMEOUT_PER_TARGET_SECOND", "6")
     output = tmp_path / "output" / "topics" / "42" / "final_video.mp4"
     output.parent.mkdir(parents=True)
     output.write_bytes(b"native video")
