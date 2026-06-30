@@ -13,6 +13,7 @@ import json
 import logging
 import os
 import random
+import re
 import shutil
 import time
 import traceback
@@ -26,13 +27,14 @@ from agents.metadata_optimizer_agent import MetadataOptimizerAgent
 from agents.real_image_agent import RealImageAgent
 from core import database as db
 from core.config import get_settings
-from core.fact_verification import apply_fact_corrections
-from core.fact_verification import align_fact_verification_to_content_contract
+from core.fact_verification import MIN_FACT_CONFIDENCE
+from core.fact_verification import build_fact_verification_contract_v1
 from core.notifier import notify, notify_error
 from core.quality_gate import run_production_quality_gate
 from core.reviews import create_review
 from core.video_contract import (
     apply_verified_images_to_video_data,
+    build_image_verification_contract_v1,
     build_local_render_video_data,
     build_video_data_from_content_contract,
     validate_video_data,
@@ -351,11 +353,6 @@ class Pipeline:
                 "selected_topic": selected_topic,
                 "duration_target": duration_target,
             }
-            if (
-                get_settings().resilient_card_pipeline_enabled
-                and self._uses_resilient_card_pipeline(duration_target)
-            ):
-                content_kwargs["run_id"] = str(topic_id)
             if progress_callback is not None:
                 content_kwargs["progress_callback"] = progress_callback
             content_contract = await ContentAgent().run(
@@ -378,18 +375,17 @@ class Pipeline:
                 record_stage("card_recovery", stage_started)
             elif content_contract.get("contentFormat"):
                 stage_started = time.monotonic()
-                fact_verification_contract = await AIFactVerificationAgent().run(
+                prepared = await self._prepare_celebrity_scene_gate(
+                    topic_id=topic_id,
                     content_contract=content_contract,
+                    fact_agent=AIFactVerificationAgent(),
+                    image_agent=RealImageAgent(),
                 )
-                content_contract = apply_fact_corrections(
-                    content_contract,
-                    fact_verification_contract,
-                )
-                fact_verification_contract = align_fact_verification_to_content_contract(
-                    fact_verification_contract,
-                    content_contract,
-                )
-                record_stage("fact_verification", stage_started)
+                content_contract = prepared["content_contract"]
+                fact_verification_contract = prepared["fact_verification_contract"]
+                image_verification_contract = prepared["image_verification_contract"]
+                production_summary = prepared["production_summary"]
+                record_stage("fact_image_gate", stage_started)
             video_data = build_video_data_from_content_contract(content_contract)
             if image_verification_contract is None:
                 stage_started = time.monotonic()
@@ -560,6 +556,148 @@ class Pipeline:
             image_agent=RealImageAgent(),
             progress_callback=progress_callback,
         )
+
+    async def _prepare_celebrity_scene_gate(
+        self,
+        *,
+        topic_id: int,
+        content_contract: dict[str, Any],
+        fact_agent: Any,
+        image_agent: Any,
+    ) -> dict[str, Any]:
+        """Verify complete celebrity content and drop failed scenes before render."""
+
+        original_scenes = list(content_contract.get("scenes") or [])
+        target_cards = len(original_scenes)
+        minimum_cards = max(1, round(target_cards * get_settings().card_minimum_ratio))
+
+        fact_items = await fact_agent.verify_scenes(content_contract=content_contract)
+        fact_ready_scenes: list[dict[str, Any]] = []
+        fact_ready_items: list[dict[str, Any]] = []
+        for item in fact_items:
+            scene_index = item.get("scene_index")
+            if not isinstance(scene_index, int) or scene_index >= len(original_scenes):
+                continue
+            confidence = item.get("confidence")
+            if (
+                item.get("status") not in {"verified", "corrected"}
+                or not isinstance(confidence, int | float)
+                or confidence < MIN_FACT_CONFIDENCE
+            ):
+                continue
+            scene = dict(original_scenes[scene_index])
+            verified_value = str(item.get("verified_value", "")).strip()
+            if item.get("status") == "corrected" and verified_value:
+                scene["factValue"] = verified_value
+                scene["metricValue"] = verified_value
+                scene["caption"] = verified_value
+            fact_ready_scenes.append(scene)
+            fact_ready_items.append(dict(item))
+
+        if len(fact_ready_scenes) < minimum_cards:
+            raise ValueError(
+                f"requires at least {minimum_cards} verified facts, got {len(fact_ready_scenes)}"
+            )
+
+        fact_ready_contract = dict(content_contract)
+        content_format = str(content_contract.get("contentFormat") or "ranking")
+        fact_ready_contract["scenes"] = self._reindex_celebrity_scenes(
+            fact_ready_scenes,
+            content_format=content_format,
+        )
+
+        image_contract = await image_agent.run_for_content_contract(
+            topic_id=topic_id,
+            content_contract=fact_ready_contract,
+            strict=False,
+        )
+        final_scenes: list[dict[str, Any]] = []
+        final_fact_items: list[dict[str, Any]] = []
+        final_image_items: list[dict[str, Any]] = []
+        for image_item in image_contract.get("items") or []:
+            scene_index = image_item.get("scene_index")
+            if (
+                not isinstance(scene_index, int)
+                or scene_index >= len(fact_ready_contract["scenes"])
+                or image_item.get("status") != "verified"
+            ):
+                continue
+            final_scenes.append(dict(fact_ready_contract["scenes"][scene_index]))
+            final_fact_items.append(dict(fact_ready_items[scene_index]))
+            final_image_items.append(dict(image_item))
+
+        if len(final_scenes) < minimum_cards:
+            raise ValueError(
+                f"requires at least {minimum_cards} verified scenes, got {len(final_scenes)}"
+            )
+
+        final_scenes = self._reindex_celebrity_scenes(
+            final_scenes,
+            content_format=content_format,
+        )
+        for index, item in enumerate(final_fact_items):
+            item["scene_index"] = index
+            item["person_name"] = self._extract_celebrity_name(
+                str(final_scenes[index].get("title", ""))
+            )
+        for index, item in enumerate(final_image_items):
+            item["scene_index"] = index
+            item["expected_title"] = str(final_scenes[index].get("title", ""))
+            item["person_name"] = self._extract_celebrity_name(
+                str(final_scenes[index].get("title", ""))
+            )
+            item["render_image_path"] = f"images/real_{index}.webp"
+
+        final_content_contract = dict(content_contract)
+        final_content_contract["scenes"] = final_scenes
+        return {
+            "content_contract": final_content_contract,
+            "fact_verification_contract": build_fact_verification_contract_v1(
+                final_fact_items
+            ),
+            "image_verification_contract": build_image_verification_contract_v1(
+                topic_id=topic_id,
+                items=final_image_items,
+            ),
+            "production_summary": {
+                "target_cards": target_cards,
+                "minimum_cards": minimum_cards,
+                "final_cards": len(final_scenes),
+                "dropped_fact_cards": target_cards - len(fact_ready_scenes),
+                "dropped_image_cards": len(fact_ready_scenes) - len(final_scenes),
+                "degraded": len(final_scenes) < target_cards,
+            },
+        }
+
+    @classmethod
+    def _reindex_celebrity_scenes(
+        cls,
+        scenes: list[dict[str, Any]],
+        *,
+        content_format: str,
+    ) -> list[dict[str, Any]]:
+        reindexed: list[dict[str, Any]] = []
+        total = len(scenes)
+        for index, scene in enumerate(scenes, start=1):
+            updated = dict(scene)
+            name = cls._extract_celebrity_name(str(updated.get("title", "")))
+            metric_value = str(
+                updated.get("metricValue") or updated.get("caption") or ""
+            ).strip()
+            if content_format == "ranking":
+                rank = total - index + 1
+                updated["title"] = f"#{rank} {name}"
+                updated["statusText"] = f"#{rank} | {metric_value}".strip()
+            else:
+                updated["title"] = name
+                if not str(updated.get("statusText", "")).strip():
+                    updated["statusText"] = f"FACT {index} | {metric_value}".strip()
+            reindexed.append(updated)
+        return reindexed
+
+    @staticmethod
+    def _extract_celebrity_name(title: str) -> str:
+        return re.sub(r"^#\s*\d+\s*", "", title).strip()
 
     @staticmethod
     def _uses_resilient_card_pipeline(duration_target: int) -> bool:

@@ -99,6 +99,243 @@ async def test_prepare_resilient_contract_uses_card_level_recovery(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_prepare_celebrity_scene_gate_drops_bad_fact_and_image_cards(monkeypatch):
+    get_settings.cache_clear()
+    monkeypatch.setenv("CARD_MINIMUM_RATIO", "0.50")
+    content_contract = build_content_contract_v2(
+        niche="celebrity",
+        title="Celebrity facts",
+        hook="Hook",
+        target_audience="Fans",
+        language="en",
+        scenes=[
+            {
+                "title": "#4 Celine Dion",
+                "voiceover": "Celine Dion has a public estimate.",
+                "caption": "560M USD",
+                "image_prompt": "real editorial photo of Celine Dion",
+                "statusText": "#4 | 560M USD",
+                "countryCode": "CA",
+                "countryLabel": "CANADA",
+                "metricLabel": "NET WORTH",
+                "metricValue": "560M USD",
+                "factClaim": "Celine Dion has a public net worth estimate of 560M USD.",
+                "factValue": "560M USD",
+                "factUnit": "USD",
+                "factAsOf": "2026",
+                "factContext": "public estimate",
+            },
+            {
+                "title": "#3 Bad Fact",
+                "voiceover": "Bad Fact has an uncertain value.",
+                "caption": "999M USD",
+                "image_prompt": "real editorial photo of Bad Fact",
+                "statusText": "#3 | 999M USD",
+                "countryCode": "US",
+                "countryLabel": "UNITED STATES",
+                "metricLabel": "NET WORTH",
+                "metricValue": "999M USD",
+                "factClaim": "Bad Fact has a public net worth estimate of 999M USD.",
+                "factValue": "999M USD",
+                "factUnit": "USD",
+                "factAsOf": "2026",
+                "factContext": "public estimate",
+            },
+            {
+                "title": "#2 Missing Image",
+                "voiceover": "Missing Image has a public estimate.",
+                "caption": "200M USD",
+                "image_prompt": "real editorial photo of Missing Image",
+                "statusText": "#2 | 200M USD",
+                "countryCode": "US",
+                "countryLabel": "UNITED STATES",
+                "metricLabel": "NET WORTH",
+                "metricValue": "200M USD",
+                "factClaim": "Missing Image has a public net worth estimate of 200M USD.",
+                "factValue": "200M USD",
+                "factUnit": "USD",
+                "factAsOf": "2026",
+                "factContext": "public estimate",
+            },
+            {
+                "title": "#1 Taylor Swift",
+                "voiceover": "Taylor Swift has a public estimate.",
+                "caption": "1.6B USD",
+                "image_prompt": "real editorial photo of Taylor Swift",
+                "statusText": "#1 | 1.6B USD",
+                "countryCode": "US",
+                "countryLabel": "UNITED STATES",
+                "metricLabel": "NET WORTH",
+                "metricValue": "1.6B USD",
+                "factClaim": "Taylor Swift has a public net worth estimate of 1.6B USD.",
+                "factValue": "1.6B USD",
+                "factUnit": "USD",
+                "factAsOf": "2026",
+                "factContext": "public estimate",
+            },
+        ],
+        thumbnail_prompt="thumbnail",
+        youtube_title="Celebrity facts",
+        youtube_description="Description",
+        youtube_tags=["celebrity"],
+        duration_target=60,
+        cardLayout="flag_hero",
+        contentFormat="ranking",
+        metricScope="public estimates",
+        timeScope="through 2026",
+    )
+
+    class FakeFactAgent:
+        async def verify_scenes(self, *, content_contract):
+            return [
+                {
+                    "scene_index": 0,
+                    "person_name": "Celine Dion",
+                    "metric_label": "NET WORTH",
+                    "original_value": "560M USD",
+                    "verified_value": "560M USD",
+                    "unit": "USD",
+                    "as_of": "2026",
+                    "status": "verified",
+                    "confidence": 0.92,
+                    "reason": "public estimate",
+                    "knowledge_cutoff_risk": "medium",
+                },
+                {
+                    "scene_index": 1,
+                    "person_name": "Bad Fact",
+                    "metric_label": "NET WORTH",
+                    "original_value": "999M USD",
+                    "verified_value": "999M USD",
+                    "unit": "USD",
+                    "as_of": "2026",
+                    "status": "rejected",
+                    "confidence": 0.2,
+                    "reason": "unsupported",
+                    "knowledge_cutoff_risk": "high",
+                },
+                {
+                    "scene_index": 2,
+                    "person_name": "Missing Image",
+                    "metric_label": "NET WORTH",
+                    "original_value": "200M USD",
+                    "verified_value": "210M USD",
+                    "unit": "USD",
+                    "as_of": "2026",
+                    "status": "corrected",
+                    "confidence": 0.9,
+                    "reason": "corrected estimate",
+                    "knowledge_cutoff_risk": "medium",
+                },
+                {
+                    "scene_index": 3,
+                    "person_name": "Taylor Swift",
+                    "metric_label": "NET WORTH",
+                    "original_value": "1.6B USD",
+                    "verified_value": "1.6B USD",
+                    "unit": "USD",
+                    "as_of": "2026",
+                    "status": "verified",
+                    "confidence": 0.93,
+                    "reason": "public estimate",
+                    "knowledge_cutoff_risk": "medium",
+                },
+            ]
+
+        def build_verified_contract(self, items):
+            from core.fact_verification import build_fact_verification_contract_v1
+
+            return build_fact_verification_contract_v1(items)
+
+    class FakeImageAgent:
+        async def run_for_content_contract(self, *, topic_id, content_contract, strict=True):
+            assert strict is False
+            return {
+                "schema_version": "image_verification_contract_v1",
+                "topic_id": topic_id,
+                "source_policy": "wikimedia_commons_strict",
+                "required_count": len(content_contract["scenes"]),
+                "verified_count": 2,
+                "status": "rejected",
+                "items": [
+                    {
+                        "scene_index": 0,
+                        "person_name": "Celine Dion",
+                        "expected_title": "#3 Celine Dion",
+                        "status": "verified",
+                        "confidence": 0.9,
+                        "local_path": "/tmp/celine.webp",
+                        "render_image_path": "images/real_0.webp",
+                        "source_url": "https://commons.wikimedia.org/wiki/File:Celine.jpg",
+                        "image_url": "https://upload.wikimedia.org/celine.jpg",
+                        "license": "CC BY-SA 4.0",
+                        "attribution": "Example",
+                        "quality_score": 0.82,
+                        "quality_reason": "portrait",
+                        "identity_confidence": 0.95,
+                        "content_match_status": "passed",
+                        "needs_human_review": False,
+                        "source_adapter": "test",
+                        "reject_reason": "",
+                    },
+                    {
+                        "scene_index": 1,
+                        "person_name": "Missing Image",
+                        "expected_title": "#2 Missing Image",
+                        "status": "missing",
+                        "confidence": 0.0,
+                        "reject_reason": "no image",
+                    },
+                    {
+                        "scene_index": 2,
+                        "person_name": "Taylor Swift",
+                        "expected_title": "#1 Taylor Swift",
+                        "status": "verified",
+                        "confidence": 0.9,
+                        "local_path": "/tmp/taylor.webp",
+                        "render_image_path": "images/real_2.webp",
+                        "source_url": "https://commons.wikimedia.org/wiki/File:Taylor.jpg",
+                        "image_url": "https://upload.wikimedia.org/taylor.jpg",
+                        "license": "CC BY-SA 4.0",
+                        "attribution": "Example",
+                        "quality_score": 0.82,
+                        "quality_reason": "portrait",
+                        "identity_confidence": 0.95,
+                        "content_match_status": "passed",
+                        "needs_human_review": False,
+                        "source_adapter": "test",
+                        "reject_reason": "",
+                    },
+                ],
+            }
+
+    result = await Pipeline()._prepare_celebrity_scene_gate(
+        topic_id=123,
+        content_contract=content_contract,
+        fact_agent=FakeFactAgent(),
+        image_agent=FakeImageAgent(),
+    )
+
+    assert [scene["title"] for scene in result["content_contract"]["scenes"]] == [
+        "#2 Celine Dion",
+        "#1 Taylor Swift",
+    ]
+    assert result["production_summary"] == {
+        "target_cards": 4,
+        "minimum_cards": 2,
+        "final_cards": 2,
+        "dropped_fact_cards": 1,
+        "dropped_image_cards": 1,
+        "degraded": True,
+    }
+    assert result["fact_verification_contract"]["status"] == "ai_verified"
+    assert result["fact_verification_contract"]["required_count"] == 2
+    assert result["image_verification_contract"]["status"] == "verified"
+    assert [item["scene_index"] for item in result["image_verification_contract"]["items"]] == [0, 1]
+    get_settings.cache_clear()
+
+
+@pytest.mark.asyncio
 async def test_run_local_render_uses_content_agent_for_celebrity(monkeypatch, tmp_path):
     get_settings.cache_clear()
     monkeypatch.setenv("STORAGE_PATH", str(tmp_path))
@@ -207,46 +444,37 @@ async def test_run_local_render_uses_content_agent_for_celebrity(monkeypatch, tm
             )
 
     class FakeFactAgent:
-        async def run(self, *, content_contract):
+        async def verify_scenes(self, *, content_contract):
             captured.setdefault("events", []).append("fact")
             captured["fact_agent_content_contract"] = content_contract
-            return {
-                "schema_version": "fact_verification_contract_v1",
-                "verification_policy": "ai_only_independent_pass",
-                "status": "ai_verified",
-                "required_count": 2,
-                "verified_count": 1,
-                "corrected_count": 1,
-                "rejected_count": 0,
-                "items": [
-                    {
-                        "scene_index": 0,
-                        "person_name": "Celine Dion",
-                        "metric_label": "NET WORTH",
-                        "original_value": "550M USD",
-                        "verified_value": "560M USD",
-                        "unit": "USD",
-                        "as_of": "2026",
-                        "status": "corrected",
-                        "confidence": 0.91,
-                        "reason": "Updated public estimate.",
-                        "knowledge_cutoff_risk": "medium",
-                    },
-                    {
-                        "scene_index": 1,
-                        "person_name": "Taylor Swift",
-                        "metric_label": "NET WORTH",
-                        "original_value": "1.6B USD",
-                        "verified_value": "1.6B USD",
-                        "unit": "USD",
-                        "as_of": "2026",
-                        "status": "verified",
-                        "confidence": 0.92,
-                        "reason": "Consistent public estimate.",
-                        "knowledge_cutoff_risk": "medium",
-                    },
-                ],
-            }
+            return [
+                {
+                    "scene_index": 0,
+                    "person_name": "Celine Dion",
+                    "metric_label": "NET WORTH",
+                    "original_value": "550M USD",
+                    "verified_value": "560M USD",
+                    "unit": "USD",
+                    "as_of": "2026",
+                    "status": "corrected",
+                    "confidence": 0.91,
+                    "reason": "Updated public estimate.",
+                    "knowledge_cutoff_risk": "medium",
+                },
+                {
+                    "scene_index": 1,
+                    "person_name": "Taylor Swift",
+                    "metric_label": "NET WORTH",
+                    "original_value": "1.6B USD",
+                    "verified_value": "1.6B USD",
+                    "unit": "USD",
+                    "as_of": "2026",
+                    "status": "verified",
+                    "confidence": 0.92,
+                    "reason": "Consistent public estimate.",
+                    "knowledge_cutoff_risk": "medium",
+                },
+            ]
 
     class FakeMetadataOptimizerAgent:
         async def run(self, *, content_contract, selected_topic=None):
@@ -342,8 +570,7 @@ async def test_run_local_render_uses_content_agent_for_celebrity(monkeypatch, tm
     assert result["quality_gate"]["status"] == "passed"
     assert set(result["stage_timings"]) >= {
         "content",
-        "fact_verification",
-        "image_verification",
+        "fact_image_gate",
         "render",
         "quality_gate",
         "metadata",
@@ -362,7 +589,7 @@ async def test_run_local_render_uses_content_agent_for_celebrity(monkeypatch, tm
     assert result["youtube_tags"] == ["celebrity", "awards", "data comparison"]
     assert captured["image_agent_topic_id"] == result["topic_id"]
     assert captured["image_agent_content_contract"] == content_contract
-    assert captured["image_agent_strict"] is True
+    assert captured["image_agent_strict"] is False
     assert image_contract["status"] == "verified"
     assert review_kwargs["job_id"] == ""
     assert review_kwargs["file_path"].endswith("/final_video.mp4")
@@ -438,7 +665,7 @@ async def test_run_local_render_blocks_factual_celebrity_when_fact_gate_rejects(
             )
 
     class FakeFactAgent:
-        async def run(self, *, content_contract):
+        async def verify_scenes(self, *, content_contract):
             raise FactVerificationError("all facts must be AI verified")
 
     class FakeRealImageAgent:

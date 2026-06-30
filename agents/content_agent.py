@@ -183,11 +183,8 @@ Return JSON only:
         run_id: str | None = None,
     ) -> dict[str, Any]:
         scene_count = desired_scene_count or self.desired_scene_count_for_duration(duration_target)
-        use_resilient_pipeline = (
-            get_settings().resilient_card_pipeline_enabled
-            and scene_count > _LONG_CONTRACT_CHUNK_THRESHOLD
-        )
-        if use_resilient_pipeline:
+        use_resilient_pipeline = False
+        if scene_count > _LONG_CONTRACT_CHUNK_THRESHOLD:
             topic = dict(topic)
             topic.setdefault("content_format", "ranking")
             topic.setdefault("metric_scope", str(topic.get("metric_label") or "public metric"))
