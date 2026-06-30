@@ -70,7 +70,7 @@ class Settings(BaseSettings):
 
     # ── Native render runner ─────────────────────────────────
     native_render_enabled: bool = False
-    native_render_fallback: str = "docker"
+    native_render_fallback: str = "error"
     native_render_queue: str = "native_render"
     native_render_heartbeat_seconds: int = 15
     native_render_heartbeat_timeout_seconds: int = 60
@@ -116,6 +116,14 @@ class Settings(BaseSettings):
     @classmethod
     def _bound_parallel_chunks(cls, value: int) -> int:
         return min(4, max(1, value))
+
+    @field_validator("native_render_fallback")
+    @classmethod
+    def _validate_native_render_fallback(cls, value: str) -> str:
+        normalized = value.strip().lower()
+        if normalized not in {"error", "docker"}:
+            raise ValueError("native_render_fallback must be 'error' or 'docker'")
+        return normalized
 
     @field_validator("render_image_quality")
     @classmethod

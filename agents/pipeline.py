@@ -853,14 +853,10 @@ class Pipeline:
 
         live_runner = await render_queue.has_live_runner()
         if not live_runner:
-            if settings.native_render_fallback == "docker":
-                result = await self._render_docker_fallback(
-                    topic_id=topic_id,
-                    video_data=video_data,
-                    output_filename=output_filename,
-                )
-                return {**result, "renderer": "docker"}
-            raise RuntimeError("native render enabled but no live runner is available")
+            raise RuntimeError(
+                "no live native render runner is available; "
+                "start scripts/native_render_runner.py"
+            )
 
         topic_dir = settings.storage_dir / "topics" / str(topic_id)
         topic_dir.mkdir(parents=True, exist_ok=True)
@@ -913,18 +909,6 @@ class Pipeline:
                 "renderer": "native",
                 "encoder": result.encoder,
             }
-        if settings.native_render_fallback == "docker":
-            self.logger.warning(
-                "Native render failed for topic %s; using Docker fallback: %s",
-                topic_id,
-                result.message,
-            )
-            fallback = await self._render_docker_fallback(
-                topic_id=topic_id,
-                video_data=video_data,
-                output_filename=output_filename,
-            )
-            return {**fallback, "renderer": "docker"}
         raise RuntimeError(result.message or result.error_code or "native render failed")
 
     async def _render_docker_fallback(

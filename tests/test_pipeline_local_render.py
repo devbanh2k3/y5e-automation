@@ -38,6 +38,8 @@ def _minimal_video_data(*, target_duration: int = 60) -> dict:
 
 @pytest.mark.asyncio
 async def test_run_local_render_returns_stable_summary(monkeypatch, tmp_path):
+    get_settings.cache_clear()
+    monkeypatch.setenv("NATIVE_RENDER_ENABLED", "false")
     async def fake_render(self, *, topic_id, video_data):
         output = tmp_path / "topics" / str(topic_id) / "final_video.mp4"
         output.parent.mkdir(parents=True)
@@ -52,7 +54,10 @@ async def test_run_local_render_returns_stable_summary(monkeypatch, tmp_path):
     monkeypatch.setattr(Pipeline, "_render_local_video", fake_render)
     pipeline = Pipeline()
 
-    result = await pipeline.run_local_render(category="Science", language="vi")
+    try:
+        result = await pipeline.run_local_render(category="Science", language="vi")
+    finally:
+        get_settings.cache_clear()
 
     assert result["mode"] == "local_render"
     assert result["category"] == "Science"
@@ -1120,7 +1125,7 @@ async def test_render_video_uses_live_native_runner_when_enabled(monkeypatch, tm
 
 
 @pytest.mark.asyncio
-async def test_render_video_falls_back_to_docker_without_live_runner(monkeypatch, tmp_path):
+async def test_render_video_requires_live_native_runner_without_docker_fallback(monkeypatch, tmp_path):
     get_settings.cache_clear()
     monkeypatch.setenv("STORAGE_PATH", str(tmp_path / "output"))
     monkeypatch.setenv("NATIVE_RENDER_ENABLED", "true")
@@ -1130,18 +1135,56 @@ async def test_render_video_falls_back_to_docker_without_live_runner(monkeypatch
         return False
 
     async def fake_docker(self, *, topic_id, video_data, output_filename="final_video.mp4"):
-        return {"file_path": "/tmp/docker.mp4", "status": "rendered"}
+        raise AssertionError("native-enabled rendering must not invoke Docker")
 
     monkeypatch.setattr("agents.pipeline.render_queue.has_live_runner", fake_has_live_runner)
     monkeypatch.setattr(Pipeline, "_render_local_video", fake_docker)
 
     try:
-        result = await Pipeline()._render_video(
-            topic_id=42,
-            video_data=_minimal_video_data(target_duration=300),
+        with pytest.raises(RuntimeError, match="no live native render runner"):
+            await Pipeline()._render_video(
+                topic_id=42,
+                video_data=_minimal_video_data(target_duration=300),
+            )
+    finally:
+        get_settings.cache_clear()
+
+
+@pytest.mark.asyncio
+async def test_render_video_preserves_native_failure_without_docker_fallback(monkeypatch, tmp_path):
+    get_settings.cache_clear()
+    monkeypatch.setenv("STORAGE_PATH", str(tmp_path / "output"))
+    monkeypatch.setenv("NATIVE_RENDER_ENABLED", "true")
+    monkeypatch.setenv("NATIVE_RENDER_FALLBACK", "docker")
+
+    async def fake_has_live_runner():
+        return True
+
+    async def fake_enqueue(_request):
+        return "render-job-failed"
+
+    async def fake_wait(_job_id, *, timeout_seconds, poll_seconds=1):
+        return NativeRenderResult(
+            job_id="render-job-failed",
+            status="failed",
+            error_code="encoder_failed",
+            message="encoder failed",
         )
-        assert result["renderer"] == "docker"
-        assert result["file_path"] == "/tmp/docker.mp4"
+
+    async def fake_docker(self, *, topic_id, video_data, output_filename="final_video.mp4"):
+        raise AssertionError("native-enabled rendering must not invoke Docker")
+
+    monkeypatch.setattr("agents.pipeline.render_queue.has_live_runner", fake_has_live_runner)
+    monkeypatch.setattr("agents.pipeline.render_queue.enqueue_render", fake_enqueue)
+    monkeypatch.setattr("agents.pipeline.render_queue.wait_for_render_result", fake_wait)
+    monkeypatch.setattr(Pipeline, "_render_local_video", fake_docker)
+
+    try:
+        with pytest.raises(RuntimeError, match="encoder failed"):
+            await Pipeline()._render_video(
+                topic_id=42,
+                video_data=_minimal_video_data(target_duration=60),
+            )
     finally:
         get_settings.cache_clear()
 
