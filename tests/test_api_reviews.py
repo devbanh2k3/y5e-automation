@@ -285,6 +285,8 @@ async def test_review_ui_page_is_served():
     assert 'id="sortFilter"' in response.text
     assert 'id="metadataTagsCsv"' in response.text
     assert 'id="copyTagsButton"' in response.text
+    assert 'id="metadataTags"' in response.text
+    assert '/static/review-ui.js?v=20260630-1' in response.text
 
 
 @pytest.mark.asyncio
