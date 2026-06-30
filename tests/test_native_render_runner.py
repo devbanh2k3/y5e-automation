@@ -82,3 +82,39 @@ async def test_runner_falls_back_when_hardware_encode_fails(tmp_path: Path) -> N
 
     assert profile.name == "libx264"
     assert attempts == ["h264_nvenc", "libx264"]
+
+
+@pytest.mark.asyncio
+async def test_runner_snapshots_each_static_card_once(tmp_path: Path) -> None:
+    calls = 0
+    runner = NativeRenderRunner(project_root=tmp_path)
+    (tmp_path / "video_engine" / "public").mkdir(parents=True)
+    video_data = {
+        "cardLayout": "flag_hero",
+        "language": "en",
+        "cards": [
+            {
+                "header": "TOP 1",
+                "title": "Person",
+                "description": "Fact",
+                "imagePath": "images/real_0.webp",
+                "statusText": "VALUE: 1",
+            }
+        ],
+    }
+
+    async def fake_run(command, *, cwd, timeout):
+        nonlocal calls
+        calls += 1
+        Path(command[5]).write_bytes(b"snapshot")
+
+    runner._run = fake_run
+    first = await runner.prepare_snapshots(
+        topic_id="42", video_data=video_data, cache_dir=tmp_path / "cache"
+    )
+    second = await runner.prepare_snapshots(
+        topic_id="42", video_data=video_data, cache_dir=tmp_path / "cache"
+    )
+
+    assert calls == 1
+    assert first["cards"][0]["snapshotPath"] == second["cards"][0]["snapshotPath"]

@@ -154,6 +154,11 @@ class NativeRenderRunner:
             video_data=video_data,
             cache_dir=cache_dir,
         )
+        video_data = await self.prepare_snapshots(
+            topic_id=request.topic_id,
+            video_data=video_data,
+            cache_dir=cache_dir,
+        )
         native_data_path = cache_dir / "video_data.native.json"
         native_data_path.write_text(
             json.dumps(video_data, ensure_ascii=False, indent=2), encoding="utf-8"
@@ -273,6 +278,49 @@ class NativeRenderRunner:
         video_data = dict(video_data)
         video_data["cards"] = cards
         return video_data, manifest.fingerprint
+
+    async def prepare_snapshots(
+        self,
+        *,
+        topic_id: str,
+        video_data: dict[str, Any],
+        cache_dir: Path,
+    ) -> dict[str, Any]:
+        """Render each settled card once and reuse it across all video frames."""
+        cards = [dict(card) for card in video_data.get("cards") or []]
+        snapshots_dir = cache_dir / "snapshots"
+        snapshots_dir.mkdir(parents=True, exist_ok=True)
+        public_dir = self.video_engine_dir / "public" / "render-cache" / topic_id
+        public_dir.mkdir(parents=True, exist_ok=True)
+        layout = str(video_data.get("cardLayout") or "flag_hero")
+        language = str(video_data.get("language") or "en")
+        for index, card in enumerate(cards):
+            identity = {
+                "snapshot_version": 1,
+                "card": {key: value for key, value in card.items() if key != "snapshotPath"},
+                "card_layout": layout,
+                "language": language,
+            }
+            fingerprint = hashlib.sha256(
+                json.dumps(identity, sort_keys=True, ensure_ascii=False).encode("utf-8")
+            ).hexdigest()
+            snapshot = snapshots_dir / f"card-{index:04d}-{fingerprint[:16]}.png"
+            if not snapshot.is_file() or snapshot.stat().st_size == 0:
+                await self._run(
+                    [
+                        "npx", "remotion", "still", "src/index.tsx", "CardSnapshot",
+                        str(snapshot),
+                        f"--props={json.dumps({'card': card, 'cardLayout': layout, 'language': language}, ensure_ascii=False)}",
+                    ],
+                    cwd=self.video_engine_dir,
+                    timeout=180,
+                )
+            public_snapshot = public_dir / snapshot.name
+            shutil.copy2(snapshot, public_snapshot)
+            card["snapshotPath"] = f"render-cache/{topic_id}/{public_snapshot.name}"
+        prepared = dict(video_data)
+        prepared["cards"] = cards
+        return prepared
 
     @staticmethod
     def _timeline(
