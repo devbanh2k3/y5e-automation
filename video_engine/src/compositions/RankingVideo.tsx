@@ -97,7 +97,7 @@ export const RankingVideo: React.FC<VideoData> = (props) => {
       }}
     >
       {/* Background music */}
-      {musicPath && <Audio src={staticFile(musicPath)} volume={0.3} />}
+      {musicPath && <Audio src={staticFile(musicPath)} volume={0.3} loop />}
 
       {/* ─── INTRO ─── */}
       {isIntro && (

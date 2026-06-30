@@ -115,7 +115,7 @@ export const TimelineVideo: React.FC<VideoData> = (props) => {
     >
       {/* Background music */}
       {musicPath && (
-        <Audio src={staticFile(musicPath)} volume={0.3} />
+        <Audio src={staticFile(musicPath)} volume={0.3} loop />
       )}
 
       {/* Dark gradient background */}
