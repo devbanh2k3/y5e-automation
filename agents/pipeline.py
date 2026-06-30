@@ -765,6 +765,11 @@ class Pipeline:
             or video_data.get("target_duration")
             or 0
         )
+        if target_duration <= 0:
+            target_duration = max(
+                0,
+                8 + len(video_data.get("cards") or []) * 5,
+            )
         render_profile = resolve_local_render_profile(target_duration=target_duration)
         cmd = [
             "npx",

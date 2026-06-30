@@ -94,6 +94,7 @@ def test_build_video_data_from_content_contract_maps_scenes_to_cards():
     assert video_data["title"] == "Câu chuyện phía sau sự nổi tiếng"
     assert video_data["template"] == "timeline"
     assert video_data["cardLayout"] == "classic"
+    assert video_data["targetDuration"] == 30
     assert video_data["subtitle"] == "Sự nổi tiếng không chỉ đến từ may mắn."
     assert video_data["cards"][0]["header"] == "TOP 1"
     assert video_data["cards"][0]["title"] == "Dấu ấn đầu tiên"

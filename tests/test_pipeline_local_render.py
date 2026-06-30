@@ -969,6 +969,74 @@ async def test_render_local_video_passes_render_profile_to_remotion(monkeypatch,
 
 
 @pytest.mark.asyncio
+async def test_render_local_video_estimates_timeout_from_cards_when_duration_missing(
+    monkeypatch,
+    tmp_path,
+):
+    get_settings.cache_clear()
+    monkeypatch.setenv("STORAGE_PATH", str(tmp_path / "output"))
+    monkeypatch.setenv("LOCAL_RENDER_TIMEOUT_BASE_SEC", "300")
+    monkeypatch.setenv("LOCAL_RENDER_TIMEOUT_PER_TARGET_SEC", "5")
+    captured: dict[str, object] = {}
+
+    class FakeProcess:
+        def __init__(self, cmd):
+            self.cmd = cmd
+
+        returncode = 0
+
+        async def communicate(self):
+            output_path = Path(self.cmd[5] if self.cmd[0] == "npx" else self.cmd[-1])
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            output_path.write_bytes(b"fake mp4")
+            return b"rendered", b""
+
+    async def fake_create_subprocess_exec(*cmd, cwd, stdout, stderr):
+        return FakeProcess(cmd)
+
+    async def fake_wait_for(awaitable, timeout):
+        captured["timeout"] = timeout
+        return await awaitable
+
+    monkeypatch.setattr("asyncio.create_subprocess_exec", fake_create_subprocess_exec)
+    monkeypatch.setattr("asyncio.wait_for", fake_wait_for)
+
+    try:
+        await Pipeline()._render_local_video(
+            topic_id=77,
+            video_data={
+                "template": "timeline",
+                "title": "Local",
+                "subtitle": "Science",
+                "language": "en",
+                "cards": [
+                    {
+                        "header": f"LOCAL {index}",
+                        "title": "Local",
+                        "description": "Test",
+                        "imagePath": "images/local-placeholder.svg",
+                        "statusText": "FALLBACK",
+                    }
+                    for index in range(57)
+                ],
+                "introCards": [],
+                "musicPath": "",
+                "sfxPaths": {"transition": "", "alert": "", "reveal": ""},
+                "logoPath": "",
+                "holdDurationFrames": 120,
+                "transitionDurationFrames": 15,
+            },
+        )
+
+        assert captured["timeout"] == 1465
+    finally:
+        public_dir = Path(__file__).resolve().parents[1] / "video_engine" / "public"
+        (public_dir / "video_data.json").unlink(missing_ok=True)
+        (public_dir / "images" / "local-placeholder.svg").unlink(missing_ok=True)
+        get_settings.cache_clear()
+
+
+@pytest.mark.asyncio
 async def test_render_local_video_copies_verified_images_to_remotion_public(monkeypatch, tmp_path):
     get_settings.cache_clear()
     monkeypatch.setenv("STORAGE_PATH", str(tmp_path / "output"))
