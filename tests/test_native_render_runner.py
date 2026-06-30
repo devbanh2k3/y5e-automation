@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from scripts.native_render_runner import NativeRenderRunner
+from scripts.native_render_runner import NativeRenderRunner, run_with_heartbeat
 from services.render_chunks import RenderChunk
 from services.render_encoder import EncoderCapabilities
 
@@ -87,8 +87,12 @@ async def test_runner_falls_back_when_hardware_encode_fails(tmp_path: Path) -> N
 @pytest.mark.asyncio
 async def test_runner_snapshots_each_static_card_once(tmp_path: Path) -> None:
     calls = 0
+    commands = []
     runner = NativeRenderRunner(project_root=tmp_path)
     (tmp_path / "video_engine" / "public").mkdir(parents=True)
+    source = tmp_path / "video_engine" / "src" / "Card.tsx"
+    source.parent.mkdir(parents=True)
+    source.write_text("version one")
     video_data = {
         "cardLayout": "flag_hero",
         "language": "en",
@@ -106,6 +110,7 @@ async def test_runner_snapshots_each_static_card_once(tmp_path: Path) -> None:
     async def fake_run(command, *, cwd, timeout):
         nonlocal calls
         calls += 1
+        commands.append(command)
         Path(command[5]).write_bytes(b"snapshot")
 
     runner._run = fake_run
@@ -117,4 +122,41 @@ async def test_runner_snapshots_each_static_card_once(tmp_path: Path) -> None:
     )
 
     assert calls == 1
+    assert "--timeout=120000" in commands[0]
     assert first["cards"][0]["snapshotPath"] == second["cards"][0]["snapshotPath"]
+
+    source.write_text("version two")
+    changed = await runner.prepare_snapshots(
+        topic_id="42", video_data=video_data, cache_dir=tmp_path / "cache"
+    )
+    assert calls == 2
+    assert changed["cards"][0]["snapshotPath"] != first["cards"][0]["snapshotPath"]
+
+
+@pytest.mark.asyncio
+async def test_long_job_keeps_runner_heartbeat_alive() -> None:
+    heartbeats = 0
+
+    async def heartbeat() -> None:
+        nonlocal heartbeats
+        heartbeats += 1
+
+    async def job() -> str:
+        import asyncio
+
+        await asyncio.sleep(0.04)
+        return "done"
+
+    result = await run_with_heartbeat(job(), heartbeat=heartbeat, interval_seconds=0.01)
+
+    assert result == "done"
+    assert heartbeats >= 2
+
+
+def test_default_checkpoint_validation_rejects_corrupt_mp4(tmp_path: Path) -> None:
+    corrupt = tmp_path / "chunk.mp4"
+    corrupt.write_bytes(b"not an mp4" * 500)
+
+    assert NativeRenderRunner._default_chunk_validator(
+        corrupt, RenderChunk(0, 0, 299)
+    ) is False

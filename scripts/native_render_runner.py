@@ -14,7 +14,7 @@ import socket
 import sys
 import time
 from pathlib import Path
-from typing import Any, Awaitable, Callable
+from typing import Any, Awaitable, Callable, TypeVar
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
 if str(ROOT_DIR) not in sys.path:
@@ -35,7 +35,9 @@ from services.render_encoder import (
     EncoderProfile,
     build_encode_command,
     detect_encoder_capabilities,
+    probe_output,
     select_encoder,
+    validate_probe_payload,
     validate_output,
 )
 
@@ -44,6 +46,30 @@ logger = logging.getLogger("native_render_runner")
 ChunkRenderer = Callable[[RenderChunk, Path], Awaitable[None]]
 ChunkValidator = Callable[[Path, RenderChunk], bool]
 Encoder = Callable[[Path, Path, EncoderProfile], Awaitable[None]]
+ResultT = TypeVar("ResultT")
+
+
+async def run_with_heartbeat(
+    awaitable: Awaitable[ResultT],
+    *,
+    heartbeat: Callable[[], Awaitable[None]],
+    interval_seconds: float,
+) -> ResultT:
+    """Keep a runner lease alive for the complete duration of a long job."""
+    task = asyncio.ensure_future(awaitable)
+    try:
+        while not task.done():
+            await heartbeat()
+            done, _pending = await asyncio.wait(
+                {task}, timeout=max(0.01, interval_seconds)
+            )
+            if task in done:
+                break
+        return await task
+    except BaseException:
+        if not task.done():
+            task.cancel()
+        raise
 
 
 class NativeRenderRunner:
@@ -172,7 +198,9 @@ class NativeRenderRunner:
             protected_ranges=protected,
             card_boundaries=boundaries,
         )
-        video_hash = hashlib.sha256(native_data_path.read_bytes()).hexdigest()
+        video_hash = hashlib.sha256(
+            native_data_path.read_bytes() + self._renderer_source_hash().encode("ascii")
+        ).hexdigest()
         checkpoint_dir = chunk_dir / f"{video_hash[:12]}-{asset_hash[:12]}"
         await set_render_status(job_id, "processing", stage="rendering_chunks")
 
@@ -185,6 +213,7 @@ class NativeRenderRunner:
                     f"--frames={chunk.start_frame}-{chunk.end_frame}",
                     "--codec=h264", f"--crf={request.crf}",
                     f"--concurrency={max(1, int(os.getenv('REMOTION_CONCURRENCY', '2')))}",
+                    "--timeout=120000",
                 ],
                 cwd=self.video_engine_dir,
                 timeout=max(300, request.target_duration * 6),
@@ -297,6 +326,7 @@ class NativeRenderRunner:
         for index, card in enumerate(cards):
             identity = {
                 "snapshot_version": 1,
+                "renderer_source_hash": self._renderer_source_hash(),
                 "card": {key: value for key, value in card.items() if key != "snapshotPath"},
                 "card_layout": layout,
                 "language": language,
@@ -311,6 +341,7 @@ class NativeRenderRunner:
                         "npx", "remotion", "still", "src/index.tsx", "CardSnapshot",
                         str(snapshot),
                         f"--props={json.dumps({'card': card, 'cardLayout': layout, 'language': language}, ensure_ascii=False)}",
+                        "--timeout=120000",
                     ],
                     cwd=self.video_engine_dir,
                     timeout=180,
@@ -321,6 +352,16 @@ class NativeRenderRunner:
         prepared = dict(video_data)
         prepared["cards"] = cards
         return prepared
+
+    def _renderer_source_hash(self) -> str:
+        """Fingerprint Remotion source so code changes invalidate render caches."""
+        digest = hashlib.sha256()
+        source_root = self.video_engine_dir / "src"
+        for path in sorted(source_root.rglob("*")) if source_root.is_dir() else []:
+            if path.is_file() and path.suffix in {".ts", ".tsx", ".css"}:
+                digest.update(str(path.relative_to(source_root)).encode("utf-8"))
+                digest.update(path.read_bytes())
+        return digest.hexdigest()
 
     @staticmethod
     def _timeline(
@@ -340,8 +381,18 @@ class NativeRenderRunner:
         return total, [(0, intro), (outro_start, total)], sorted(set(boundaries))
 
     @staticmethod
-    def _default_chunk_validator(path: Path, _chunk: RenderChunk) -> bool:
-        return path.is_file() and path.stat().st_size > 1024
+    def _default_chunk_validator(path: Path, chunk: RenderChunk) -> bool:
+        if not path.is_file() or path.stat().st_size <= 1024:
+            return False
+        try:
+            validate_probe_payload(
+                probe_output(path),
+                expected_duration=chunk.frame_count / 30,
+                require_audio=False,
+            )
+        except Exception:  # noqa: BLE001 - invalid cache must be discarded.
+            return False
+        return True
 
     async def _encode(self, input_path: Path, output_path: Path, profile: EncoderProfile) -> None:
         await self._run(
@@ -378,7 +429,8 @@ async def run_loop() -> None:
     runner = NativeRenderRunner(settings=settings)
     runner_id = f"{socket.gethostname()}-{os.getpid()}"
     capabilities = detect_encoder_capabilities()
-    while True:
+
+    async def heartbeat() -> None:
         await publish_runner_heartbeat(
             runner_id=runner_id,
             capabilities={
@@ -387,15 +439,22 @@ async def run_loop() -> None:
             },
             ttl_seconds=settings.native_render_heartbeat_timeout_seconds,
         )
+
+    while True:
+        await heartbeat()
         claimed = await claim_render(timeout_seconds=settings.native_render_heartbeat_seconds)
         if not claimed:
             continue
         job_id, request = claimed
         try:
-            result = await runner.process(
-                job_id=job_id,
-                request=request,
-                capabilities=capabilities,
+            result = await run_with_heartbeat(
+                runner.process(
+                    job_id=job_id,
+                    request=request,
+                    capabilities=capabilities,
+                ),
+                heartbeat=heartbeat,
+                interval_seconds=settings.native_render_heartbeat_seconds,
             )
             await complete_render(
                 job_id,
