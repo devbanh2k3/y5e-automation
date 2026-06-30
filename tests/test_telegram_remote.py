@@ -340,6 +340,49 @@ async def test_reviews_uses_youtube_title_from_review_artifact(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_reviews_exposes_selected_tags_as_comma_separated_text(monkeypatch):
+    from services import telegram_remote
+
+    monkeypatch.setattr(
+        telegram_remote.production_tasks,
+        "get_authorized_user",
+        AsyncMock(return_value={"telegram_user_id": 111, "is_active": True}),
+    )
+    monkeypatch.setattr(
+        telegram_remote.production_tasks,
+        "list_pending_review_tasks",
+        AsyncMock(return_value=[{"review_id": "review-1", "video_path": "/app/output/video.mp4"}]),
+    )
+    monkeypatch.setattr(
+        telegram_remote,
+        "get_review",
+        AsyncMock(
+            return_value={
+                "selected_metadata": {
+                    "title": "Richest Singers",
+                    "tags": ["celebrity", "richest singers", "2026"],
+                },
+                "youtube": {"title": "Fallback title", "tags": ["fallback"]},
+            }
+        ),
+    )
+    monkeypatch.setattr(
+        telegram_remote,
+        "get_settings",
+        lambda: type("S", (), {"public_base_url": "https://example.test"})(),
+    )
+
+    response = await telegram_remote.handle_telegram_command(
+        telegram_user_id=111,
+        text="/reviews",
+    )
+
+    assert "celebrity, richest singers, 2026" in response.text
+    assert "#celebrity" not in response.text
+    assert "fallback" not in response.text
+
+
+@pytest.mark.asyncio
 async def test_reviews_handles_empty_pending_list(monkeypatch):
     from services import telegram_remote
 

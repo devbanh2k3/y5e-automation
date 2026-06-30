@@ -283,6 +283,8 @@ async def test_review_ui_page_is_served():
     assert 'id="selectedMetadata"' in response.text
     assert 'id="qualityFilter"' in response.text
     assert 'id="sortFilter"' in response.text
+    assert 'id="metadataTagsCsv"' in response.text
+    assert 'id="copyTagsButton"' in response.text
 
 
 @pytest.mark.asyncio
@@ -294,6 +296,8 @@ async def test_review_ui_static_javascript_is_served():
     assert "loadReviews" in response.text
     assert "renderMetadata" in response.text
     assert "selectMetadataVariant" in response.text
+    assert "navigator.clipboard.writeText" in response.text
+    assert 'join(", ")' in response.text
     assert "/metadata/select" in response.text
     assert "quality_status" in response.text
     assert "metadataScore" in response.text

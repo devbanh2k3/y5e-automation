@@ -23,7 +23,8 @@ const els = {
   selectedMetadata: document.querySelector("#selectedMetadata"),
   titleVariants: document.querySelector("#titleVariants"),
   descriptionVariants: document.querySelector("#descriptionVariants"),
-  metadataTags: document.querySelector("#metadataTags"),
+  metadataTagsCsv: document.querySelector("#metadataTagsCsv"),
+  copyTagsButton: document.querySelector("#copyTagsButton"),
   thumbnailTextSuggestions: document.querySelector("#thumbnailTextSuggestions"),
   qualityGate: document.querySelector("#qualityGate"),
   regenerateCommand: document.querySelector("#regenerateCommand"),
@@ -110,6 +111,23 @@ function renderTags(container, values) {
   }
 }
 
+function selectedTags(review) {
+  const variants = review.metadata_variants || {};
+  const selected = review.selected_metadata || variants.selected_metadata || {};
+  const values = selected.tags || review.youtube?.tags || variants.tags || [];
+  return Array.isArray(values)
+    ? values.map((value) => text(value).trim()).filter(Boolean)
+    : [];
+}
+
+function renderTagCsv(review) {
+  const value = selectedTags(review).join(", ");
+  els.metadataTagsCsv.textContent = value || "No tags";
+  els.copyTagsButton.disabled = !value;
+  els.copyTagsButton.dataset.copyValue = value;
+  els.copyTagsButton.textContent = "Copy tags";
+}
+
 function renderMetadata(review) {
   const variants = review.metadata_variants || {};
   const selected = review.selected_metadata || variants.selected_metadata || {};
@@ -153,7 +171,7 @@ function renderMetadata(review) {
         .join("")
     : '<p class="meta">No description variants.</p>';
 
-  renderTags(els.metadataTags, variants.tags || selected.tags || review.youtube?.tags || []);
+  renderTagCsv(review);
   els.thumbnailTextSuggestions.innerHTML = "";
   const thumbnailTexts = variants.thumbnail_text_suggestions || [];
   if (thumbnailTexts.length) {
@@ -329,6 +347,16 @@ els.regenerateButton.addEventListener("click", () => regenerateSelectedScene());
 els.titleVariants.addEventListener("click", handleMetadataClick);
 els.descriptionVariants.addEventListener("click", handleMetadataClick);
 els.thumbnailTextSuggestions.addEventListener("click", handleMetadataClick);
+els.copyTagsButton.addEventListener("click", async () => {
+  const value = els.copyTagsButton.dataset.copyValue || "";
+  if (!value) return;
+  try {
+    await navigator.clipboard.writeText(value);
+    els.copyTagsButton.textContent = "Copied";
+  } catch (_error) {
+    alert("Could not copy tags. Select the tag text and copy it manually.");
+  }
+});
 
 loadReviews().catch((error) => {
   els.reviewList.innerHTML = `<p class="meta">${error.message}</p>`;

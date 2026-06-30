@@ -280,6 +280,29 @@ h4 {
   gap: 8px;
 }
 
+.copy-field {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+}
+
+.copy-value {
+  flex: 1;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid #3a3a3a;
+  border-radius: 6px;
+  background: #111;
+  color: #e8e8e8;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+
+.copy-field button {
+  flex-shrink: 0;
+}
+
 .tag {
   border: 1px solid #3a3a3a;
   border-radius: 999px;

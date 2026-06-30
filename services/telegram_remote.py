@@ -143,10 +143,13 @@ async def _handle_reviews(*, telegram_user_id: int) -> TelegramResponse:
     for index, task in enumerate(tasks, start=1):
         review_id = str(task.get("review_id") or "")
         title = str(task.get("title") or task.get("youtube_title") or task.get("topic_title") or "").strip()
-        if not title and review_id:
-            title = await _review_display_title(review_id)
+        artifact_title, tags_csv = await _review_display_metadata(review_id) if review_id else ("", "")
+        if not title:
+            title = artifact_title
         label = title or f"Video #{index}"
         lines.append(f"{index}. {label}")
+        if tags_csv:
+            lines.append(f"   Tags: `{tags_csv}`")
         row: list[dict[str, str]] = []
         if can_open_video:
             row.append({"text": f"Preview {index}", "url": f"{base_url}/api/reviews/{review_id}/video"})
@@ -156,21 +159,28 @@ async def _handle_reviews(*, telegram_user_id: int) -> TelegramResponse:
 
 
 async def _review_display_title(review_id: str) -> str:
+    title, _tags_csv = await _review_display_metadata(review_id)
+    return title
+
+
+async def _review_display_metadata(review_id: str) -> tuple[str, str]:
     try:
         review = await get_review(review_id)
     except (KeyError, OSError, ValueError):
-        return ""
+        return "", ""
     youtube = review.get("youtube") if isinstance(review, dict) else {}
     selected = review.get("selected_metadata") if isinstance(review, dict) else {}
     content = review.get("content_contract") if isinstance(review, dict) else {}
     title = str(
-        (youtube or {}).get("title")
-        or (selected or {}).get("title")
+        (selected or {}).get("title")
+        or (youtube or {}).get("title")
         or (content or {}).get("youtube_title")
         or (content or {}).get("title")
         or ""
     ).strip()
-    return _shorten_line(title, limit=72)
+    raw_tags = (selected or {}).get("tags") or (youtube or {}).get("tags") or []
+    tags = [" ".join(str(value).split()) for value in raw_tags if str(value).strip()]
+    return _shorten_line(title, limit=72), ", ".join(tags)
 
 
 def _shorten_line(value: str, *, limit: int) -> str:
