@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from html import escape
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
@@ -48,6 +49,25 @@ from services.youtube_oauth import (
 from services.telegram_notifications import send_telegram_message
 
 logger = logging.getLogger(__name__)
+
+WINDOWS_RESERVED_NAMES = {
+    "CON",
+    "PRN",
+    "AUX",
+    "NUL",
+    *(f"COM{index}" for index in range(1, 10)),
+    *(f"LPT{index}" for index in range(1, 10)),
+}
+
+
+def review_video_filename(title: str) -> str:
+    """Return a cross-platform MP4 filename derived from a video title."""
+    value = re.sub(r'[<>:"/\\|?*\x00-\x1f]', " ", str(title or ""))
+    value = " ".join(value.split()).strip(" .")
+    value = value[:120].rstrip(" .")
+    if not value or value.upper() in WINDOWS_RESERVED_NAMES:
+        value = "video"
+    return f"{value}.mp4"
 
 # ── Pydantic request / response models ───────────────────────
 
@@ -377,10 +397,20 @@ async def get_review_video(review_id: str) -> FileResponse:
     video_path = Path(str((review.get("video") or {}).get("file_path", ""))).expanduser()
     if not video_path.is_file():
         raise HTTPException(status_code=404, detail="Review video file not found.")
+    selected = review.get("selected_metadata") or {}
+    youtube = review.get("youtube") or {}
+    content = review.get("content_contract") or {}
+    title = str(
+        selected.get("title")
+        or youtube.get("title")
+        or content.get("youtube_title")
+        or content.get("title")
+        or ""
+    )
     return FileResponse(
         video_path,
         media_type="video/mp4",
-        filename=video_path.name,
+        filename=review_video_filename(title),
         content_disposition_type="inline",
     )
 

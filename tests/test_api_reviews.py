@@ -1,7 +1,43 @@
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from api.main import app
+from api.main import app, review_video_filename
+
+
+@pytest.mark.parametrize(
+    ("title", "expected"),
+    [
+        ("Top 10: Stars / 2026?", "Top 10 Stars 2026.mp4"),
+        ("CON", "video.mp4"),
+        ("", "video.mp4"),
+    ],
+)
+def test_review_video_filename_is_cross_platform_safe(title, expected):
+    assert review_video_filename(title) == expected
+
+
+@pytest.mark.asyncio
+async def test_review_video_uses_selected_title_as_inline_filename(monkeypatch, tmp_path):
+    video_path = tmp_path / "final_video.mp4"
+    video_path.write_bytes(b"mp4")
+
+    async def fake_get_review(review_id: str):
+        assert review_id == "review-1"
+        return {
+            "video": {"file_path": str(video_path)},
+            "selected_metadata": {"title": "Top 10: Stars / 2026?"},
+            "youtube": {"title": "Fallback title"},
+        }
+
+    monkeypatch.setattr("api.main.get_review", fake_get_review)
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get("/api/reviews/review-1/video")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("video/mp4")
+    assert response.headers["content-disposition"].startswith("inline;")
+    assert "Top%2010%20Stars%202026.mp4" in response.headers["content-disposition"]
 
 
 @pytest.mark.asyncio
