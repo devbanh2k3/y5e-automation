@@ -184,6 +184,20 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
+### Native Full HD Renderer
+
+The optional host-native runner keeps the existing 1920x1080 landscape
+template while adding resumable chunk rendering and VideoToolbox/NVENC with
+automatic `libx264` fallback.
+
+```bash
+python3 scripts/native_render_runner.py --check
+```
+
+Keep `NATIVE_RENDER_ENABLED=false` until the machine-specific benchmark and
+visual smoke pass. See `docs/production-server-setup-full.md` for macOS and
+Windows NVIDIA setup.
+
 ### 6. Set Up YouTube OAuth
 
 To upload videos, you need OAuth2 credentials:
