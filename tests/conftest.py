@@ -13,6 +13,8 @@ class FakeRedis:
         self.lists: dict[str, deque[str]] = defaultdict(deque)
         self.hashes: dict[str, dict[str, str]] = defaultdict(dict)
         self.sorted_sets: dict[str, dict[str, float]] = defaultdict(dict)
+        self.strings: dict[str, str] = {}
+        self.sets: dict[str, set[str]] = defaultdict(set)
         self.closed = False
 
     async def ping(self) -> bool:
@@ -66,6 +68,42 @@ class FakeRedis:
 
     async def llen(self, key: str) -> int:
         return len(self.lists[key])
+
+    async def set(
+        self,
+        key: str,
+        value: str,
+        *,
+        nx: bool = False,
+        ex: int | None = None,
+    ) -> bool | None:
+        del ex
+        if nx and key in self.strings:
+            return None
+        self.strings[key] = value
+        return True
+
+    async def get(self, key: str) -> str | None:
+        return self.strings.get(key)
+
+    async def delete(self, *keys: str) -> int:
+        removed = 0
+        for key in keys:
+            if key in self.strings:
+                del self.strings[key]
+                removed += 1
+            if key in self.hashes:
+                del self.hashes[key]
+                removed += 1
+        return removed
+
+    async def sadd(self, key: str, *values: str) -> int:
+        before = len(self.sets[key])
+        self.sets[key].update(values)
+        return len(self.sets[key]) - before
+
+    async def smembers(self, key: str) -> set[str]:
+        return set(self.sets[key])
 
     async def zadd(self, key: str, mapping: dict[str, float]) -> int:
         target = self.sorted_sets[key]
