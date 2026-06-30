@@ -5,6 +5,7 @@ import { calculateTotalDuration } from "./types/video-data";
 import { TimelineVideo } from "./compositions/TimelineVideo";
 import { RankingVideo } from "./compositions/RankingVideo";
 import { ComparisonVideo } from "./compositions/ComparisonVideo";
+import { CardSnapshot, type CardSnapshotProps } from "./snapshot";
 
 const FPS = 30;
 const WIDTH = 1920;
@@ -12,6 +13,7 @@ const HEIGHT = 1080;
 const TimelineVideoComponent = TimelineVideo as unknown as React.FC<Record<string, unknown>>;
 const RankingVideoComponent = RankingVideo as unknown as React.FC<Record<string, unknown>>;
 const ComparisonVideoComponent = ComparisonVideo as unknown as React.FC<Record<string, unknown>>;
+const CardSnapshotComponent = CardSnapshot as unknown as React.FC<Record<string, unknown>>;
 
 /**
  * Default props for studio preview.
@@ -75,6 +77,12 @@ const defaultProps: VideoData = {
   transitionDurationFrames: 15,
 };
 
+const defaultSnapshotProps: CardSnapshotProps = {
+  card: defaultProps.cards[0],
+  cardLayout: "flag_hero",
+  language: "en",
+};
+
 export const RemotionRoot: React.FC = () => {
   return (
     <>
@@ -133,6 +141,16 @@ export const RemotionRoot: React.FC = () => {
             height: HEIGHT,
           };
         }}
+      />
+
+      <Composition
+        id="CardSnapshot"
+        component={CardSnapshotComponent}
+        durationInFrames={1}
+        fps={FPS}
+        width={600}
+        height={1080}
+        defaultProps={defaultSnapshotProps}
       />
 
     </>

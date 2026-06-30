@@ -18,6 +18,18 @@ interface CardProps extends CardData {
 export const CARD_WIDTH = 600;
 export const CARD_HEIGHT = 1080;
 
+type CardMediaInput = Pick<
+  CardData,
+  "imagePath" | "normalizedImagePath" | "backgroundImagePath" | "snapshotPath"
+>;
+
+export const resolveCardMedia = (card: CardMediaInput) => ({
+  foreground: card.snapshotPath || card.normalizedImagePath || card.imagePath,
+  background: card.backgroundImagePath || card.normalizedImagePath || card.imagePath,
+  snapshot: card.snapshotPath,
+  needsCssBlur: !card.backgroundImagePath,
+});
+
 export const Card: React.FC<CardProps> = (props) => {
   const {
     cardLayout = "classic",
@@ -27,6 +39,16 @@ export const Card: React.FC<CardProps> = (props) => {
   const frame = useCurrentFrame();
   const effectiveFrame = globalFrame || frame;
   const kbScale = kenBurnsScale(effectiveFrame, activeStartFrame, 180);
+  const media = resolveCardMedia(props);
+
+  if (media.snapshot) {
+    return (
+      <Img
+        src={staticFile(media.snapshot)}
+        style={{width: CARD_WIDTH, height: CARD_HEIGHT, objectFit: "contain"}}
+      />
+    );
+  }
 
   if (cardLayout === "flag_hero") {
     return <FlagHeroCard {...props} kbScale={kbScale} />;
@@ -153,7 +175,7 @@ const FlagHeroCard: React.FC<CardProps & { kbScale: number }> = (props) => {
         {metric}
       </Band>
 
-      <SafeMainImage imagePath={props.imagePath} kbScale={props.kbScale} />
+      <SafeMainImage card={props} kbScale={props.kbScale} />
     </div>
   );
 };
@@ -192,47 +214,50 @@ const SplitDataCard: React.FC<CardProps & { kbScale: number }> = (props) => {
       </div>
 
       <div style={{ flex: 1, minHeight: 0 }}>
-        <SafeMainImage imagePath={props.imagePath} kbScale={props.kbScale} />
+        <SafeMainImage card={props} kbScale={props.kbScale} />
       </div>
     </div>
   );
 };
 
-const SafeMainImage: React.FC<{ imagePath: string; kbScale: number }> = ({ imagePath, kbScale }) => (
-  <div
-    style={{
-      width: "100%",
-      height: "100%",
-      position: "relative",
-      overflow: "hidden",
-      backgroundColor: "#101010",
-    }}
-  >
-    <Img
-      src={staticFile(imagePath)}
+const SafeMainImage: React.FC<{ card: CardData; kbScale: number }> = ({ card, kbScale }) => {
+  const media = resolveCardMedia(card);
+  return (
+    <div
       style={{
-        position: "absolute",
-        inset: 0,
         width: "100%",
         height: "100%",
-        objectFit: "cover",
-        filter: "blur(18px) brightness(0.55)",
-        transform: "scale(1.08)",
+        position: "relative",
+        overflow: "hidden",
+        backgroundColor: "#101010",
       }}
-    />
-    <Img
-      src={staticFile(imagePath)}
-      style={{
-        position: "absolute",
-        inset: 0,
-        width: "100%",
-        height: "100%",
-        objectFit: "contain",
-        transform: `scale(${Math.min(kbScale, 1.06)})`,
-      }}
-    />
-  </div>
-);
+    >
+      <Img
+        src={staticFile(media.background)}
+        style={{
+          position: "absolute",
+          inset: 0,
+          width: "100%",
+          height: "100%",
+          objectFit: "cover",
+          filter: media.needsCssBlur ? "blur(18px) brightness(0.55)" : "brightness(0.55)",
+          transform: media.needsCssBlur ? "scale(1.08)" : undefined,
+        }}
+      />
+      <Img
+        src={staticFile(media.foreground)}
+        style={{
+          position: "absolute",
+          inset: 0,
+          width: "100%",
+          height: "100%",
+          objectFit: "contain",
+          transform: `scale(${Math.min(kbScale, 1.06)})`,
+        }}
+      />
+    </div>
+  );
+};
 
 const FlagBlock: React.FC<{ countryCode?: string; width: number }> = ({ countryCode, width }) => {
   const normalized = (countryCode || "").toLowerCase();

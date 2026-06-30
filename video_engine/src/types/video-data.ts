@@ -7,6 +7,12 @@ export interface CardData {
   description: string;
   /** Path to real image file (relative to public/) */
   imagePath: string;
+  /** Render-only bounded foreground derivative. */
+  normalizedImagePath?: string;
+  /** Render-only pre-blurred background derivative. */
+  backgroundImagePath?: string;
+  /** Render-only static card snapshot. */
+  snapshotPath?: string;
   /** ISO 3166-1 alpha-2 country code used to render the correct flag */
   countryCode?: string;
   /** Country or context label for data templates */

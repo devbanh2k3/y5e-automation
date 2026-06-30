@@ -4,6 +4,8 @@
   "description": "Remotion-based video engine for YouTube AI Automation",
   "private": true,
   "scripts": {
+    "test": "vitest",
+    "snapshot:card": "remotion still src/index.tsx CardSnapshot",
     "studio": "remotion studio src/index.tsx",
     "render:timeline": "remotion render src/index.tsx TimelineVideo out/timeline.mp4",
     "render:ranking": "remotion render src/index.tsx RankingVideo out/ranking.mp4",
