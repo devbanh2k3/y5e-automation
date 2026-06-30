@@ -45,6 +45,7 @@ UNSAFE_TERMS = {
     "medical",
     "rumor",
 }
+RESERVATION_RETRY_LIMIT = 3
 
 
 def _slug(value: str) -> str:
@@ -144,6 +145,44 @@ class TopicStrategyAgent(BaseAgent):
         if count < 1:
             raise ValueError("topic count must be at least 1")
 
+        pool_size = max(count * 5, 10)
+        for reservation_attempt in range(1, RESERVATION_RETRY_LIMIT + 1):
+            history = self._load_history()
+            candidates = await self._generate_candidates(
+                count=pool_size,
+                language=language,
+                history=history,
+                expanded=reservation_attempt > 1,
+            )
+            selected = self._select_diverse(candidates, history=history, count=count)
+            if len(selected) < count:
+                candidates.extend(
+                    await self._generate_candidates(
+                        count=pool_size,
+                        language=language,
+                        history=history + candidates,
+                        expanded=True,
+                    )
+                )
+                selected = self._select_diverse(
+                    candidates,
+                    history=history,
+                    count=count,
+                )
+            if len(selected) != count:
+                if reservation_attempt == RESERVATION_RETRY_LIMIT:
+                    raise TopicSelectionError(
+                        f"could not select {count} diverse Celebrity topics"
+                    )
+                continue
+
+            reservations = self._prepare_reservations(selected, batch_id=batch_id)
+            reserved = self.repository.reserve_many(reservations)
+            if len(reserved) == count:
+                return reserved
+        raise TopicSelectionError("topic reservations changed concurrently")
+
+    def _load_history(self) -> list[dict[str, Any]]:
         durable_history = self.repository.load()
         durable_titles = {
             str(item.get("normalized_title", "")) for item in durable_history
@@ -153,39 +192,7 @@ class TopicStrategyAgent(BaseAgent):
             for item in self._load_legacy_history(self.repository.path.parent)
             if item["normalized_title"] not in durable_titles
         ]
-        history = legacy_history + durable_history
-        pool_size = max(count * 5, 10)
-        candidates = await self._generate_candidates(
-            count=pool_size,
-            language=language,
-            history=history,
-            expanded=False,
-        )
-        selected = self._select_diverse(candidates, history=history, count=count)
-        if len(selected) < count:
-            candidates.extend(
-                await self._generate_candidates(
-                    count=pool_size,
-                    language=language,
-                    history=history + candidates,
-                    expanded=True,
-                )
-            )
-            selected = self._select_diverse(
-                candidates,
-                history=history,
-                count=count,
-            )
-        if len(selected) != count:
-            raise TopicSelectionError(
-                f"could not select {count} diverse Celebrity topics"
-            )
-
-        reservations = self._prepare_reservations(selected, batch_id=batch_id)
-        reserved = self.repository.reserve_many(reservations)
-        if len(reserved) != count:
-            raise TopicSelectionError("topic reservations changed concurrently")
-        return reserved
+        return legacy_history + durable_history
 
     async def _generate_candidates(
         self,

@@ -253,6 +253,72 @@ async def test_strategy_expands_pool_once_when_first_pool_is_not_diverse(
 
 
 @pytest.mark.asyncio
+async def test_strategy_reloads_history_and_reselects_after_reservation_conflict(
+    tmp_path,
+    monkeypatch,
+):
+    class ConflictOnceRepository(TopicHistoryRepository):
+        def __init__(self, path):
+            super().__init__(path)
+            self.reserve_calls = 0
+
+        def reserve_many(self, candidates):
+            self.reserve_calls += 1
+            if self.reserve_calls == 1:
+                stolen = dict(candidates[0])
+                stolen["reservation_id"] = "external-reservation"
+                super().reserve_many([stolen])
+                return []
+            return super().reserve_many(candidates)
+
+    repository = ConflictOnceRepository(tmp_path / "celebrity_topic_history.json")
+    agent = TopicStrategyAgent(repository=repository)
+    calls = 0
+
+    async def fake_ai_json(prompt, system=None, **kwargs):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            return {
+                "candidates": [
+                    scored_candidate(
+                        "Top 10 Celebrity Touring Revenues",
+                        "touring_revenue",
+                        "tour_income",
+                        "TOUR REVENUE",
+                        94,
+                    )
+                ]
+            }
+        return {
+            "candidates": [
+                scored_candidate(
+                    "Top 10 Celebrity Touring Revenues",
+                    "touring_revenue",
+                    "tour_income",
+                    "TOUR REVENUE",
+                    94,
+                ),
+                scored_candidate(
+                    "Top 10 Actors by Languages Spoken in Films",
+                    "film",
+                    "film_language_variety",
+                    "LANGUAGES",
+                    91,
+                ),
+            ]
+        }
+
+    monkeypatch.setattr(agent, "ai_json", fake_ai_json)
+
+    selected = await agent.run(count=1, language="en", batch_id="batch-conflict")
+
+    assert selected[0]["title"] == "Top 10 Actors by Languages Spoken in Films"
+    assert repository.reserve_calls == 2
+    assert calls == 2
+
+
+@pytest.mark.asyncio
 async def test_strategy_excludes_near_duplicate_legacy_content_contract(
     agent,
     repository,
