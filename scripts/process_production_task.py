@@ -104,6 +104,9 @@ def build_progress_callback(
             "fact_verification": "Đang xác minh dữ liệu",
             "image_verification": "Đang xác minh hình ảnh",
             "finalizing": "Đang hoàn thiện video",
+            "render_queued": "Đã xếp hàng render trên máy chủ",
+            "rendering_chunks": "Đang render video theo từng phần",
+            "final_encoding": "Đang ghép và mã hóa video Full HD",
         }
         label = labels.get(stage, "Đang xử lý video")
         ready = int(event.get("ready") or 0)

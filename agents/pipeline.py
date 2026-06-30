@@ -26,12 +26,14 @@ from agents.ai_fact_verification_agent import AIFactVerificationAgent
 from agents.metadata_optimizer_agent import MetadataOptimizerAgent
 from agents.real_image_agent import RealImageAgent
 from core import database as db
+from core import render_queue
 from core.config import get_settings
 from core.fact_verification import MIN_FACT_CONFIDENCE
 from core.fact_verification import build_fact_verification_contract_v1
 from core.notifier import notify, notify_error
 from core.quality_gate import run_production_quality_gate
 from core.reviews import create_review
+from core.render_contract import NativeRenderRequest
 from core.video_contract import (
     apply_verified_images_to_video_data,
     build_image_verification_contract_v1,
@@ -412,9 +414,10 @@ class Pipeline:
         validate_video_data(video_data)
 
         stage_started = time.monotonic()
-        render_result = await self._render_local_video(
+        render_result = await self._render_video(
             topic_id=topic_id,
             video_data=video_data,
+            progress_callback=progress_callback,
         )
         record_stage("render", stage_started)
         review: dict[str, Any] | None = None
@@ -821,6 +824,119 @@ class Pipeline:
             "duration_sec": 0,
             "status": "rendered",
         }
+
+    async def _render_video(
+        self,
+        *,
+        topic_id: int,
+        video_data: dict[str, Any],
+        output_filename: str = "final_video.mp4",
+        progress_callback: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
+    ) -> dict[str, Any]:
+        """Select native rendering when a live runner is available."""
+        settings = get_settings()
+        if not settings.native_render_enabled:
+            result = await self._render_docker_fallback(
+                topic_id=topic_id,
+                video_data=video_data,
+                output_filename=output_filename,
+            )
+            return {**result, "renderer": "docker"}
+
+        live_runner = await render_queue.has_live_runner()
+        if not live_runner:
+            if settings.native_render_fallback == "docker":
+                result = await self._render_docker_fallback(
+                    topic_id=topic_id,
+                    video_data=video_data,
+                    output_filename=output_filename,
+                )
+                return {**result, "renderer": "docker"}
+            raise RuntimeError("native render enabled but no live runner is available")
+
+        topic_dir = settings.storage_dir / "topics" / str(topic_id)
+        topic_dir.mkdir(parents=True, exist_ok=True)
+        public_dir = Path(__file__).resolve().parent.parent / "video_engine" / "public"
+        self._apply_render_media_defaults(video_data=video_data, public_dir=public_dir)
+        video_data_path = topic_dir / "video_data.json"
+        video_data_path.write_text(
+            json.dumps(video_data, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+        target_duration = int(
+            video_data.get("targetDuration")
+            or video_data.get("duration_target")
+            or video_data.get("target_duration")
+            or max(1, 8 + len(video_data.get("cards") or []) * 5)
+        )
+        request = NativeRenderRequest.create(
+            task_id=f"topic-{topic_id}",
+            topic_id=topic_id,
+            output_root=settings.storage_dir,
+            video_data_path=video_data_path,
+            output_path=topic_dir / output_filename,
+            composition_id=self._composition_id_for_template(
+                str(video_data.get("template", ""))
+            ),
+            target_duration=target_duration,
+            chunk_seconds=settings.native_render_chunk_seconds,
+            max_parallel_chunks=settings.native_render_max_parallel_chunks,
+            preferred_encoder=settings.native_render_encoder,
+            encoder_strict=settings.native_render_encoder_strict,
+            crf=_bounded_int_from_env("REMOTION_CRF", 20, minimum=16, maximum=35),
+        )
+        if progress_callback:
+            await progress_callback({"stage": "render_queued"})
+        job_id = await render_queue.enqueue_render(request)
+        timeout = max(
+            600,
+            target_duration * settings.native_render_result_timeout_per_target_second,
+        )
+        result = await render_queue.wait_for_render_result(
+            job_id,
+            timeout_seconds=timeout,
+            poll_seconds=1,
+        )
+        if result.status == "completed":
+            return {
+                "video_id": topic_id,
+                "file_path": result.output_path,
+                "duration_sec": target_duration,
+                "status": "rendered",
+                "renderer": "native",
+                "encoder": result.encoder,
+            }
+        if settings.native_render_fallback == "docker":
+            self.logger.warning(
+                "Native render failed for topic %s; using Docker fallback: %s",
+                topic_id,
+                result.message,
+            )
+            fallback = await self._render_docker_fallback(
+                topic_id=topic_id,
+                video_data=video_data,
+                output_filename=output_filename,
+            )
+            return {**fallback, "renderer": "docker"}
+        raise RuntimeError(result.message or result.error_code or "native render failed")
+
+    async def _render_docker_fallback(
+        self,
+        *,
+        topic_id: int,
+        video_data: dict[str, Any],
+        output_filename: str,
+    ) -> dict[str, Any]:
+        """Call the established renderer without changing its default call shape."""
+        if output_filename == "final_video.mp4":
+            return await self._render_local_video(
+                topic_id=topic_id,
+                video_data=video_data,
+            )
+        return await self._render_local_video(
+            topic_id=topic_id,
+            video_data=video_data,
+            output_filename=output_filename,
+        )
 
     @staticmethod
     def _apply_render_media_defaults(*, video_data: dict[str, Any], public_dir: Path) -> None:

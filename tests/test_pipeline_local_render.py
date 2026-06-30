@@ -6,8 +6,34 @@ from agents.pipeline import Pipeline
 from agents.pipeline import resolve_local_render_profile
 from core.config import get_settings
 from core.fact_verification import FactVerificationError
+from core.render_contract import NativeRenderResult
 from core.video_contract import build_content_contract_v2
 from core.card_production import Candidate, ProductionInventory
+
+
+def _minimal_video_data(*, target_duration: int = 60) -> dict:
+    return {
+        "template": "timeline",
+        "targetDuration": target_duration,
+        "title": "Local",
+        "subtitle": "Science",
+        "language": "en",
+        "cards": [
+            {
+                "header": "TOP 1",
+                "title": "Local",
+                "description": "Test",
+                "imagePath": "images/local-placeholder.svg",
+                "statusText": "VALUE: 1",
+            }
+        ],
+        "introCards": [],
+        "musicPath": "",
+        "sfxPaths": {"transition": "", "alert": "", "reveal": ""},
+        "logoPath": "",
+        "holdDurationFrames": 120,
+        "transitionDurationFrames": 15,
+    }
 
 
 @pytest.mark.asyncio
@@ -1033,6 +1059,73 @@ async def test_render_local_video_estimates_timeout_from_cards_when_duration_mis
         public_dir = Path(__file__).resolve().parents[1] / "video_engine" / "public"
         (public_dir / "video_data.json").unlink(missing_ok=True)
         (public_dir / "images" / "local-placeholder.svg").unlink(missing_ok=True)
+        get_settings.cache_clear()
+
+
+@pytest.mark.asyncio
+async def test_render_video_uses_live_native_runner_when_enabled(monkeypatch, tmp_path):
+    get_settings.cache_clear()
+    monkeypatch.setenv("STORAGE_PATH", str(tmp_path / "output"))
+    monkeypatch.setenv("NATIVE_RENDER_ENABLED", "true")
+    output = tmp_path / "output" / "topics" / "42" / "final_video.mp4"
+    output.parent.mkdir(parents=True)
+    output.write_bytes(b"native video")
+
+    async def fake_has_live_runner():
+        return True
+
+    async def fake_enqueue(_request):
+        return "render-job-1"
+
+    async def fake_wait(_job_id, *, timeout_seconds, poll_seconds=1):
+        assert timeout_seconds == 1800
+        return NativeRenderResult(
+            job_id="render-job-1",
+            status="completed",
+            output_path=str(output),
+            encoder="h264_videotoolbox",
+        )
+
+    monkeypatch.setattr("agents.pipeline.render_queue.has_live_runner", fake_has_live_runner)
+    monkeypatch.setattr("agents.pipeline.render_queue.enqueue_render", fake_enqueue)
+    monkeypatch.setattr("agents.pipeline.render_queue.wait_for_render_result", fake_wait)
+
+    try:
+        result = await Pipeline()._render_video(
+            topic_id=42,
+            video_data=_minimal_video_data(target_duration=300),
+        )
+        assert result["renderer"] == "native"
+        assert result["encoder"] == "h264_videotoolbox"
+        assert result["file_path"] == str(output)
+    finally:
+        get_settings.cache_clear()
+
+
+@pytest.mark.asyncio
+async def test_render_video_falls_back_to_docker_without_live_runner(monkeypatch, tmp_path):
+    get_settings.cache_clear()
+    monkeypatch.setenv("STORAGE_PATH", str(tmp_path / "output"))
+    monkeypatch.setenv("NATIVE_RENDER_ENABLED", "true")
+    monkeypatch.setenv("NATIVE_RENDER_FALLBACK", "docker")
+
+    async def fake_has_live_runner():
+        return False
+
+    async def fake_docker(self, *, topic_id, video_data, output_filename="final_video.mp4"):
+        return {"file_path": "/tmp/docker.mp4", "status": "rendered"}
+
+    monkeypatch.setattr("agents.pipeline.render_queue.has_live_runner", fake_has_live_runner)
+    monkeypatch.setattr(Pipeline, "_render_local_video", fake_docker)
+
+    try:
+        result = await Pipeline()._render_video(
+            topic_id=42,
+            video_data=_minimal_video_data(target_duration=300),
+        )
+        assert result["renderer"] == "docker"
+        assert result["file_path"] == "/tmp/docker.mp4"
+    finally:
         get_settings.cache_clear()
 
 
