@@ -40,7 +40,41 @@ Trong Docker Desktop:
 
 ## 2. Cai dat nen tren may Windows PC
 
-### Cach tu dong khuyen nghi
+### Cach tu dong khuyen nghi: Windows native + NVIDIA
+
+Clone repo, mo PowerShell Administrator trong thu muc repo, sau do chay:
+
+```powershell
+Set-ExecutionPolicy -Scope Process Bypass -Force
+.\scripts\install_windows_production.ps1 -InstallTools
+```
+
+Script nay cai Git, Docker Desktop, Python 3.12, Node.js LTS va FFmpeg; tao
+`.venv`; cai Python/Remotion dependencies; kiem tra NVIDIA NVENC; khoi dong Docker
+control plane; va kiem tra API readiness. Neu vua cai cong cu va PATH/Docker chua
+san sang, dong PowerShell, mo lai bang Administrator va chay lai cung lenh.
+
+Script khong ghi de `.env` va khong tai nhac. Copy `.env` an toan tu may cu, va
+copy cac file nhac co license vao `assets\audio\bgm` vi MP3 khong duoc luu tren Git.
+
+Sau khi foreground runner hoat dong dung, cai runner tu khoi dong:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\native_render_runner.py
+# Dung foreground runner sau khi test, roi:
+.\scripts\install_windows_production.ps1 -InstallRunnerService
+```
+
+Bat buoc giu:
+
+```dotenv
+NATIVE_RENDER_ENABLED=true
+NATIVE_RENDER_FALLBACK=error
+NATIVE_RENDER_ENCODER=auto
+REDIS_URL=redis://localhost:6380/0
+```
+
+### Cach WSL cu
 
 Chay trong PowerShell Administrator tu repo da clone hoac file source vua tai ve:
 
@@ -458,15 +492,16 @@ tail -f output/native-render-runner.log
 Mo PowerShell Administrator:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File scripts\setup_native_render_windows.ps1
-python scripts\native_render_runner.py --check
-python scripts\native_render_runner.py
+Set-ExecutionPolicy -Scope Process Bypass -Force
+.\scripts\install_windows_production.ps1 -InstallTools
+.\.venv\Scripts\python.exe scripts\native_render_runner.py --check
+.\.venv\Scripts\python.exe scripts\native_render_runner.py
 ```
 
 Sau khi test foreground thanh cong:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File scripts\setup_native_render_windows.ps1 -InstallService
+.\scripts\install_windows_production.ps1 -InstallRunnerService
 Get-ScheduledTask -TaskName Y5ENativeRenderRunner
 ```
 
@@ -475,11 +510,11 @@ NVIDIA. Neu GPU encoder loi, runner tu fallback `libx264` tru khi bat strict mod
 
 ### Cau hinh rollout
 
-Giu fallback trong lan dau:
+Native runner la bat buoc; khong fallback Docker:
 
 ```dotenv
 NATIVE_RENDER_ENABLED=true
-NATIVE_RENDER_FALLBACK=docker
+NATIVE_RENDER_FALLBACK=error
 NATIVE_RENDER_ENCODER=auto
 NATIVE_RENDER_CHUNK_SECONDS=40
 NATIVE_RENDER_MAX_PARALLEL_CHUNKS=2
@@ -493,7 +528,7 @@ override bang `redis://redis:6379/0`. Khong expose port Redis ra Internet.
 
 - Runner restart: khoi dong lai cung lenh; chunk hop le duoc reuse.
 - GPU encode loi: kiem tra `--check`; pipeline van fallback CPU.
-- Runner mat heartbeat: control plane dung Docker renderer khi fallback la `docker`.
+- Runner mat heartbeat: production task fail ro rang va khong render bang Docker.
 - Chunk loi: xem `output/topics/{topic_id}/render-cache/*/render-manifest.json` va log runner.
 - Tat native khan cap: dat `NATIVE_RENDER_ENABLED=false`, restart production worker.
 

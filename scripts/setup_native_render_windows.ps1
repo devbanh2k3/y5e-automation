@@ -12,7 +12,6 @@ function Require-Command([string]$Name) {
     }
 }
 
-Require-Command python
 Require-Command node
 Require-Command npm
 Require-Command ffmpeg
@@ -21,6 +20,12 @@ Require-Command nvidia-smi
 
 if (-not (Test-Path (Join-Path $RootDir ".env"))) {
     throw "Missing $RootDir\.env; configure it before installing the runner."
+}
+
+$Python = Join-Path $RootDir ".venv\Scripts\python.exe"
+if (-not (Test-Path $Python)) {
+    Require-Command python
+    $Python = (Get-Command python).Source
 }
 
 Write-Host "Checking NVIDIA driver and h264_nvenc..."
@@ -32,19 +37,18 @@ ffmpeg -hide_banner -loglevel error -y `
 Remove-Item $Probe -Force -ErrorAction SilentlyContinue
 
 Write-Host "Installing Remotion dependencies..."
-npm --prefix (Join-Path $RootDir "video_engine") install
+npm --prefix (Join-Path $RootDir "video_engine") ci
 
 Write-Host "Checking redis and native runner dependencies..."
 Push-Location $RootDir
 try {
-    python -c "from core.queue import init_queue; import asyncio; asyncio.run(init_queue())"
-    python scripts/native_render_runner.py --check
+    & $Python -c "from core.queue import init_queue; import asyncio; asyncio.run(init_queue())"
+    & $Python scripts/native_render_runner.py --check
 } finally {
     Pop-Location
 }
 
 if ($InstallService) {
-    $Python = (Get-Command python).Source
     $Action = New-ScheduledTaskAction -Execute $Python -Argument "scripts/native_render_runner.py" -WorkingDirectory $RootDir
     $Trigger = New-ScheduledTaskTrigger -AtStartup
     $Settings = New-ScheduledTaskSettingsSet -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1)

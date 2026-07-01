@@ -1,5 +1,19 @@
 # YouTube AI Automation
 
+## Windows Production Install
+
+Run PowerShell as Administrator from the repository root:
+
+```powershell
+Set-ExecutionPolicy -Scope Process Bypass -Force
+.\scripts\install_windows_production.ps1 -InstallTools
+```
+
+Copy the production `.env` securely and place licensed background tracks in
+`assets\audio\bgm` before production. MP3 files and secrets are intentionally
+not stored in Git. See `docs/production-server-setup-full.md` for migration,
+Cloudflare, YouTube OAuth, and native NVIDIA runner setup.
+
 > Fully automated YouTube channel management powered by AI agents. From trending topic discovery to video upload — zero manual intervention.
 
 [![Python 3.12](https://img.shields.io/badge/python-3.12-blue.svg)](https://www.python.org/downloads/)

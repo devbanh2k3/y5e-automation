@@ -4,6 +4,36 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def test_unified_windows_installer_covers_full_production_stack() -> None:
+    script = ROOT / "scripts" / "install_windows_production.ps1"
+    assert script.is_file()
+    text = script.read_text(encoding="utf-8")
+
+    required = [
+        "Set-StrictMode -Version Latest",
+        '$ErrorActionPreference = "Stop"',
+        "Administrator",
+        "winget",
+        "Git.Git",
+        "Docker.DockerDesktop",
+        "Python.Python.3.12",
+        "OpenJS.NodeJS.LTS",
+        "Gyan.FFmpeg",
+        ".venv",
+        "requirements.txt",
+        "npm ci",
+        "docker compose up -d --build",
+        "/api/ready",
+        "nvidia-smi",
+        "h264_nvenc",
+        "NATIVE_RENDER_FALLBACK",
+        "assets\\audio\\bgm",
+        "Y5ENativeRenderRunner",
+    ]
+    for value in required:
+        assert value in text
+
+
 def test_windows_server_setup_script_has_required_guards() -> None:
     script = ROOT / "scripts" / "setup_windows_server.ps1"
     text = script.read_text(encoding="utf-8")
