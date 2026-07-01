@@ -33,6 +33,9 @@ def test_unified_windows_installer_covers_full_production_stack() -> None:
     for value in required:
         assert value in text
 
+    assert 'cmd.exe /d /c "docker info >nul 2>nul"' in text
+    assert "docker info 2>$null" not in text
+
 
 def test_windows_server_setup_script_has_required_guards() -> None:
     script = ROOT / "scripts" / "setup_windows_server.ps1"

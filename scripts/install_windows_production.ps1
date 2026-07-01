@@ -105,12 +105,13 @@ function Assert-Environment([string]$EnvPath) {
 
 function Wait-Docker([int]$TimeoutSeconds = 120) {
     $dockerDesktop = Join-Path $env:ProgramFiles "Docker\Docker\Docker Desktop.exe"
-    if (-not (docker info 2>$null)) {
+    cmd.exe /d /c "docker info >nul 2>nul"
+    if ($LASTEXITCODE -ne 0) {
         if (Test-Path $dockerDesktop) { Start-Process $dockerDesktop }
     }
     $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
     while ((Get-Date) -lt $deadline) {
-        docker info *> $null
+        cmd.exe /d /c "docker info >nul 2>nul"
         if ($LASTEXITCODE -eq 0) { return }
         Start-Sleep -Seconds 3
     }
