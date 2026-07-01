@@ -87,7 +87,7 @@ def _test_encoder(ffmpeg: str, encoder: str) -> bool:
         result = subprocess.run(
             [
                 ffmpeg, "-hide_banner", "-loglevel", "error", "-y",
-                "-f", "lavfi", "-i", "color=c=black:s=64x64:r=30:d=0.2",
+                "-f", "lavfi", "-i", "color=c=black:s=1920x1080:r=30:d=0.2",
                 "-an", "-c:v", encoder, "-pix_fmt", "yuv420p", str(output),
             ],
             capture_output=True,

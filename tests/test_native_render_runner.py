@@ -3,7 +3,11 @@ from pathlib import Path
 
 import pytest
 
-from scripts.native_render_runner import NativeRenderRunner, run_with_heartbeat
+from scripts.native_render_runner import (
+    NativeRenderRunner,
+    resolve_command_executable,
+    run_with_heartbeat,
+)
 from services.render_chunks import RenderChunk
 from services.render_encoder import EncoderCapabilities
 
@@ -14,6 +18,16 @@ def test_runner_maps_container_output_paths_to_host_storage(tmp_path: Path) -> N
     mapped = runner._host_path("/app/output/topics/123/final_video.mp4")
 
     assert mapped == tmp_path / "output" / "topics" / "123" / "final_video.mp4"
+
+
+def test_windows_runner_resolves_npx_cmd(monkeypatch) -> None:
+    monkeypatch.setattr("scripts.native_render_runner.os.name", "nt")
+    monkeypatch.setattr(
+        "scripts.native_render_runner.shutil.which",
+        lambda name: "C:/Program Files/nodejs/npx.cmd" if name == "npx.cmd" else None,
+    )
+
+    assert resolve_command_executable("npx") == "C:/Program Files/nodejs/npx.cmd"
 
 
 @pytest.mark.asyncio

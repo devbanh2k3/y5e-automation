@@ -4,6 +4,13 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def _bash_path(path: Path) -> str:
+    if path.drive:
+        drive = path.drive.rstrip(":").lower()
+        return f"/mnt/{drive}/{path.relative_to(path.anchor).as_posix()}"
+    return path.as_posix()
+
+
 def test_unified_windows_installer_covers_full_production_stack() -> None:
     script = ROOT / "scripts" / "install_windows_production.ps1"
     assert script.is_file()
@@ -76,6 +83,11 @@ def test_wsl_production_setup_script_is_valid_bash() -> None:
     import subprocess
 
     script = ROOT / "scripts" / "setup_wsl_production.sh"
-    result = subprocess.run(["bash", "-n", str(script)], check=False, capture_output=True, text=True)
+    result = subprocess.run(
+        ["bash", "-n", _bash_path(script)],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
 
     assert result.returncode == 0, result.stderr

@@ -49,6 +49,13 @@ Encoder = Callable[[Path, Path, EncoderProfile], Awaitable[None]]
 ResultT = TypeVar("ResultT")
 
 
+def resolve_command_executable(name: str) -> str:
+    """Resolve Windows command shims that asyncio cannot launch by bare name."""
+    if os.name == "nt":
+        return shutil.which(f"{name}.cmd") or name
+    return name
+
+
 async def run_with_heartbeat(
     awaitable: Awaitable[ResultT],
     *,
@@ -91,6 +98,11 @@ class NativeRenderRunner:
 
     def _host_path(self, path: str | Path) -> Path:
         """Map Docker volume paths from render contracts onto the host checkout."""
+        raw_path = str(path).replace("\\", "/")
+        container_output_prefix = "/app/output/"
+        if raw_path.startswith(container_output_prefix):
+            relative = raw_path.removeprefix(container_output_prefix)
+            return self.project_root / "output" / Path(relative)
         candidate = Path(path)
         if candidate.is_absolute():
             try:
@@ -420,6 +432,7 @@ class NativeRenderRunner:
 
     @staticmethod
     async def _run(command: list[str], *, cwd: Path, timeout: float) -> None:
+        command = [resolve_command_executable(command[0]), *command[1:]]
         process = await asyncio.create_subprocess_exec(
             *command,
             cwd=str(cwd),

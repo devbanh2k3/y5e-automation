@@ -420,6 +420,7 @@ class Pipeline:
             progress_callback=progress_callback,
         )
         record_stage("render", stage_started)
+        file_path = str(render_result["file_path"]).replace("\\", "/")
         review: dict[str, Any] | None = None
         quality_gate: dict[str, Any] | None = None
         metadata_variants: dict[str, Any] = {}
@@ -429,7 +430,7 @@ class Pipeline:
             stage_started = time.monotonic()
             quality_gate = run_production_quality_gate(
                 topic_id=topic_id,
-                video_path=render_result["file_path"],
+                video_path=file_path,
                 video_data=video_data,
                 content_contract=content_contract,
                 fact_verification_contract=fact_verification_contract,
@@ -463,7 +464,7 @@ class Pipeline:
                 job_id="",
                 topic_id=topic_id,
                 video_id=render_result["video_id"],
-                file_path=render_result["file_path"],
+                file_path=file_path,
                 content_contract=content_contract,
                 fact_verification_contract=fact_verification_contract,
                 image_verification_contract=image_verification_contract,
@@ -486,7 +487,7 @@ class Pipeline:
             "language": language,
             "topic_id": topic_id,
             "video_id": render_result["video_id"],
-            "file_path": render_result["file_path"],
+            "file_path": file_path,
             "duration_sec": render_result["duration_sec"],
             "status": render_result["status"],
             "fallback_used": fallback_used,

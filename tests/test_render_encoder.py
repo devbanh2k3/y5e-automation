@@ -1,4 +1,9 @@
+import subprocess
+from pathlib import Path
+
 import pytest
+
+from services import render_encoder
 
 from services.render_encoder import (
     EncoderCapabilities,
@@ -53,6 +58,20 @@ def test_failed_hardware_probe_falls_back_to_x264() -> None:
         "auto", _probe(platform="win32", working={"libx264"})
     )
     assert selected.name == "libx264"
+
+
+def test_encoder_probe_uses_production_dimensions(monkeypatch) -> None:
+    def fake_run(command, **_kwargs):
+        source = command[command.index("-i") + 1]
+        output = Path(command[-1])
+        if "s=1920x1080" in source:
+            output.write_bytes(b"probe")
+            return subprocess.CompletedProcess(command, 0)
+        return subprocess.CompletedProcess(command, 1)
+
+    monkeypatch.setattr(render_encoder.subprocess, "run", fake_run)
+
+    assert render_encoder._test_encoder("ffmpeg", "h264_nvenc") is True
 
 
 def test_encode_command_uses_encoder_specific_quality(tmp_path) -> None:

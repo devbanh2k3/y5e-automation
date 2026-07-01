@@ -2,14 +2,19 @@
 
 from __future__ import annotations
 
-import fcntl
 import json
 import os
+import sys
 import tempfile
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator
+
+if sys.platform == "win32":
+    import msvcrt
+else:
+    import fcntl
 
 
 class TopicHistoryError(RuntimeError):
@@ -112,13 +117,21 @@ class TopicHistoryRepository:
     @contextmanager
     def _lock(self, *, exclusive: bool) -> Iterator[None]:
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        operation = fcntl.LOCK_EX if exclusive else fcntl.LOCK_SH
         with self.lock_path.open("a+", encoding="utf-8") as lock_file:
-            fcntl.flock(lock_file.fileno(), operation)
+            if sys.platform == "win32":
+                lock_file.seek(0)
+                msvcrt.locking(lock_file.fileno(), msvcrt.LK_LOCK, 1)
+            else:
+                operation = fcntl.LOCK_EX if exclusive else fcntl.LOCK_SH
+                fcntl.flock(lock_file.fileno(), operation)
             try:
                 yield
             finally:
-                fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+                if sys.platform == "win32":
+                    lock_file.seek(0)
+                    msvcrt.locking(lock_file.fileno(), msvcrt.LK_UNLCK, 1)
+                else:
+                    fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
 
     def _read_unlocked(self) -> list[dict[str, Any]]:
         if not self.path.exists():
